@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  body {
+    @apply bg-slate-100/70 text-slate-900 dark:bg-[#0b0f19] dark:text-slate-100 transition-colors duration-200;
+  }
+}
+
+/* Enhanced ambient role-tailored dark canvas backgrounds with refined depth and glow */
+.dark .dark-canvas-admin {
+  background-color: #080f14 !important;
+  background-image: radial-gradient(at 15% 10%, rgba(16, 185, 129, 0.12) 0px, transparent 45%),
+                    radial-gradient(at 85% 90%, rgba(5, 150, 105, 0.08) 0px, transparent 50%),
+                    radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.6) 0px, transparent 100%) !important;
+}
+
+.dark .dark-canvas-guru {
+  background-color: #081116 !important;
+  background-image: radial-gradient(at 15% 10%, rgba(13, 148, 136, 0.13) 0px, transparent 45%),
+                    radial-gradient(at 85% 90%, rgba(20, 184, 166, 0.07) 0px, transparent 50%),
+                    radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.6) 0px, transparent 100%) !important;
+}
+
+.dark .dark-canvas-student {
+  background-color: #090e1f !important;
+  background-image: radial-gradient(at 15% 10%, rgba(99, 102, 241, 0.14) 0px, transparent 45%),
+                    radial-gradient(at 85% 90%, rgba(245, 158, 11, 0.08) 0px, transparent 50%),
+                    radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.6) 0px, transparent 100%) !important;
+}
