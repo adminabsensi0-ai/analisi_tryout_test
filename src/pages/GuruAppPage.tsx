@@ -341,7 +341,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
   // Phase 14: Master Production Readiness Validation Test Suite State
   const [productionValidationResult, setProductionValidationResult] = useState<ProductionValidationSuiteResult | null>(null);
-  const [progressSubTab, setProgressSubTab] = useState<'STUDENT' | 'CLASS' | 'SUBJECT' | 'COMPETENCY' | 'TESTS'>('STUDENT');
+  const [progressSubTab, setProgressSubTab] = useState<'STUDENT' | 'CLASS' | 'SUBJECT'>('STUDENT');
   const [selectedStudentForProgress, setSelectedStudentForProgress] = useState<string>('s-1');
   const [selectedClassForProgress, setSelectedClassForProgress] = useState<string>('c-xii-ipa1');
   const [selectedSubjectForProgress, setSelectedSubjectForProgress] = useState<string>('subj-mat');
@@ -3531,40 +3531,25 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     <div className="flex flex-wrap items-center justify-between gap-4">
                       <div>
                         <div className="flex items-center space-x-2">
-                          <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                          <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                           <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight">
                             Grafik &amp; Pelacakan Perkembangan Hasil Ujian
                           </h2>
-                          <span className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full font-mono">
+                          <span className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full font-mono">
                             Multi-Try Out (TO-1 s/d TO-4)
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          Pantau tren kemajuan belajar siswa, perbandingan performa kelas, dinamika nilai per mata pelajaran, serta ketercapaian kompetensi.
+                          Pantau tren kemajuan belajar siswa, perbandingan performa kelas, dan dinamika capaian nilai per mata pelajaran secara visual dan terukur.
                         </p>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => {
-                            const res = dbService.runProgressEngineTests(currentUser);
-                            setProgressTestResult(res);
-                            triggerToast(`Validasi Algoritma Progress Tracking Selesai (${res.passedTests}/${res.totalTests} Lolos)`);
-                          }}
-                          className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold px-3 py-2 rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
-                          title="Jalankan uji kalkulasi agregasi tren"
-                        >
-                          <Play className="w-3.5 h-3.5 text-emerald-500" />
-                          <span>Uji Validasi Sistem</span>
-                        </button>
                       </div>
                     </div>
 
-                    {/* Sub-Navigation Pills */}
+                    {/* Sub-Navigation Pills (3 Core Tabs) */}
                     <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2 text-xs font-semibold">
                       <button
                         onClick={() => setProgressSubTab('STUDENT')}
-                        className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-2 ${
+                        className={`px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-2 ${
                           progressSubTab === 'STUDENT'
                             ? 'bg-indigo-600 text-white shadow-xs font-bold'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -3575,7 +3560,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       </button>
                       <button
                         onClick={() => setProgressSubTab('CLASS')}
-                        className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-2 ${
+                        className={`px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-2 ${
                           progressSubTab === 'CLASS'
                             ? 'bg-indigo-600 text-white shadow-xs font-bold'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -3586,7 +3571,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       </button>
                       <button
                         onClick={() => setProgressSubTab('SUBJECT')}
-                        className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-2 ${
+                        className={`px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-2 ${
                           progressSubTab === 'SUBJECT'
                             ? 'bg-indigo-600 text-white shadow-xs font-bold'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -3595,82 +3580,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <BookOpen className="w-3.5 h-3.5" />
                         <span>Progress Mata Pelajaran</span>
                       </button>
-                      <button
-                        onClick={() => setProgressSubTab('COMPETENCY')}
-                        className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-2 ${
-                          progressSubTab === 'COMPETENCY'
-                            ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        <Target className="w-3.5 h-3.5" />
-                        <span>Penguasaan Kompetensi (KD)</span>
-                      </button>
-                      <button
-                        onClick={() => setProgressSubTab('TESTS')}
-                        className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-2 ${
-                          progressSubTab === 'TESTS'
-                            ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-xs font-bold'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>Log Pengujian</span>
-                      </button>
                     </div>
                   </div>
-
-                  {/* AUTOMATED TEST SUITE HUB RESULTS (PHASE 12 GATE) */}
-                  {(progressSubTab === 'TESTS' || progressTestResult) && progressTestResult && (
-                    <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                        <div className="flex items-center space-x-2">
-                          <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                          <h3 className="text-sm font-bold text-slate-900">
-                            Hasil Pengujian Otomatis Pelacakan Perkembangan Siswa
-                          </h3>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <span
-                            className={`text-[10px] font-bold px-2.5 py-1 rounded border font-mono ${
-                              progressTestResult.passed
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                : 'bg-rose-100 text-rose-800 border-rose-300'
-                            }`}
-                          >
-                            {progressTestResult.passed ? 'PHASE 12 — VERIFIED & FROZEN' : 'PHASE 12 — TEST FAILED'}
-                          </span>
-                          <span className="text-xs font-mono text-slate-500">
-                            Waktu: <strong>{progressTestResult.executionTimeMs} ms</strong>
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                        {progressTestResult.tests.map(t => (
-                          <div
-                            key={t.testId}
-                            className={`p-3 rounded border text-xs space-y-1 transition-all ${
-                              t.passed ? 'bg-emerald-50/30 border-emerald-200' : 'bg-rose-50/30 border-rose-200'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between font-bold">
-                              <span className="text-slate-900">Test {t.testId}: {t.name}</span>
-                              <span
-                                className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
-                                  t.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                                }`}
-                              >
-                                {t.passed ? 'PASSED' : 'FAILED'}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-600 leading-relaxed">{t.message}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   {/* SUB-TAB 1: STUDENT PROGRESS TRACKING */}
                   {progressSubTab === 'STUDENT' && (() => {
@@ -3750,6 +3661,176 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             </div>
                           )}
                         </div>
+
+                        {/* Visual Trajectory Line Graph for Student */}
+                        {studentProg && studentProg.points.length > 0 && (() => {
+                          const pts = studentProg.points;
+                          const targetScore = studentProg.targetScore || 75;
+                          const calcY = (val: number) => 175 - ((Math.max(0, Math.min(100, val)) / 100) * 140);
+                          const calcX = (idx: number) => 70 + (idx / Math.max(1, pts.length - 1)) * 510;
+
+                          const studentCoords = pts.map((pt, idx) => ({
+                            ...pt,
+                            x: calcX(idx),
+                            y: calcY(pt.score),
+                            classY: calcY(pt.classAverage || 75),
+                          }));
+
+                          const studentPoly = studentCoords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+                          const classPoly = studentCoords.map(c => `${c.x.toFixed(1)},${c.classY.toFixed(1)}`).join(' ');
+                          const firstX = studentCoords[0].x.toFixed(1);
+                          const lastX = studentCoords[studentCoords.length - 1].x.toFixed(1);
+                          const targetY = calcY(targetScore).toFixed(1);
+
+                          return (
+                            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border-b border-slate-100 dark:border-slate-800 pb-3">
+                                <div>
+                                  <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                    <span>Grafik Perkembangan Skor — {currentStudentObj?.name || 'Siswa'} ({studentProg.className})</span>
+                                  </h3>
+                                  <p className="text-[11px] text-slate-500 mt-0.5">
+                                    Laju perolehan skor siswa lintas tahapan Try Out dibandingkan target individu dan rata-rata kelas.
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono shrink-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-medium">Skor Siswa</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-3.5 h-0.5 border-t-2 border-dashed border-emerald-500 inline-block"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-medium">Rata-Rata Kelas</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-3.5 h-0.5 border-t-2 border-dashed border-amber-500 inline-block"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-medium">Target Siswa ({targetScore})</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="relative w-full bg-slate-50/60 dark:bg-slate-950/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800/80">
+                                <svg className="w-full h-56 overflow-visible" viewBox="0 0 640 220" preserveAspectRatio="none">
+                                  <defs>
+                                    <linearGradient id="studentAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="0%" stopColor="#6366f1" stopOpacity="0.25" />
+                                      <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
+                                    </linearGradient>
+                                  </defs>
+
+                                  {/* Gridlines */}
+                                  {[100, 75, 50, 25, 0].map(val => {
+                                    const y = calcY(val);
+                                    return (
+                                      <g key={val}>
+                                        <line
+                                          x1="65"
+                                          y1={y}
+                                          x2="590"
+                                          y2={y}
+                                          stroke="currentColor"
+                                          className={val === 0 ? "text-slate-300 dark:text-slate-700" : "text-slate-200 dark:text-slate-800"}
+                                          strokeWidth="1"
+                                          strokeDasharray={val === 0 ? "none" : "3 3"}
+                                        />
+                                        <text x="56" y={y + 3.5} textAnchor="end" className="text-[10px] fill-slate-400 font-mono">
+                                          {val}
+                                        </text>
+                                      </g>
+                                    );
+                                  })}
+
+                                  {/* Target Score Line */}
+                                  <line
+                                    x1="65"
+                                    y1={targetY}
+                                    x2="590"
+                                    y2={targetY}
+                                    stroke="#f59e0b"
+                                    strokeWidth="1.5"
+                                    strokeDasharray="4 3"
+                                  />
+                                  <rect x="525" y={Number(targetY) - 10} width="65" height="15" rx="4" fill="#f59e0b" />
+                                  <text x="557" y={Number(targetY) + 1} textAnchor="middle" className="text-[8.5px] font-mono font-bold fill-slate-950">
+                                    Target {targetScore}
+                                  </text>
+
+                                  {/* Class Average Polyline */}
+                                  <polyline
+                                    fill="none"
+                                    stroke="#10b981"
+                                    strokeWidth="2"
+                                    strokeDasharray="4 4"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    points={classPoly}
+                                  />
+
+                                  {/* Student Area Gradient */}
+                                  <polygon
+                                    fill="url(#studentAreaGrad)"
+                                    points={`${studentPoly} ${lastX},175 ${firstX},175`}
+                                  />
+
+                                  {/* Student Connected Line */}
+                                  <polyline
+                                    fill="none"
+                                    stroke="#4f46e5"
+                                    strokeWidth="3.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    points={studentPoly}
+                                  />
+
+                                  {/* Student Nodes */}
+                                  {studentCoords.map((node, i) => {
+                                    const yBadge = Math.max(12, node.y - 25);
+                                    return (
+                                      <g key={i}>
+                                        <rect
+                                          x={node.x - 22}
+                                          y={yBadge}
+                                          width="44"
+                                          height="18"
+                                          rx="5"
+                                          className="fill-slate-900 dark:fill-slate-100"
+                                        />
+                                        <text
+                                          x={node.x}
+                                          y={yBadge + 12}
+                                          textAnchor="middle"
+                                          className="text-[10px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700"
+                                        >
+                                          {node.score.toFixed(1)}
+                                        </text>
+                                        <circle cx={node.x} cy={node.y} r="5.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
+                                        <circle cx={node.x} cy={node.classY} r="3" fill="#10b981" />
+                                        <text
+                                          x={node.x}
+                                          y="200"
+                                          textAnchor="middle"
+                                          className="text-[11px] font-mono font-bold fill-slate-600 dark:fill-slate-400"
+                                        >
+                                          {node.tryoutCode}
+                                        </text>
+                                        <text
+                                          x={node.x}
+                                          y="213"
+                                          textAnchor="middle"
+                                          className="text-[9px] font-mono fill-slate-400"
+                                        >
+                                          (Avg {node.classAverage?.toFixed(0) || 75})
+                                        </text>
+                                      </g>
+                                    );
+                                  })}
+                                </svg>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* Progression Cards Line Chart Simulation */}
                         {studentProg && (
@@ -3900,33 +3981,97 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         {/* Visual Trajectory Line Graph for Class */}
                         {classProg && classProg.points.length > 0 && (() => {
                           const pts = classProg.points;
-                          const viewCoords = pts.map((pt, idx) => {
-                            const x = 60 + (idx / Math.max(1, pts.length - 1)) * 390;
-                            const y = 120 - ((pt.averageScore / 100) * 100);
-                            return { ...pt, x, y };
-                          });
+                          const calcY = (val: number) => 175 - ((Math.max(0, Math.min(100, val)) / 100) * 140);
+                          const calcX = (idx: number) => 70 + (idx / Math.max(1, pts.length - 1)) * 510;
+
+                          const viewCoords = pts.map((pt, idx) => ({
+                            ...pt,
+                            x: calcX(idx),
+                            y: calcY(pt.averageScore),
+                          }));
+
                           const svgPolyPoints = viewCoords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+                          const firstX = viewCoords[0].x.toFixed(1);
+                          const lastX = viewCoords[viewCoords.length - 1].x.toFixed(1);
+                          const kkmY = calcY(75).toFixed(1);
 
                           return (
-                            <div className="p-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-                              <div className="flex items-center justify-between text-xs font-mono">
-                                <span className="font-bold text-indigo-700 dark:text-indigo-400">
-                                  Grafik Tren Rata-Rata {selectedClassObj?.name || 'Kelas'}
-                                </span>
-                                <span className="text-amber-600 dark:text-amber-400 font-bold">Ambang KKM: 75.0</span>
+                            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border-b border-slate-100 dark:border-slate-800 pb-3">
+                                <div>
+                                  <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <School className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                    <span>Grafik Tren Rata-Rata Kelas — {selectedClassObj?.name || 'Kelas'}</span>
+                                  </h3>
+                                  <p className="text-[11px] text-slate-500 mt-0.5">
+                                    Pergerakan nilai rerata rombel lintas tahapan Try Out terhadap ambang KKM (75.0).
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3 text-[11px] font-mono shrink-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-medium">Rerata Rombel</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-3.5 h-0.5 border-t-2 border-dashed border-amber-500 inline-block"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-medium">Garis KKM (75.0)</span>
+                                  </div>
+                                </div>
                               </div>
 
-                              <div className="relative w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
-                                <svg className="w-full h-44 overflow-visible z-10 relative" viewBox="0 0 500 150" preserveAspectRatio="none">
-                                  <line x1="40" y1="20" x2="490" y2="20" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="32" y="23" textAnchor="end" className="text-[9px] fill-slate-400 font-mono">100</text>
+                              <div className="relative w-full bg-slate-50/60 dark:bg-slate-950/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800/80">
+                                <svg className="w-full h-56 overflow-visible" viewBox="0 0 640 220" preserveAspectRatio="none">
+                                  <defs>
+                                    <linearGradient id="classAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.25" />
+                                      <stop offset="100%" stopColor="#4f46e5" stopOpacity="0.0" />
+                                    </linearGradient>
+                                  </defs>
 
-                                  <line x1="40" y1="45" x2="490" y2="45" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="5 4" />
-                                  <text x="32" y="48" textAnchor="end" className="text-[9px] fill-amber-500 font-mono font-bold">75</text>
+                                  {/* Gridlines */}
+                                  {[100, 75, 50, 25, 0].map(val => {
+                                    const y = calcY(val);
+                                    return (
+                                      <g key={val}>
+                                        <line
+                                          x1="65"
+                                          y1={y}
+                                          x2="590"
+                                          y2={y}
+                                          stroke="currentColor"
+                                          className={val === 0 ? "text-slate-300 dark:text-slate-700" : "text-slate-200 dark:text-slate-800"}
+                                          strokeWidth="1"
+                                          strokeDasharray={val === 0 ? "none" : "3 3"}
+                                        />
+                                        <text x="56" y={y + 3.5} textAnchor="end" className="text-[10px] fill-slate-400 font-mono">
+                                          {val}
+                                        </text>
+                                      </g>
+                                    );
+                                  })}
 
-                                  <line x1="40" y1="120" x2="490" y2="120" stroke="currentColor" className="text-slate-200 dark:border-slate-800" strokeWidth="1" />
-                                  <text x="32" y="123" textAnchor="end" className="text-[9px] fill-slate-400 font-mono">0</text>
+                                  {/* KKM Line */}
+                                  <line
+                                    x1="65"
+                                    y1={kkmY}
+                                    x2="590"
+                                    y2={kkmY}
+                                    stroke="#f59e0b"
+                                    strokeWidth="1.5"
+                                    strokeDasharray="4 3"
+                                  />
+                                  <rect x="525" y={Number(kkmY) - 10} width="65" height="15" rx="4" fill="#f59e0b" />
+                                  <text x="557" y={Number(kkmY) + 1} textAnchor="middle" className="text-[8.5px] font-mono font-bold fill-slate-950">
+                                    KKM (75)
+                                  </text>
 
+                                  {/* Area Gradient */}
+                                  <polygon
+                                    fill="url(#classAreaGrad)"
+                                    points={`${svgPolyPoints} ${lastX},175 ${firstX},175`}
+                                  />
+
+                                  {/* Polyline */}
                                   <polyline
                                     fill="none"
                                     stroke="#4f46e5"
@@ -3936,14 +4081,47 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     points={svgPolyPoints}
                                   />
 
-                                  {viewCoords.map((node, i) => (
-                                    <g key={i}>
-                                      <rect x={node.x - 20} y={node.y - 22} width="40" height="17" rx="5" className="fill-slate-900 dark:fill-slate-100" />
-                                      <text x={node.x} y={node.y - 10} textAnchor="middle" className="text-[10px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700">{node.averageScore.toFixed(1)}</text>
-                                      <circle cx={node.x} cy={node.y} r="5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2" />
-                                      <text x={node.x} y="138" textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-500">{node.tryoutCode}</text>
-                                    </g>
-                                  ))}
+                                  {/* Nodes */}
+                                  {viewCoords.map((node, i) => {
+                                    const yBadge = Math.max(12, node.y - 25);
+                                    return (
+                                      <g key={i}>
+                                        <rect
+                                          x={node.x - 22}
+                                          y={yBadge}
+                                          width="44"
+                                          height="18"
+                                          rx="5"
+                                          className="fill-slate-900 dark:fill-slate-100"
+                                        />
+                                        <text
+                                          x={node.x}
+                                          y={yBadge + 12}
+                                          textAnchor="middle"
+                                          className="text-[10px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700"
+                                        >
+                                          {node.averageScore.toFixed(1)}
+                                        </text>
+                                        <circle cx={node.x} cy={node.y} r="5.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
+                                        <text
+                                          x={node.x}
+                                          y="200"
+                                          textAnchor="middle"
+                                          className="text-[11px] font-mono font-bold fill-slate-600 dark:fill-slate-400"
+                                        >
+                                          {node.tryoutCode}
+                                        </text>
+                                        <text
+                                          x={node.x}
+                                          y="213"
+                                          textAnchor="middle"
+                                          className="text-[9px] font-mono fill-emerald-600 dark:fill-emerald-400 font-bold"
+                                        >
+                                          {node.passingRatePct}% Tuntas
+                                        </text>
+                                      </g>
+                                    );
+                                  })}
                                 </svg>
                               </div>
                             </div>
@@ -3992,36 +4170,97 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                         {/* Visual Trajectory Line Graph for Subject */}
                         {subjProg && points.length > 0 && (() => {
-                          const viewCoords = points.map((pt, idx) => {
-                            const x = 60 + (idx / Math.max(1, points.length - 1)) * 390;
-                            const y = 120 - ((pt.averageScore / 100) * 100);
-                            return { ...pt, x, y };
-                          });
+                          const calcY = (val: number) => 175 - ((Math.max(0, Math.min(100, val)) / 100) * 140);
+                          const calcX = (idx: number) => 70 + (idx / Math.max(1, points.length - 1)) * 510;
+
+                          const viewCoords = points.map((pt, idx) => ({
+                            ...pt,
+                            x: calcX(idx),
+                            y: calcY(pt.averageScore),
+                          }));
+
                           const svgPolyPoints = viewCoords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+                          const firstX = viewCoords[0].x.toFixed(1);
+                          const lastX = viewCoords[viewCoords.length - 1].x.toFixed(1);
+                          const kkmY = calcY(75).toFixed(1);
 
                           return (
-                            <div className="p-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-                              <div className="flex items-center justify-between text-xs font-mono">
-                                <span className="font-bold text-teal-700 dark:text-teal-300">Grafik Laju Perkembangan {activeSubjectObj?.name} (Rata-Rata Seluruh Kelas)</span>
-                                <span className="text-amber-600 dark:text-amber-400 font-bold">Target KKM Mapel: 75.0 Poin</span>
+                            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border-b border-slate-100 dark:border-slate-800 pb-3">
+                                <div>
+                                  <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <BookOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                                    <span>Grafik Laju Rata-Rata Mapel — {activeSubjectObj?.name} (Seluruh Kelas)</span>
+                                  </h3>
+                                  <p className="text-[11px] text-slate-500 mt-0.5">
+                                    Fluktuasi nilai rata-rata mata pelajaran per sesi Try Out terhadap standar kelulusan KKM (75.0).
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3 text-[11px] font-mono shrink-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-teal-600 inline-block"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-medium">Rata-Rata Mapel</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-3.5 h-0.5 border-t-2 border-dashed border-amber-500 inline-block"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-medium">Target KKM (75.0)</span>
+                                  </div>
+                                </div>
                               </div>
 
-                              <div className="relative w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
-                                <svg className="w-full h-52 overflow-visible z-10 relative" viewBox="0 0 500 160" preserveAspectRatio="none">
-                                  {/* Grid Lines */}
-                                  <line x1="40" y1="20" x2="490" y2="20" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="32" y="23" textAnchor="end" className="text-[9px] fill-slate-400 font-mono">100</text>
+                              <div className="relative w-full bg-slate-50/60 dark:bg-slate-950/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800/80">
+                                <svg className="w-full h-56 overflow-visible" viewBox="0 0 640 220" preserveAspectRatio="none">
+                                  <defs>
+                                    <linearGradient id="subjectAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="0%" stopColor="#0d9488" stopOpacity="0.25" />
+                                      <stop offset="100%" stopColor="#0d9488" stopOpacity="0.0" />
+                                    </linearGradient>
+                                  </defs>
 
-                                  {/* KKM Line 75 */}
-                                  <line x1="40" y1="45" x2="490" y2="45" stroke="#f59e0b" strokeWidth="2" strokeDasharray="5 4" />
-                                  <text x="32" y="48" textAnchor="end" className="text-[9px] fill-amber-500 font-mono font-bold">75</text>
-                                  <rect x="410" y="32" width="75" height="16" rx="4" fill="#f59e0b" />
-                                  <text x="447" y="43" textAnchor="middle" className="text-[8px] font-mono font-bold fill-slate-950">Garis KKM (75)</text>
+                                  {/* Gridlines */}
+                                  {[100, 75, 50, 25, 0].map(val => {
+                                    const y = calcY(val);
+                                    return (
+                                      <g key={val}>
+                                        <line
+                                          x1="65"
+                                          y1={y}
+                                          x2="590"
+                                          y2={y}
+                                          stroke="currentColor"
+                                          className={val === 0 ? "text-slate-300 dark:text-slate-700" : "text-slate-200 dark:text-slate-800"}
+                                          strokeWidth="1"
+                                          strokeDasharray={val === 0 ? "none" : "3 3"}
+                                        />
+                                        <text x="56" y={y + 3.5} textAnchor="end" className="text-[10px] fill-slate-400 font-mono">
+                                          {val}
+                                        </text>
+                                      </g>
+                                    );
+                                  })}
 
-                                  <line x1="40" y1="120" x2="490" y2="120" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="32" y="123" textAnchor="end" className="text-[9px] fill-slate-400 font-mono">0</text>
+                                  {/* KKM Line */}
+                                  <line
+                                    x1="65"
+                                    y1={kkmY}
+                                    x2="590"
+                                    y2={kkmY}
+                                    stroke="#f59e0b"
+                                    strokeWidth="1.5"
+                                    strokeDasharray="4 3"
+                                  />
+                                  <rect x="525" y={Number(kkmY) - 10} width="65" height="15" rx="4" fill="#f59e0b" />
+                                  <text x="557" y={Number(kkmY) + 1} textAnchor="middle" className="text-[8.5px] font-mono font-bold fill-slate-950">
+                                    KKM (75)
+                                  </text>
 
-                                  {/* Connected Line */}
+                                  {/* Area Gradient */}
+                                  <polygon
+                                    fill="url(#subjectAreaGrad)"
+                                    points={`${svgPolyPoints} ${lastX},175 ${firstX},175`}
+                                  />
+
+                                  {/* Polyline */}
                                   <polyline
                                     fill="none"
                                     stroke="#0d9488"
@@ -4031,15 +4270,47 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     points={svgPolyPoints}
                                   />
 
-                                  {/* Coordinate Nodes, Badges & X-Axis Labels */}
-                                  {viewCoords.map((node, i) => (
-                                    <g key={i}>
-                                      <rect x={node.x - 20} y={node.y - 22} width="40" height="17" rx="6" className="fill-slate-900 dark:fill-slate-100" />
-                                      <text x={node.x} y={node.y - 10} textAnchor="middle" className="text-[10px] font-mono font-bold fill-teal-400 dark:fill-teal-700">{node.averageScore.toFixed(1)}</text>
-                                      <circle cx={node.x} cy={node.y} r="5" fill="#0d9488" stroke="#ffffff" strokeWidth="2.5" />
-                                      <text x={node.x} y="142" textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-500">{node.tryoutCode}</text>
-                                    </g>
-                                  ))}
+                                  {/* Nodes */}
+                                  {viewCoords.map((node, i) => {
+                                    const yBadge = Math.max(12, node.y - 25);
+                                    return (
+                                      <g key={i}>
+                                        <rect
+                                          x={node.x - 22}
+                                          y={yBadge}
+                                          width="44"
+                                          height="18"
+                                          rx="5"
+                                          className="fill-slate-900 dark:fill-slate-100"
+                                        />
+                                        <text
+                                          x={node.x}
+                                          y={yBadge + 12}
+                                          textAnchor="middle"
+                                          className="text-[10px] font-mono font-bold fill-teal-400 dark:fill-teal-700"
+                                        >
+                                          {node.averageScore.toFixed(1)}
+                                        </text>
+                                        <circle cx={node.x} cy={node.y} r="5.5" fill="#0d9488" stroke="#ffffff" strokeWidth="2.5" />
+                                        <text
+                                          x={node.x}
+                                          y="200"
+                                          textAnchor="middle"
+                                          className="text-[11px] font-mono font-bold fill-slate-600 dark:fill-slate-400"
+                                        >
+                                          {node.tryoutCode}
+                                        </text>
+                                        <text
+                                          x={node.x}
+                                          y="213"
+                                          textAnchor="middle"
+                                          className="text-[9px] font-mono fill-slate-400"
+                                        >
+                                          Nilai Rata-Rata
+                                        </text>
+                                      </g>
+                                    );
+                                  })}
                                 </svg>
                               </div>
                             </div>
@@ -4269,98 +4540,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* SUB-TAB 4: COMPETENCY PROGRESS TRACKING */}
-                  {progressSubTab === 'COMPETENCY' && (() => {
-                    const compProg = dbService.getCompetencyProgress(selectedCompetencyForProgress || competencies[0]?.id || 'comp-mat-1', currentUser);
-                    const selectedCompObj = competencies.find(c => c.id === (selectedCompetencyForProgress || competencies[0]?.id));
-                    return (
-                      <div className="space-y-5">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs transition-colors">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-slate-500 dark:text-slate-400 font-medium">Pilih Kompetensi / KD:</span>
-                            <select
-                              value={selectedCompetencyForProgress}
-                              onChange={e => setSelectedCompetencyForProgress(e.target.value)}
-                              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-white rounded-xl px-3 py-1.5 cursor-pointer max-w-sm focus:ring-2 focus:ring-indigo-500"
-                            >
-                              {competencies.map(c => (
-                                <option key={c.id} value={c.id}>{c.code} — {c.statement.slice(0, 45)}...</option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {compProg && (
-                            <div className="flex flex-wrap items-center gap-3 text-xs">
-                              <div className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
-                                <span className="text-slate-500 dark:text-slate-400">Materi: </span>
-                                <strong className="text-slate-900 dark:text-white">{compProg.materialTitle}</strong>
-                              </div>
-                              <div className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
-                                <span className="text-slate-500 dark:text-slate-400">Perubahan Shift: </span>
-                                <strong className={compProg.delta >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-mono' : 'text-rose-600 dark:text-rose-400 font-mono'}>
-                                  {compProg.delta > 0 ? `+${compProg.delta.toFixed(1)}%` : `${compProg.delta.toFixed(1)}%`}
-                                </strong>
-                              </div>
-                              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-xl border ${compProg.status === 'TUNTAS' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'}`}>
-                                STATUS: {compProg.status}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        {selectedCompObj && (
-                          <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/50 rounded-2xl text-xs space-y-1">
-                            <span className="font-bold font-mono text-indigo-700 dark:text-indigo-400">{selectedCompObj.code}</span>
-                            <p className="text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
-                              {selectedCompObj.statement}
-                            </p>
-                          </div>
-                        )}
-
-                        {compProg && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {compProg.progression.map((pt, idx) => (
-                              <div key={pt.tryoutId} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4.5 shadow-xs space-y-3 transition-colors">
-                                <div className="flex items-center justify-between text-xs font-mono">
-                                  <span className="font-bold text-indigo-600 dark:text-indigo-400 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 rounded-md border border-indigo-100 dark:border-indigo-900">
-                                    {pt.tryoutCode}
-                                  </span>
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                    pt.masteryPercentage >= 75
-                                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                                      : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                                  }`}>
-                                    {pt.masteryPercentage >= 75 ? 'Tuntas' : 'Perlu Penguatan'}
-                                  </span>
-                                </div>
-                                <div>
-                                  <div className="text-3xl font-black font-mono text-slate-900 dark:text-white tracking-tight">
-                                    {pt.masteryPercentage}%
-                                  </div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">Tingkat Penguasaan KD</div>
-                                </div>
-                                <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-                                  <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                    <div
-                                      style={{ width: `${Math.min(100, pt.masteryPercentage)}%` }}
-                                      className={`h-full rounded-full transition-all duration-500 ${
-                                        pt.masteryPercentage >= 75 ? 'bg-emerald-500' : 'bg-amber-500'
-                                      }`}
-                                    />
-                                  </div>
-                                  <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                                    <span>Target 75%</span>
-                                    <span>{pt.masteryPercentage >= 75 ? 'Memenuhi Standar' : 'Di Bawah Standar'}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     );
                   })()}
