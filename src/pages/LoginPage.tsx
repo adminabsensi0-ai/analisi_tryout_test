@@ -173,16 +173,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
             <div>
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                    <span>Email, NIP, atau ID Akun</span>
-                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-normal">Admin: ketik <code className="bg-indigo-50 dark:bg-indigo-950 px-1 py-0.5 rounded font-bold font-mono">admin</code></span>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Email atau NIP Kedinasan
                   </label>
                   <div className="relative">
                     <input
                       type="text"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
-                      placeholder="admin@sekolah.com atau ketik 'admin'"
+                      placeholder="Masukkan email atau NIP kedinasan..."
                       className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                       required
                     />
@@ -191,16 +190,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                    <span>Kata Sandi</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">Sandi Admin: <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono font-bold text-slate-700 dark:text-slate-300">admin123</code></span>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Kata Sandi
                   </label>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={e => setPassword(e.target.value)}
-                      placeholder="Masukkan kata sandi (admin: admin123)..."
+                      placeholder="Masukkan kata sandi akun Anda..."
                       className="w-full pl-9 pr-10 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                       required
                     />
@@ -249,12 +247,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                 </button>
               </form>
 
-              {/* Quick Demo Login Presets */}
+              {/* Akses Cepat Evaluasi Sistem (Tanpa Menampilkan Kredensial Pribadi) */}
               <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800">
                 <div className="flex items-center justify-between mb-2.5">
                   <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-amber-500 dark:text-amber-400" />
-                    Akses Cepat (1-Klik)
+                    <Sparkles className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
+                    Akses Cepat Pengujian
                   </span>
                   <button
                     type="button"
@@ -275,14 +273,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                     <div>
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                          Login Admin Utama
+                          Akses Administrator
                         </span>
                         <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-1.5 py-0.5 rounded font-mono font-bold">
                           ADMIN
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        admin@sekolah.com (sandi: admin123) &rarr; Panel Admin
+                        Buka kontrol pusat sistem &rarr; Panel Admin
                       </span>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
@@ -297,14 +295,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                     <div>
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                          Demo Wali Kelas XII IPA 1
+                          Akses Wali Kelas
                         </span>
                         <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">
                           WALI KELAS
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Drs. Bambang Sugiarto &rarr; Dashboard Utama Wali Kelas (Bisa Pindah Mode Guru Mapel)
+                        Dashboard pembinaan &amp; rekap nilai kelas binaan
                       </span>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
@@ -319,14 +317,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                     <div>
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                          Demo Guru Pengampu Fisika
+                          Akses Guru Pengampu
                         </span>
                         <span className="text-[10px] bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-1.5 py-0.5 rounded font-mono font-bold">
                           GURU
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Ahmad Rifai, M.Pd &rarr; Aplikasi Guru
+                        Bank soal, psikometri butir soal, &amp; pembahasan
                       </span>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
