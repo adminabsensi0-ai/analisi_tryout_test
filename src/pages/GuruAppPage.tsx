@@ -2232,13 +2232,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           <th className="py-2.5 px-3">Nama Siswa</th>
                           <th className="py-2.5 px-3 w-28">Kelas</th>
                           <th className="py-2.5 px-3 w-16 text-center">L/P</th>
-                          <th className="py-2.5 px-3 w-24 text-center">Target Skor</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {filteredStudents.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="py-10 text-center text-slate-400 dark:text-slate-500 italic">
+                            <td colSpan={6} className="py-10 text-center text-slate-400 dark:text-slate-500 italic">
                               Tidak ada siswa yang terdaftar pada filter kelas ini.
                             </td>
                           </tr>
@@ -2252,14 +2251,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 <td className="py-2.5 px-3 font-mono text-slate-600 dark:text-slate-400">{s.nis}</td>
                                 <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-slate-100">{s.name}</td>
                                 <td className="py-2.5 px-3">
-                                  <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-medium px-2 py-0.5 rounded text-[11px]">
-                                    {cls?.name || s.classId}
-                                  </span>
+                                   <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-medium px-2 py-0.5 rounded text-[11px]">
+                                     {cls?.name || s.classId}
+                                   </span>
                                 </td>
                                 <td className="py-2.5 px-3 text-center font-bold text-slate-600 dark:text-slate-400">{s.gender}</td>
-                                <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700 dark:text-indigo-400">
-                                  {s.targetScore || 75.0}
-                                </td>
                               </tr>
                             );
                           })
@@ -3637,10 +3633,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 <span className="text-slate-500 dark:text-slate-400">Kelas: </span>
                                 <strong className="text-slate-900 dark:text-white">{studentProg.className}</strong>
                               </div>
-                              <div className="px-3 py-1 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-100 dark:border-indigo-900 rounded-xl">
-                                <span className="text-indigo-600 dark:text-indigo-400 font-medium">Target: </span>
-                                <strong className="text-indigo-700 dark:text-indigo-300 font-mono">{studentProg.targetScore}</strong>
-                              </div>
                               <div className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
                                 <span className="text-slate-500 dark:text-slate-400">Delta Skor: </span>
                                 <strong className={studentProg.scoreDelta >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-mono' : 'text-rose-600 dark:text-rose-400 font-mono'}>
@@ -3663,7 +3655,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         {/* Visual Trajectory Line Graph for Student */}
                         {studentProg && studentProg.points.length > 0 && (() => {
                           const pts = studentProg.points;
-                          const targetScore = studentProg.targetScore || 75;
                           const xPos = [80, 350, 620, 890];
                           const getY = (val: number) => 260 - ((Math.max(0, Math.min(100, val)) / 100) * 220);
                           const getX = (idx: number) => xPos[idx] ?? (80 + idx * 270);
@@ -3677,7 +3668,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           const classPoly = pts.map((pt, idx) => `${getX(idx).toFixed(1)},${getY(pt.classAverage || 75).toFixed(1)}`).join(' ');
                           const firstX = studentCoords[0].x;
                           const lastX = studentCoords[studentCoords.length - 1].x;
-                          const targetY = getY(targetScore).toFixed(1);
 
                           return (
                             <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
@@ -3688,7 +3678,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     <span>Grafik Perkembangan Skor — {currentStudentObj?.name || 'Siswa'} ({studentProg.className})</span>
                                   </h3>
                                   <p className="text-[11px] text-slate-500 mt-0.5">
-                                    Laju perolehan skor siswa lintas tahapan Try Out dibandingkan target individu dan rata-rata kelas.
+                                    Laju perolehan skor siswa lintas tahapan Try Out dibandingkan rata-rata kelas.
                                   </p>
                                 </div>
 
@@ -3700,10 +3690,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-3.5 h-0.5 border-t-2 border-dashed border-emerald-500 inline-block"></span>
                                     <span className="text-slate-700 dark:text-slate-300 font-medium">Rata-Rata Kelas</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-3.5 h-0.5 border-t-2 border-dashed border-amber-500 inline-block"></span>
-                                    <span className="text-slate-700 dark:text-slate-300 font-medium">Target Siswa ({targetScore})</span>
                                   </div>
                                 </div>
                               </div>
@@ -3724,12 +3710,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   {/* Horizontal Grid Lines */}
                                   <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
                                   <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
-
-                                  {/* Target / KKM Line */}
-                                  <line x1="50" y1={targetY} x2="950" y2={targetY} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
-                                  <text x="35" y={Number(targetY) + 4} textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">{targetScore}</text>
-                                  <rect x="810" y={Number(targetY) - 12} width="130" height="22" rx="6" fill="#f59e0b" />
-                                  <text x="875" y={Number(targetY) + 3} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">Target ({targetScore} Poin)</text>
 
                                   <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
                                   <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
@@ -3791,7 +3771,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         {/* Progression Cards Line Chart Simulation */}
                         {studentProg && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {studentProg.points.map((pt, idx) => (
+                            {studentProg.points.map((pt) => (
                               <div key={pt.tryoutId} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4.5 shadow-xs space-y-3 transition-colors">
                                 <div className="flex items-center justify-between text-xs">
                                   <span className="font-bold font-mono text-indigo-600 dark:text-indigo-400 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 rounded-md border border-indigo-100 dark:border-indigo-900">
@@ -3815,13 +3795,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     <strong className="text-emerald-600 dark:text-emerald-400 font-mono font-bold">{pt.totalCorrect} Soal</strong>
                                   </div>
                                   <div className="flex justify-between items-center">
-                                    <span>Status Target ({pt.targetScore}):</span>
-                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                      pt.isTargetMet
+                                    <span>Status Ketuntasan:</span>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                      pt.score >= 75
                                         ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
                                         : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
                                     }`}>
-                                      {pt.isTargetMet ? 'TERCAPAI' : 'BELUM'}
+                                      {pt.score >= 75 ? 'TUNTAS (≥75)' : 'BELUM TUNTAS'}
                                     </span>
                                   </div>
                                 </div>
@@ -3830,38 +3810,115 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </div>
                         )}
 
-                        {/* Strong vs Weak Areas */}
-                        {studentProg && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                            <div className="bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl p-5 space-y-2.5">
-                              <h4 className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center space-x-2">
-                                <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                <span>Materi &amp; Kompetensi Sangat Dikuasai (Strong Areas)</span>
-                              </h4>
-                              <ul className="space-y-1.5 text-slate-700 dark:text-slate-300 pl-5 list-disc leading-relaxed">
-                                {studentProg.strongAreas.length > 0 ? (
-                                  studentProg.strongAreas.map((s, idx) => <li key={idx}><span className="font-medium text-emerald-800 dark:text-emerald-200">{s}</span></li>)
-                                ) : (
-                                  <li className="italic text-slate-500">Belum ada materi mencapai kriteria penguasaan &ge; 75%</li>
-                                )}
-                              </ul>
-                            </div>
+                        {/* Analisis Butir Nomor Soal (Pengganti Bagian Materi) */}
+                        {(() => {
+                          const activeTO = tryouts.find(t => t.id === selectedTryoutId) || tryouts[tryouts.length - 1] || tryouts[0];
+                          const studentAnswers = dbService.getAnswers().filter(
+                            a => a.studentId === activeStudentId && (!activeTO || a.tryoutId === activeTO.id)
+                          );
+                          const correctQuestionAnswers = studentAnswers.filter(a => a.isCorrect);
+                          const wrongQuestionAnswers = studentAnswers.filter(a => !a.isCorrect);
 
-                            <div className="bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/60 rounded-2xl p-5 space-y-2.5">
-                              <h4 className="font-bold text-rose-900 dark:text-rose-300 flex items-center space-x-2">
-                                <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-                                <span>Materi Memerlukan Pendampingan / Remedial (Weak Areas)</span>
-                              </h4>
-                              <ul className="space-y-1.5 text-slate-700 dark:text-slate-300 pl-5 list-disc leading-relaxed">
-                                {studentProg.weakAreas.length > 0 ? (
-                                  studentProg.weakAreas.map((w, idx) => <li key={idx}><span className="font-medium text-rose-800 dark:text-rose-200">{w}</span></li>)
-                                ) : (
-                                  <li className="italic text-slate-500">Luar biasa! Tidak ada materi di bawah KKM 75%</li>
-                                )}
-                              </ul>
+                          const getQuestionNumber = (qId: string) => {
+                            const qObj = questions.find(q => q.id === qId);
+                            if (qObj?.questionNumber) return `No. ${qObj.questionNumber}`;
+                            if (qObj?.uniqueCode) {
+                              const match = qObj.uniqueCode.match(/(\d+)$/);
+                              if (match) return `No. ${parseInt(match[1], 10)}`;
+                              return qObj.uniqueCode;
+                            }
+                            return 'Soal';
+                          };
+
+                          return (
+                            <div className="space-y-3 pt-2">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+                                <div>
+                                  <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <FileCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                    <span>Analisis Butir Nomor Soal Siswa — {activeTO ? `${activeTO.code} (${activeTO.title})` : 'Try Out Terpilih'}</span>
+                                  </h4>
+                                  <p className="text-[11px] text-slate-500 mt-0.5">
+                                    Pemetaan butir nomor soal yang berhasil dijawab benar versus nomor soal yang salah/perlu remedial.
+                                  </p>
+                                </div>
+                                <div className="text-xs font-mono font-semibold text-slate-600 dark:text-slate-400">
+                                  Total: <strong className="text-emerald-600 dark:text-emerald-400">{correctQuestionAnswers.length} Benar</strong> / <strong className="text-rose-600 dark:text-rose-400">{wrongQuestionAnswers.length} Salah</strong> ({studentAnswers.length} Soal)
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                                {/* Nomor Soal Benar */}
+                                <div className="bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl p-5 space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center space-x-2">
+                                      <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                      <span>Nomor Soal Dijawab Benar</span>
+                                    </h4>
+                                    <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
+                                      {correctQuestionAnswers.length} Nomor
+                                    </span>
+                                  </div>
+
+                                  {correctQuestionAnswers.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2 pt-1">
+                                      {correctQuestionAnswers.map((ans, idx) => (
+                                        <div
+                                          key={ans.id || idx}
+                                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 text-slate-800 dark:text-slate-200 font-mono shadow-2xs"
+                                        >
+                                          <span className="font-bold text-emerald-700 dark:text-emerald-400">{getQuestionNumber(ans.questionId)}</span>
+                                          <span className="text-[10px] text-slate-400">({ans.studentAnswer})</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-slate-500 italic py-2">
+                                      Belum ada butir soal dijawab benar pada paket Try Out ini.
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Nomor Soal Salah / Perlu Remedial */}
+                                <div className="bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/60 rounded-2xl p-5 space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="font-bold text-rose-900 dark:text-rose-300 flex items-center space-x-2">
+                                      <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                                      <span>Nomor Soal Perlu Pembahasan / Remedial</span>
+                                    </h4>
+                                    <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200">
+                                      {wrongQuestionAnswers.length} Nomor
+                                    </span>
+                                  </div>
+
+                                  {wrongQuestionAnswers.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2 pt-1">
+                                      {wrongQuestionAnswers.map((ans, idx) => (
+                                        <div
+                                          key={ans.id || idx}
+                                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 text-slate-800 dark:text-slate-200 font-mono shadow-2xs"
+                                        >
+                                          <span className="font-bold text-rose-700 dark:text-rose-400">{getQuestionNumber(ans.questionId)}</span>
+                                          <span className="text-[10px] text-rose-600 dark:text-rose-400 line-through">
+                                            {ans.studentAnswer || 'Kosong'}
+                                          </span>
+                                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                                            ✓ {ans.correctAnswer}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-emerald-700 dark:text-emerald-400 font-medium py-2 flex items-center gap-1.5">
+                                      <CheckCircle className="w-4 h-4" />
+                                      <span>Luar biasa! Seluruh butir soal dijawab dengan benar sempurna.</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     );
                   })()}
