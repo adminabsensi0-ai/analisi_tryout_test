@@ -20,7 +20,7 @@ import {
 import { ExportService, ReportTestSuiteResult } from '../services/export';
 import { ScoringService, CalculationResult, ScoringTestCaseResult } from '../services/scoring';
 import { ExplanationService, ExplanationTestSuiteResult } from '../services/explanation';
-import { ProgressService, ProgressTestSuiteResult } from '../services/progress';
+
 import { ProductionValidationSuiteResult } from '../services/productionValidation';
 import {
   User, Question, Tryout, SheetImportPreviewItem, Explanation, Subject,
@@ -345,8 +345,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [selectedStudentForProgress, setSelectedStudentForProgress] = useState<string>('s-1');
   const [selectedClassForProgress, setSelectedClassForProgress] = useState<string>('c-xii-ipa1');
   const [selectedSubjectForProgress, setSelectedSubjectForProgress] = useState<string>('subj-mat');
-  const [selectedCompetencyForProgress, setSelectedCompetencyForProgress] = useState<string>('comp-mat-1');
-  const [progressTestResult, setProgressTestResult] = useState<ProgressTestSuiteResult | null>(null);
 
   // Scoring Engine Test & Simulator States (Phase 8 Specification)
   const [scoringTestResult, setScoringTestResult] = useState<{
