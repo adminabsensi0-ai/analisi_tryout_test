@@ -173,15 +173,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
             <div>
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Email atau NIP Kedinasan
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
+                    <span>Email, NIP, atau ID Akun</span>
+                    <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-normal">Admin: ketik <code className="bg-indigo-50 dark:bg-indigo-950 px-1 py-0.5 rounded font-bold font-mono">admin</code></span>
                   </label>
                   <div className="relative">
                     <input
                       type="text"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
-                      placeholder="Email (admin@sekolah.sch.id) atau NIP (197205151998021001)"
+                      placeholder="admin@sekolah.sch.id / ketik 'admin' / NIP"
                       className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                       required
                     />
@@ -190,15 +191,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Kata Sandi
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
+                    <span>Kata Sandi</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">Sandi Admin: <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono font-bold text-slate-700 dark:text-slate-300">password123</code></span>
                   </label>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={e => setPassword(e.target.value)}
-                      placeholder="Masukkan kata sandi akun Anda..."
+                      placeholder="Masukkan kata sandi (default: password123)..."
                       className="w-full pl-9 pr-10 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                       required
                     />
