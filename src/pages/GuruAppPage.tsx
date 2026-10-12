@@ -387,6 +387,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [studentTryoutFilter, setStudentTryoutFilter] = useState('to-3');
   const [studentQuestionTab, setStudentQuestionTab] = useState<'ALL' | 'CORRECT' | 'INCORRECT'>('ALL');
   const [psychometricsTryoutId, setPsychometricsTryoutId] = useState('to-3');
+  const [psychometricsClassFilter, setPsychometricsClassFilter] = useState('ALL');
   const [selectedStudentForAnalytics, setSelectedStudentForAnalytics] = useState<string>('s-1');
   const [analyticsTestResult, setAnalyticsTestResult] = useState<AnalyticsTestSuiteResult | null>(null);
   const [benchmarkResult, setBenchmarkResult] = useState<any | null>(null);
@@ -775,7 +776,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const questionAnalysisList: QuestionAnalysisResult[] = dbService.getQuestionAnalysis(
     activePsychometricsTryoutId,
     selectedSubjectId,
-    analyticsClassFilter === 'ALL' ? undefined : analyticsClassFilter,
+    psychometricsClassFilter === 'ALL' ? undefined : psychometricsClassFilter,
     currentUser
   );
 
@@ -3247,12 +3248,28 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             ))}
                           </select>
 
+                          <span className="text-slate-500 dark:text-slate-400 font-medium ml-2">Kelas / Rombel:</span>
+                          <select
+                            value={psychometricsClassFilter}
+                            onChange={e => setPsychometricsClassFilter(e.target.value)}
+                            className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-slate-800 dark:text-slate-200 font-semibold focus:outline-none"
+                          >
+                            <option value="ALL">Semua Kelas (Angkatan)</option>
+                            {classes.map(c => (
+                              <option key={c.id} value={c.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+
                           <button
                             onClick={() => {
                               const activeTo = tryouts.find(t => t.id === psychometricsTryoutId) || tryouts[0];
                               const activeSub = subjects.find(s => s.id === selectedSubjectId);
+                              const activeCls = classes.find(c => c.id === psychometricsClassFilter);
+                              const classSuffix = activeCls ? `_${activeCls.name.replace(/\s+/g, '_')}` : '_Semua_Kelas';
                               ExportService.exportItemAnalysisExcel(
-                                activeTo ? `${activeTo.code}_${activeTo.title}` : 'Try_Out',
+                                activeTo ? `${activeTo.code}_${activeTo.title}${classSuffix}` : 'Try_Out',
                                 activeSub ? activeSub.name : 'Mapel',
                                 questionAnalysisList
                               );
