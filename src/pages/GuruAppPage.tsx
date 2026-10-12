@@ -1332,22 +1332,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-600 dark:text-slate-400 font-semibold">Bank Soal Guru</span>
-                        <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold">
-                          <BookOpen className="w-4 h-4" />
-                        </div>
-                      </div>
-                      <div className="text-3xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
-                        {questions.length} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">Butir</span>
-                      </div>
-                      <div className="text-[11px] text-teal-700 dark:text-teal-300 font-medium flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-                        <span>Sesuai mata pelajaran yang Anda ampu</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all space-y-2">
-                      <div className="flex items-center justify-between">
                         <span className="text-xs text-slate-600 dark:text-slate-400 font-semibold">Try Out Terjadwal</span>
                         <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
                           <Layers className="w-4 h-4" />
@@ -1358,13 +1342,29 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       </div>
                       <div className="text-[11px] text-indigo-700 dark:text-indigo-300 font-medium flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                        <span>Mengandung mapel Anda</span>
+                        <span>Terhubung ke Google Form Ujian</span>
                       </div>
                     </div>
 
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-600 dark:text-slate-400 font-semibold">Siswa</span>
+                        <span className="text-xs text-slate-600 dark:text-slate-400 font-semibold">Total Respon Siswa</span>
+                        <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold">
+                          <FileSpreadsheet className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="text-3xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
+                        {scores.length} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">Submisi</span>
+                      </div>
+                      <div className="text-[11px] text-teal-700 dark:text-teal-300 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                        <span>Tersinkronisasi dari Google Sheets</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-600 dark:text-slate-400 font-semibold">Total Siswa Binaan</span>
                         <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/70 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
                           <Users className="w-4 h-4" />
                         </div>
@@ -1374,23 +1374,23 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       </div>
                       <div className="text-[11px] text-purple-700 dark:text-purple-300 font-medium flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                        <span>Di {classes.length} kelas</span>
+                        <span>Di {classes.length} rombongan belajar</span>
                       </div>
                     </div>
 
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-600 dark:text-slate-400 font-semibold">Materi &amp; Form Terintegrasi</span>
-                        <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-                          <FileText className="w-4 h-4" />
+                        <span className="text-xs text-slate-600 dark:text-slate-400 font-semibold">Tingkat Ketuntasan KKM</span>
+                        <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                          <CheckCircle className="w-4 h-4" />
                         </div>
                       </div>
                       <div className="text-3xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
-                        {materials.length} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">Modul</span>
+                        {scores.length > 0 ? Math.round((scores.filter(s => s.calculatedScore >= currentSubjectKKM).length / scores.length) * 100) : 0}%
                       </div>
-                      <div className="text-[11px] text-amber-700 dark:text-amber-300 font-medium flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                        <span>Tautan Google Form Soal Aktif</span>
+                      <div className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>Batas KKM: {currentSubjectKKM} Poin</span>
                       </div>
                     </div>
                   </div>
@@ -1495,17 +1495,17 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div
-                        onClick={() => handleTabChange('QUESTION_BANK')}
+                        onClick={() => handleTabChange('TRYOUTS')}
                         className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 rounded-2xl hover:border-teal-500 hover:shadow-xs transition-all cursor-pointer group space-y-2"
                       >
                         <div className="w-9 h-9 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-400 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
-                          <BookOpen className="w-4 h-4" />
+                          <Layers className="w-4 h-4" />
                         </div>
                         <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-teal-600 transition-colors">
-                          Bank Soal &amp; Kisi-kisi
+                          Paket Try Out Terjadwal
                         </h4>
                         <p className="text-[11px] text-slate-500 leading-relaxed">
-                          Input butir soal, kunci opsi A-E, dan level kognitif C1-C6.
+                          Integrasi tautan Google Form soal dan Google Spreadsheet respon.
                         </p>
                       </div>
 
@@ -3593,6 +3593,25 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               }`}>
                                 TREN: {studentProg.trend}
                               </span>
+
+                              <button
+                                onClick={() => {
+                                  if (currentStudentObj && studentProg) {
+                                    ExportService.exportStudentProgressExcel(
+                                      currentStudentObj.name,
+                                      currentStudentObj.nisn,
+                                      studentProg.className,
+                                      activeSubject?.name || 'Mata Pelajaran',
+                                      studentProg.points
+                                    );
+                                    triggerToast(`Laporan tren progres siswa ${currentStudentObj.name} berhasil diunduh!`);
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Unduh Progres Siswa</span>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -3903,6 +3922,24 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               <span className={`text-[10px] font-bold px-2.5 py-1 rounded-xl border ${classProg.trend === 'MENINGKAT' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800'}`}>
                                 TREN: {classProg.trend}
                               </span>
+
+                              <button
+                                onClick={() => {
+                                  if (selectedClassObj && classProg) {
+                                    ExportService.exportClassProgressExcel(
+                                      selectedClassObj.name,
+                                      activeSubject?.name || 'Mata Pelajaran',
+                                      classProg.studentCount,
+                                      classProg.points
+                                    );
+                                    triggerToast(`Laporan tren progres kelas ${selectedClassObj.name} berhasil diunduh!`);
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Unduh Progres Kelas</span>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -4075,11 +4112,28 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </div>
 
                           {subjProg && (
-                            <div className="flex items-center space-x-3 text-xs">
+                            <div className="flex flex-wrap items-center gap-3 text-xs">
                               <span className="text-slate-600 dark:text-slate-300">Delta Progress: <strong className={subjProg.delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>{subjProg.delta > 0 ? `+${subjProg.delta}%` : `${subjProg.delta}%`}</strong></span>
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800">
                                 TREN: {subjProg.trend}
                               </span>
+
+                              <button
+                                onClick={() => {
+                                  if (activeSubjectObj && subjProg) {
+                                    ExportService.exportSubjectProgressExcel(
+                                      activeSubjectObj.name,
+                                      activeSubjectObj.code,
+                                      subjProg.points
+                                    );
+                                    triggerToast(`Laporan tren progres mapel ${activeSubjectObj.name} berhasil diunduh!`);
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Unduh Progres Mapel</span>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -5021,16 +5075,16 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     <div className="flex flex-wrap items-center justify-between gap-4">
                       <div>
                         <div className="flex items-center space-x-2">
-                          <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                          <FileSpreadsheet className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                           <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
-                            Pusat Ekspor Dokumen & Laporan Asesmen (Phase 11)
+                            Pusat Rekapitulasi Terpadu &amp; Berkas Resmi Asesmen
                           </h2>
-                          <span className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">
-                            PHASE 11 — FROZEN
+                          <span className="bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded">
+                            MASTER EXPORT HUB
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          Hasilkan dokumen resmi Rapor Siswa PDF, Laporan Analitik Kelas PDF, dan Workbook Excel 7-Lembar Kerja langsung dari database secara deterministik.
+                          Rangkuman komprehensif seluruh instrumen evaluasi: Unduh Master Workbook Excel gabungan (semua kelas, nilai, dan analisis butir soal) serta bundel laporan resmi per rombongan belajar.
                         </p>
                       </div>
 

@@ -769,6 +769,106 @@ export class ExportService {
   }
 
   /**
+   * Export individual student progress across tryouts
+   */
+  public static exportStudentProgressExcel(
+    studentName: string,
+    nisn: string,
+    className: string,
+    subjectName: string,
+    progressPoints: Array<{
+      tryoutCode: string;
+      tryoutTitle: string;
+      date: string;
+      score: number;
+      classAverage?: number;
+    }>
+  ) {
+    const workbook = XLSX.utils.book_new();
+    const rows = progressPoints.map((pt, idx) => ({
+      'No': idx + 1,
+      'Kode Try Out': pt.tryoutCode,
+      'Nama Try Out': pt.tryoutTitle,
+      'Tanggal': pt.date,
+      'Nilai Siswa': pt.score,
+      'Rata-Rata Kelas': pt.classAverage ?? '-',
+      'Status KKM (75)': pt.score >= 75 ? 'LULUS' : 'REMEDIAL',
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Tren Siswa');
+    const safeName = studentName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `Progres_Siswa_${safeName}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    return fileName;
+  }
+
+  /**
+   * Export class progress across tryouts
+   */
+  public static exportClassProgressExcel(
+    className: string,
+    subjectName: string,
+    studentCount: number,
+    progressPoints: Array<{
+      tryoutCode: string;
+      tryoutTitle: string;
+      averageScore: number;
+      medianScore: number;
+      highestScore: number;
+      lowestScore: number;
+      passingRatePct: number;
+    }>
+  ) {
+    const workbook = XLSX.utils.book_new();
+    const rows = progressPoints.map((pt, idx) => ({
+      'No': idx + 1,
+      'Kode Try Out': pt.tryoutCode,
+      'Nama Try Out': pt.tryoutTitle,
+      'Jumlah Siswa': studentCount,
+      'Rata-Rata Kelas': Number(pt.averageScore.toFixed(2)),
+      'Median Skor': Number(pt.medianScore.toFixed(2)),
+      'Skor Tertinggi': Number(pt.highestScore.toFixed(2)),
+      'Skor Terendah': Number(pt.lowestScore.toFixed(2)),
+      '% Tuntas KKM': `${pt.passingRatePct}%`,
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Tren Kelas');
+    const safeName = className.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `Progres_Kelas_${safeName}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    return fileName;
+  }
+
+  /**
+   * Export subject progress across tryouts
+   */
+  public static exportSubjectProgressExcel(
+    subjectName: string,
+    subjectCode: string,
+    progressPoints: Array<{
+      tryoutCode: string;
+      tryoutTitle: string;
+      averageScore: number;
+    }>
+  ) {
+    const workbook = XLSX.utils.book_new();
+    const rows = progressPoints.map((pt, idx) => ({
+      'No': idx + 1,
+      'Kode Try Out': pt.tryoutCode,
+      'Nama Try Out': pt.tryoutTitle,
+      'Rata-Rata Mapel': Number(pt.averageScore.toFixed(2)),
+      'Target KKM': 75,
+      'Status': pt.averageScore >= 75 ? 'Mencapai KKM' : 'Di Bawah KKM',
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Tren Mapel');
+    const safeName = subjectCode.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `Progres_Mapel_${safeName}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    return fileName;
+  }
+
+  /**
    * Legacy Helper Methods for backward compatibility
    */
   public static exportClassToExcel(className: string, tryoutTitle: string, students: Student[], scores: Score[]) {
