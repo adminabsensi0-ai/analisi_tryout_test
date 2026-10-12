@@ -600,6 +600,81 @@ export class ExportService {
     const sheet4 = XLSX.utils.json_to_sheet(qaRows);
     XLSX.utils.book_append_sheet(workbook, sheet4, 'Question Analysis');
 
+    // SHEET 5: COMPETENCY ANALYSIS
+    const compRows = (materials || []).map((m, idx) => {
+      const relatedQuestions = questions.filter(q => q.materialId === m.id);
+      const qIds = new Set(relatedQuestions.map(q => q.id));
+      const matAnswers = answers.filter(a => qIds.has(a.questionId));
+      const correctMat = matAnswers.filter(a => a.isCorrect).length;
+      const totalMat = matAnswers.length || 1;
+      const mastery = Math.round((correctMat / totalMat) * 100);
+
+      return {
+        'No': idx + 1,
+        'Kode Materi': m.code,
+        'Judul Pokok Bahasan': m.title,
+        'Tingkat Penguasaan Kelas (%)': mastery,
+        'Status Ketuntasan KKM': mastery >= 75 ? 'TUNTAS' : 'PERLU_REMEDIAL',
+        'Jumlah Butir Soal Terkait': relatedQuestions.length,
+      };
+    });
+    const sheet5 = XLSX.utils.json_to_sheet(compRows);
+    XLSX.utils.book_append_sheet(workbook, sheet5, 'Competency Analysis');
+
+    // SHEET 6: CLASS ANALYSIS
+    const classRows = classes.map(cls => {
+      const classStudents = students.filter(s => s.classId === cls.id);
+      const classStudentIds = new Set(classStudents.map(s => s.id));
+      const classScores = scores.filter(s => classStudentIds.has(s.studentId));
+
+      const mean = classScores.length > 0 ? classScores.reduce((a, b) => a + b.calculatedScore, 0) / classScores.length : 0;
+      const highest = classScores.length > 0 ? Math.max(...classScores.map(s => s.calculatedScore)) : 0;
+      const lowest = classScores.length > 0 ? Math.min(...classScores.map(s => s.calculatedScore)) : 0;
+      const passCount = classScores.filter(s => s.calculatedScore >= 75).length;
+      const rate = classScores.length > 0 ? (passCount / classScores.length) * 100 : 0;
+
+      return {
+        'Nama Kelas': cls.name,
+        'Tingkat Grade': cls.gradeLevel,
+        'Jumlah Peserta': classScores.length,
+        'Rata-Rata Skor': Number(mean.toFixed(2)),
+        'Skor Tertinggi': Number(highest.toFixed(2)),
+        'Skor Terendah': Number(lowest.toFixed(2)),
+        'Siswa Lulus KKM': passCount,
+        'Persentase Kelulusan (%)': Number(rate.toFixed(1)),
+      };
+    });
+    const sheet6 = XLSX.utils.json_to_sheet(classRows);
+    XLSX.utils.book_append_sheet(workbook, sheet6, 'Class Analysis');
+
+    // SHEET 7: PROGRESS
+    const progressRows = students.map((std, idx) => {
+      const studentScores = scores.filter(s => s.studentId === std.id);
+      const to3Score = studentScores.find(s => s.tryoutId === tryout.id)?.calculatedScore ?? 0;
+      const to1Score = studentScores.find(s => s.tryoutId === 'to-1')?.calculatedScore ?? Math.max(40, to3Score - 12);
+      const to2Score = studentScores.find(s => s.tryoutId === 'to-2')?.calculatedScore ?? Math.max(45, to3Score - 5);
+      const delta = to3Score - to1Score;
+
+      return {
+        'No': idx + 1,
+        'NISN': std.nisn,
+        'Nama Siswa': std.name,
+        'Skor TO-1': Number(to1Score.toFixed(1)),
+        'Skor TO-2': Number(to2Score.toFixed(1)),
+        'Skor TO-3 (Aktif)': Number(to3Score.toFixed(1)),
+        'Perubahan (Delta Progress)': Number(delta.toFixed(1)),
+        'Tren Perkembangan': delta > 0 ? 'MENINGKAT' : delta < 0 ? 'MENURUN' : 'STABIL',
+      };
+    });
+    const sheet7 = XLSX.utils.json_to_sheet(progressRows);
+    XLSX.utils.book_append_sheet(workbook, sheet7, 'Progress');
+
+    // Write File
+    const fileName = `Workbook_Laporan_Lengkap_${tryout.code}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    return fileName;
+  }
+
   /**
    * Export Item Analysis Report to Excel
    */
@@ -689,81 +764,6 @@ export class ExportService {
     XLSX.utils.book_append_sheet(workbook, sheetDetail, 'Daftar Soal');
     const safeName = studentName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const fileName = `Analisis_Siswa_${safeName}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
-    return fileName;
-  }
-
-    // SHEET 5: COMPETENCY ANALYSIS
-    const compRows = (materials || []).map((m, idx) => {
-      const relatedQuestions = questions.filter(q => q.materialId === m.id);
-      const qIds = new Set(relatedQuestions.map(q => q.id));
-      const matAnswers = answers.filter(a => qIds.has(a.questionId));
-      const correctMat = matAnswers.filter(a => a.isCorrect).length;
-      const totalMat = matAnswers.length || 1;
-      const mastery = Math.round((correctMat / totalMat) * 100);
-
-      return {
-        'No': idx + 1,
-        'Kode Materi': m.code,
-        'Judul Pokok Bahasan': m.title,
-        'Tingkat Penguasaan Kelas (%)': mastery,
-        'Status Ketuntasan KKM': mastery >= 75 ? 'TUNTAS' : 'PERLU_REMEDIAL',
-        'Jumlah Butir Soal Terkait': relatedQuestions.length,
-      };
-    });
-    const sheet5 = XLSX.utils.json_to_sheet(compRows);
-    XLSX.utils.book_append_sheet(workbook, sheet5, 'Competency Analysis');
-
-    // SHEET 6: CLASS ANALYSIS
-    const classRows = classes.map(cls => {
-      const classStudents = students.filter(s => s.classId === cls.id);
-      const classStudentIds = new Set(classStudents.map(s => s.id));
-      const classScores = scores.filter(s => classStudentIds.has(s.studentId));
-
-      const mean = classScores.length > 0 ? classScores.reduce((a, b) => a + b.calculatedScore, 0) / classScores.length : 0;
-      const highest = classScores.length > 0 ? Math.max(...classScores.map(s => s.calculatedScore)) : 0;
-      const lowest = classScores.length > 0 ? Math.min(...classScores.map(s => s.calculatedScore)) : 0;
-      const passCount = classScores.filter(s => s.calculatedScore >= 75).length;
-      const rate = classScores.length > 0 ? (passCount / classScores.length) * 100 : 0;
-
-      return {
-        'Nama Kelas': cls.name,
-        'Tingkat Grade': cls.gradeLevel,
-        'Jumlah Peserta': classScores.length,
-        'Rata-Rata Skor': Number(mean.toFixed(2)),
-        'Skor Tertinggi': Number(highest.toFixed(2)),
-        'Skor Terendah': Number(lowest.toFixed(2)),
-        'Siswa Lulus KKM': passCount,
-        'Persentase Kelulusan (%)': Number(rate.toFixed(1)),
-      };
-    });
-    const sheet6 = XLSX.utils.json_to_sheet(classRows);
-    XLSX.utils.book_append_sheet(workbook, sheet6, 'Class Analysis');
-
-    // SHEET 7: PROGRESS
-    const progressRows = students.map((std, idx) => {
-      const studentScores = scores.filter(s => s.studentId === std.id);
-      const to3Score = studentScores.find(s => s.tryoutId === tryout.id)?.calculatedScore ?? 0;
-      const to1Score = studentScores.find(s => s.tryoutId === 'to-1')?.calculatedScore ?? Math.max(40, to3Score - 12);
-      const to2Score = studentScores.find(s => s.tryoutId === 'to-2')?.calculatedScore ?? Math.max(45, to3Score - 5);
-      const delta = to3Score - to1Score;
-
-      return {
-        'No': idx + 1,
-        'NISN': std.nisn,
-        'Nama Siswa': std.name,
-        'Skor TO-1': Number(to1Score.toFixed(1)),
-        'Skor TO-2': Number(to2Score.toFixed(1)),
-        'Skor TO-3 (Aktif)': Number(to3Score.toFixed(1)),
-        'Perubahan (Delta Progress)': Number(delta.toFixed(1)),
-        'Tren Perkembangan': delta > 0 ? 'MENINGKAT' : delta < 0 ? 'MENURUN' : 'STABIL',
-      };
-    });
-    const sheet7 = XLSX.utils.json_to_sheet(progressRows);
-    XLSX.utils.book_append_sheet(workbook, sheet7, 'Progress');
-
-    // Write File
-    const fileName = `Workbook_Laporan_Lengkap_${tryout.code}.xlsx`;
     XLSX.writeFile(workbook, fileName);
     return fileName;
   }
