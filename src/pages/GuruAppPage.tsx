@@ -107,6 +107,14 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [scores, setScores] = useState<Score[]>([]);
   const [explanations, setExplanations] = useState<Explanation[]>([]);
 
+  // ── Auto-Sync State: per-tryout Google Sheet polling status ────────────────
+  const [sheetSyncStatus, setSheetSyncStatus] = useState<Record<string, {
+    lastSyncAt: Date | null;
+    status: 'idle' | 'syncing' | 'error' | 'success';
+    newCount: number;
+    errorMsg: string;
+  }>>({});
+
   // Permissions of Current Teacher
   const [allowedSubjectIds, setAllowedSubjectIds] = useState<string[]>([]);
   const [allowedClassIds, setAllowedClassIds] = useState<string[]>([]);
@@ -470,6 +478,117 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setErrorBanner(msg);
     setTimeout(() => setErrorBanner(null), 5000);
   };
+
+  // ── Auto-Sync: Fetch, parse, and import Google Sheet CSV for a tryout ────────
+  const syncTryoutFromSheet = async (tryout: Tryout) => {
+    if (!tryout.googleSheetUrl) return;
+
+    // Mark as syncing
+    setSheetSyncStatus(prev => ({
+      ...prev,
+      [tryout.id]: { lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null, status: 'syncing', newCount: 0, errorMsg: '' },
+    }));
+
+    try {
+      // 1. Fetch CSV text from public Google Sheet export URL
+      const csvText = await GoogleIntegrationService.fetchSheetCsv(tryout.googleSheetUrl);
+
+      // 2. Parse CSV into headers + rows
+      const { headers, rows } = GoogleIntegrationService.parseRawSheetText(csvText);
+      if (rows.length === 0) throw new Error('Sheet kosong atau tidak ada baris data.');
+
+      // 3. Find the subject for this tryout (use permitted subjects or fall back to all subjects)
+      const allSubjectsNow = dbService.getSubjects();
+      const permittedSubjectsNow = allSubjectsNow.filter(s => allowedSubjectIds.includes(s.id));
+      const tryoutSubject = permittedSubjectsNow[0] || allSubjectsNow[0];
+      if (!tryoutSubject) throw new Error('Mata pelajaran tidak ditemukan untuk sinkronisasi.');
+
+      // 4. Detect column mappings using unique question codes
+      const tryoutQuestions = dbService.getQuestions().filter(q => q.subjectId === tryoutSubject.id);
+      const mappingConfig = GoogleIntegrationService.detectColumnMappings(headers, tryoutQuestions);
+
+      // 5. Validate rows — produces previewItems with VALID / WARNING_MISMATCH / ERROR status
+      const allStudentsNow = dbService.getStudentsForTeacher(currentUser);
+      const allScoresNow = dbService.getScores();
+      const validationResult = GoogleIntegrationService.validateSheetImportDetailed(
+        rows,
+        tryout,
+        tryoutSubject,
+        tryoutQuestions,
+        allStudentsNow,
+        allScoresNow,
+        mappingConfig
+      );
+
+      const importableItems = validationResult.previewItems.filter(
+        item => item.status === 'VALID' || item.status === 'WARNING_MISMATCH'
+      );
+
+      if (importableItems.length === 0) {
+        // Nothing new to save — still mark success with 0 new items
+        setSheetSyncStatus(prev => ({
+          ...prev,
+          [tryout.id]: { lastSyncAt: new Date(), status: 'success', newCount: 0, errorMsg: '' },
+        }));
+        return;
+      }
+
+      // 6. Idempotent import — same pipeline as handleConfirmImport
+      const result = GoogleIntegrationService.executeIdempotentImport(
+        tryout,
+        tryoutSubject,
+        importableItems,
+        tryoutQuestions,
+        currentUser,
+        {
+          sourceType: 'GOOGLE_FORM_SYNC',
+          sourceUrl: tryout.googleSheetUrl,
+        }
+      );
+
+      // 7. Update sync status and refresh dashboard
+      setSheetSyncStatus(prev => ({
+        ...prev,
+        [tryout.id]: {
+          lastSyncAt: new Date(),
+          status: 'success',
+          newCount: result.insertedCount,
+          errorMsg: '',
+        },
+      }));
+      refreshData();
+    } catch (err: any) {
+      setSheetSyncStatus(prev => ({
+        ...prev,
+        [tryout.id]: {
+          lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null,
+          status: 'error',
+          newCount: 0,
+          errorMsg: err.message || 'Gagal sinkronisasi.',
+        },
+      }));
+    }
+  };
+
+  // ── Auto-poll every 5 minutes while GuruAppPage is mounted ───────────────────
+  useEffect(() => {
+    const SAMPLE_URL = 'https://docs.google.com/spreadsheets/d/sample/edit';
+    const autoSync = () => {
+      tryouts.forEach(to => {
+        if (to.googleSheetUrl && to.googleSheetUrl !== SAMPLE_URL) {
+          syncTryoutFromSheet(to);
+        }
+      });
+    };
+    // Initial sync after 2 s to let UI settle
+    const initial = setTimeout(autoSync, 2000);
+    // Repeat every 5 minutes
+    const interval = setInterval(autoSync, 5 * 60 * 1000);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
+  }, [tryouts]); // re-register when tryout list changes
 
   const handleTabChange = (tab: GuruTab) => {
     setIsLoading(true);
@@ -1765,17 +1884,50 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             )}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              triggerToast(`🔄 Live Sync (${to.code}): Data Google Sheet berhasil disinkronkan. Data siswa susulan telah diperbarui ke dashboard!`);
-                            }}
-                            className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-2xs cursor-pointer"
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            <span>Sinkronkan Data Google Sheet (Siswa Susulan)</span>
-                          </button>
+                          {/* ── Sinkronkan Google Sheet Button + Live Status ── */}
+                          {(() => {
+                            const syncState = sheetSyncStatus[to.id];
+                            const isSyncing = syncState?.status === 'syncing';
+                            const minutesAgo = syncState?.lastSyncAt
+                              ? Math.round((Date.now() - syncState.lastSyncAt.getTime()) / 60000)
+                              : null;
+                            return (
+                              <div className="space-y-1.5">
+                                <button
+                                  type="button"
+                                  disabled={isSyncing}
+                                  onClick={() => syncTryoutFromSheet(to)}
+                                  className={`w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-2xs cursor-pointer`}
+                                >
+                                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                  <span>{isSyncing ? 'Sedang sinkronisasi...' : 'Sinkronkan Data Google Sheet (Siswa Susulan)'}</span>
+                                </button>
 
+                                {/* Sync status indicator */}
+                                {!syncState || syncState.status === 'idle' ? (
+                                  <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">Belum disinkronkan</p>
+                                ) : syncState.status === 'syncing' ? (
+                                  <p className="text-[10px] text-teal-600 dark:text-teal-400 text-center animate-pulse">Mengambil data dari Google Sheet...</p>
+                                ) : syncState.status === 'success' ? (
+                                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 text-center flex items-center justify-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>
+                                      Terakhir sinkron:{' '}
+                                      {minutesAgo === 0 ? 'baru saja' : `${minutesAgo} menit lalu`}
+                                      {syncState.newCount > 0 && (
+                                        <> · <span className="font-bold">{syncState.newCount} data baru</span></>
+                                      )}
+                                    </span>
+                                  </p>
+                                ) : syncState.status === 'error' ? (
+                                  <p className="text-[10px] text-amber-600 dark:text-amber-400 text-center flex items-center justify-center gap-1">
+                                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                                    <span className="truncate" title={syncState.errorMsg}>{syncState.errorMsg}</span>
+                                  </p>
+                                ) : null}
+                              </div>
+                            );
+                          })()}
 
                           <button
                             type="button"

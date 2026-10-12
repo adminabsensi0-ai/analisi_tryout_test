@@ -22,6 +22,42 @@ export interface ImportValidationResult {
 
 export class GoogleIntegrationService {
   /**
+   * Extract Google Spreadsheet ID from various URL formats
+   */
+  public static extractSheetId(sheetUrl: string): string | null {
+    if (!sheetUrl) return null;
+    const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Build Google Visualization API export CSV URL (works for any sheet with public view access)
+   */
+  public static buildCsvExportUrl(sheetId: string): string {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
+  }
+
+  /**
+   * Fetch raw CSV content from a public Google Sheet
+   */
+  public static async fetchSheetCsv(sheetUrl: string): Promise<string> {
+    const sheetId = this.extractSheetId(sheetUrl);
+    if (!sheetId) {
+      throw new Error('URL Google Sheet tidak valid. Pastikan format tautan Google Spreadsheet benar.');
+    }
+    const csvUrl = this.buildCsvExportUrl(sheetId);
+    const response = await fetch(csvUrl);
+    if (!response.ok) {
+      throw new Error(`Gagal mengunduh data Sheet (${response.status} ${response.statusText}). Pastikan hak akses Sheet adalah "Siapa saja yang memiliki link dapat melihat (Viewer)".`);
+    }
+    const text = await response.text();
+    if (!text || text.trim().length === 0) {
+      throw new Error('Lembar kerja Google Sheet kosong atau tidak memiliki baris data.');
+    }
+    return text;
+  }
+
+  /**
    * 1. PARSE: Parse raw CSV / Tab-separated text from Google Sheets export or copy-paste
    */
   public static parseRawSheetText(rawText: string): ParseResult {
@@ -903,5 +939,46 @@ export class GoogleIntegrationService {
       passed: results.every(r => r.passed),
       tests: results,
     };
+  }
+
+  // ─── Auto-Sync Helpers (Feature: Poll Google Sheet CSV every 5 min) ──────────
+
+  /**
+   * Extract the spreadsheet ID from a full Google Sheets URL.
+   * Supports formats:
+   *   https://docs.google.com/spreadsheets/d/1ABC123DEF456/edit#gid=0
+   *   https://docs.google.com/spreadsheets/d/1ABC123DEF456/edit
+   *   https://docs.google.com/spreadsheets/d/1ABC123DEF456/
+   */
+  public static extractSheetId(sheetUrl: string): string | null {
+    const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Build the public CSV export URL for a given sheet ID.
+   * Requires the sheet to be shared as "Anyone with link can view".
+   */
+  public static buildCsvExportUrl(sheetId: string): string {
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
+  }
+
+  /**
+   * Fetch the raw CSV text from a Google Sheets URL.
+   * Throws an error with a user-friendly message if the sheet is inaccessible.
+   */
+  public static async fetchSheetCsv(sheetUrl: string): Promise<string> {
+    const sheetId = this.extractSheetId(sheetUrl);
+    if (!sheetId) {
+      throw new Error('URL Google Sheet tidak valid. Pastikan format URL benar.');
+    }
+    const csvUrl = this.buildCsvExportUrl(sheetId);
+    const response = await fetch(csvUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Gagal mengambil data Sheet (${response.status}). Pastikan Sheet dibagikan sebagai "Anyone with link can view".`
+      );
+    }
+    return response.text();
   }
 }
