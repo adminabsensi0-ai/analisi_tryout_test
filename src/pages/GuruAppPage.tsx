@@ -104,6 +104,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [competencies, setCompetencies] = useState<Competency[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [scores, setScores] = useState<Score[]>([]);
   const [explanations, setExplanations] = useState<Explanation[]>([]);
 
   // Permissions of Current Teacher
@@ -414,6 +415,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setTryouts(dbService.getTryoutsForTeacher(currentUser));
     setClasses(dbService.getClassesForTeacher(currentUser));
     setStudents(dbService.getStudentsForTeacher(currentUser));
+    setScores(dbService.getScores());
     setSubjects(dbService.getSubjects());
     setExplanations(dbService.getExplanations());
     setMismatchScores(dbService.getScoringMismatches());
