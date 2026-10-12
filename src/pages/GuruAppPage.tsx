@@ -379,10 +379,14 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
   // Phase 9: Analytics Engine UI States
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [analyticsSubTab, setAnalyticsSubTab] = useState<'OVERALL' | 'CLASS' | 'STUDENT' | 'PSYCHOMETRICS' | 'TESTS'>('OVERALL');
+  const [analyticsSubTab, setAnalyticsSubTab] = useState<'OVERALL' | 'CLASS' | 'STUDENT' | 'PSYCHOMETRICS'>('OVERALL');
   const [analyticsYearFilter, setAnalyticsYearFilter] = useState('ALL');
   const [analyticsGradeFilter, setAnalyticsGradeFilter] = useState('ALL');
   const [analyticsClassFilter, setAnalyticsClassFilter] = useState('ALL');
+  const [studentClassFilter, setStudentClassFilter] = useState('ALL');
+  const [studentTryoutFilter, setStudentTryoutFilter] = useState('to-3');
+  const [studentQuestionTab, setStudentQuestionTab] = useState<'ALL' | 'CORRECT' | 'INCORRECT'>('ALL');
+  const [psychometricsTryoutId, setPsychometricsTryoutId] = useState('to-3');
   const [selectedStudentForAnalytics, setSelectedStudentForAnalytics] = useState<string>('s-1');
   const [analyticsTestResult, setAnalyticsTestResult] = useState<AnalyticsTestSuiteResult | null>(null);
   const [benchmarkResult, setBenchmarkResult] = useState<any | null>(null);
@@ -763,11 +767,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
   // 3. Student Individual Analytics
   const activeStudentIdForAnalytics = selectedStudentForAnalytics || students[0]?.id || 's-1';
-  const studentAnalyticsData = dbService.getStudentAnalytics(activeStudentIdForAnalytics, selectedTryoutId);
+  const activeStudentTryoutId = studentTryoutFilter || selectedTryoutId || 'to-3';
+  const studentAnalyticsData = dbService.getStudentAnalytics(activeStudentIdForAnalytics, activeStudentTryoutId);
 
   // 4. Question Psychometric Item Analysis
+  const activePsychometricsTryoutId = psychometricsTryoutId || selectedTryoutId || 'to-3';
   const questionAnalysisList: QuestionAnalysisResult[] = dbService.getQuestionAnalysis(
-    selectedTryoutId,
+    activePsychometricsTryoutId,
     selectedSubjectId,
     analyticsClassFilter === 'ALL' ? undefined : analyticsClassFilter,
     currentUser
@@ -2371,17 +2377,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       >
                         Analisis Butir Soal
                       </button>
-                      <button
-                        onClick={() => setAnalyticsSubTab('TESTS')}
-                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center space-x-1 cursor-pointer ${
-                          analyticsSubTab === 'TESTS'
-                            ? 'bg-indigo-600 text-white shadow-sm font-bold'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300'
-                        }`}
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>Verifikasi &amp; Benchmark</span>
-                      </button>
                     </div>
                   </div>
 
@@ -2403,11 +2398,14 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-medium focus:ring-1 focus:ring-indigo-500"
                             >
                               <option value="ALL">Semua Tahun Ajaran</option>
-                              {academicYears.map(ay => (
-                                <option key={ay.id} value={ay.id}>
-                                  {ay.yearLabel} ({ay.semester})
-                                </option>
-                              ))}
+                              {academicYears.map(ay => {
+                                const semesterIndo = ay.semester === 'ODD' ? 'Ganjil' : ay.semester === 'EVEN' ? 'Genap' : ay.semester;
+                                return (
+                                  <option key={ay.id} value={ay.id}>
+                                    {ay.yearLabel} (Semester {semesterIndo})
+                                  </option>
+                                );
+                              })}
                             </select>
                           </div>
 
@@ -2507,15 +2505,16 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400 mt-1 font-mono">
                             {overallAnalyticsData.summary.passingRate}%
                           </div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">KKM $\ge 75$</div>
+                          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">KKM &ge; 75</div>
                         </div>
 
                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm transition-colors">
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Capaian Target Siswa</div>
-                          <div className="text-xl font-bold text-blue-600 dark:text-blue-400 mt-1 font-mono">
-                            {overallAnalyticsData.summary.overallAttainmentRate}%
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Siswa Lulus / Belum</div>
+                          <div className="text-xl font-bold text-slate-900 dark:text-slate-100 mt-1 font-mono">
+                            {Math.round((overallAnalyticsData.summary.totalSubmissions * overallAnalyticsData.summary.passingRate) / 100)}{' '}
+                            <span className="text-xs text-rose-500 font-normal">/ {overallAnalyticsData.summary.totalSubmissions - Math.round((overallAnalyticsData.summary.totalSubmissions * overallAnalyticsData.summary.passingRate) / 100)}</span>
                           </div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Mencapai Target Individu</div>
+                          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Berdasarkan Batas KKM</div>
                         </div>
 
                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm transition-colors">
@@ -2587,7 +2586,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               <th className="py-2.5 px-3 w-24 text-center">Median</th>
                               <th className="py-2.5 px-3 w-28 text-center">Tertinggi / Terendah</th>
                               <th className="py-2.5 px-3 w-28 text-center">% Kelulusan</th>
-                              <th className="py-2.5 px-3 w-28 text-center">% Capai Target</th>
+                              <th className="py-2.5 px-3 w-28 text-center">Siswa Lulus</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2626,8 +2625,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                       {cls.passingRate}%
                                     </span>
                                   </td>
-                                  <td className="py-2.5 px-3 text-center">
-                                    <span className="text-blue-700 dark:text-blue-400 font-bold text-xs">{cls.attainmentRate}%</span>
+                                  <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-700 dark:text-emerald-400 text-xs">
+                                    {Math.round((cls.studentCount * cls.passingRate) / 100)} / {cls.studentCount}
                                   </td>
                                 </tr>
                               ))
@@ -2659,7 +2658,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </div>
                                 <div className="text-right">
                                   <div className="font-mono font-bold text-emerald-700 dark:text-emerald-400 text-sm">{st.score}</div>
-                                  <div className="text-[10px] text-slate-500 dark:text-slate-400">Target: {st.targetScore} ({st.attainmentPercentage}%)</div>
+                                  <div className="text-[10px] text-emerald-600 font-medium">Lulus KKM</div>
                                 </div>
                               </div>
                             ))}
@@ -2670,13 +2669,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center space-x-1.5">
                               <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400" />
-                              <span>Perlu Bimbingan Khusus (At-Risk / Below Target)</span>
+                              <span>Perlu Bimbingan Khusus (Nilai di Bawah KKM)</span>
                             </span>
                           </div>
                           <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
                             {overallAnalyticsData.needsAttentionStudents.length === 0 ? (
                               <div className="py-6 text-center text-slate-400 dark:text-slate-500 italic">
-                                Seluruh siswa telah mencapai target minimum nilai.
+                                Seluruh siswa telah mencapai standar kelulusan KKM.
                               </div>
                             ) : (
                               overallAnalyticsData.needsAttentionStudents.slice(0, 5).map(st => (
@@ -2687,7 +2686,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   </div>
                                   <div className="text-right">
                                     <div className="font-mono font-bold text-rose-600 dark:text-rose-400 text-sm">{st.score}</div>
-                                    <div className="text-[10px] text-rose-500 dark:text-rose-400 font-semibold">Gap: {st.gap} poin</div>
+                                    <div className="text-[10px] text-rose-500 dark:text-rose-400 font-semibold">Di bawah KKM 75</div>
                                   </div>
                                 </div>
                               ))
@@ -2761,8 +2760,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           <span className="text-xl font-bold text-emerald-700 dark:text-emerald-400 font-mono">{classAnalyticsData.attainment.passedPercentage}%</span>
                         </div>
                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm transition-colors">
-                          <span className="text-slate-400 dark:text-slate-500 block mb-1">% Capai Target</span>
-                          <span className="text-xl font-bold text-blue-600 dark:text-blue-400 font-mono">{classAnalyticsData.attainment.targetAttainmentPercentage}%</span>
+                          <span className="text-slate-400 dark:text-slate-500 block mb-1">Jumlah Siswa Lulus</span>
+                          <span className="text-xl font-bold text-slate-800 dark:text-slate-200 font-mono">
+                            {classAnalyticsData.attainment.passedCount} / {classAnalyticsData.studentCount}
+                          </span>
                         </div>
                       </div>
 
@@ -2772,9 +2773,26 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                             Rekapitulasi Nilai Siswa {classAnalyticsData.className}
                           </span>
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {classAnalyticsData.studentRankings.length} Siswa
-                          </span>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              {classAnalyticsData.studentRankings.length} Siswa
+                            </span>
+                            <button
+                              onClick={() => {
+                                const currentCls = classes.find(c => c.id === classAnalyticsData.classId);
+                                const currentTo = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
+                                if (currentCls && currentTo) {
+                                  const classScores = dbService.getScoresByTryout(currentTo.id);
+                                  ExportService.exportClassAnalysisExcel(currentCls, currentTo, classScores, students);
+                                  triggerToast(`Laporan Rekap Nilai ${currentCls.name} berhasil diunduh!`);
+                                }
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center space-x-1 cursor-pointer transition-colors"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Unduh Excel</span>
+                            </button>
+                          </div>
                         </div>
 
                         <table className="w-full text-left text-xs">
@@ -2784,8 +2802,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               <th className="py-2.5 px-3 w-28">NISN</th>
                               <th className="py-2.5 px-3">Nama Siswa</th>
                               <th className="py-2.5 px-3 w-24 text-center">Nilai Ujian</th>
-                              <th className="py-2.5 px-3 w-24 text-center">Target</th>
-                              <th className="py-2.5 px-3 w-28 text-center">% Capaian</th>
+                              <th className="py-2.5 px-3 w-28 text-center">Status Kelulusan</th>
                               <th className="py-2.5 px-3 w-28 text-center">Status Scoring</th>
                               <th className="py-2.5 px-3 w-24 text-center">Aksi</th>
                             </tr>
@@ -2799,14 +2816,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700 dark:text-indigo-400">
                                   {st.score}
                                 </td>
-                                <td className="py-2.5 px-3 text-center font-mono text-slate-600 dark:text-slate-400">{st.targetScore}</td>
                                 <td className="py-2.5 px-3 text-center">
                                   <span
                                     className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                      st.isTargetAttained ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                                      st.score >= 75 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
                                     }`}
                                   >
-                                    {st.attainmentPercentage}%
+                                    {st.score >= 75 ? 'LULUS KKM' : 'REMEDIAL'}
                                   </span>
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
@@ -2842,40 +2858,115 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   {/* SUB-TAB 3: STUDENT INDIVIDUAL ANALYTICS */}
                   {analyticsSubTab === 'STUDENT' && (
                     <div className="space-y-4">
-                      {/* Student Selector */}
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 transition-colors">
+                      {/* Filter Bar: Cascading Class & Student Filter + Try Out Filter + Download Button */}
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors">
                         <div>
-                          <div className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                            Pilih Siswa Untuk Analisis Individu
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-1 flex items-center space-x-1.5">
+                            <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                            <span>Pilih Siswa &amp; Paket Try Out</span>
                           </div>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Evaluasi mendalam per butir soal, daya serap materi, KD, dan tren capaian target.
+                            Pilih kelas terlebih dahulu, nama siswa otomatis terfilter sesuai rombel.
                           </p>
                         </div>
 
-                        <div className="flex items-center space-x-2 text-xs">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Siswa:</span>
-                          <select
-                            value={activeStudentIdForAnalytics}
-                            onChange={e => setSelectedStudentForAnalytics(e.target.value)}
-                            className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500"
-                          >
-                            {students.map(s => {
-                              const cls = classes.find(c => c.id === s.classId);
-                              return (
-                                <option key={s.id} value={s.id}>
-                                  {s.name} ({s.nisn}) — {cls?.name || s.classId}
+                        <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                          {/* Filter 1: Pilih Kelas */}
+                          <div>
+                            <label className="text-slate-500 dark:text-slate-400 font-medium block text-[10px] mb-0.5">Filter Kelas:</label>
+                            <select
+                              value={studentClassFilter}
+                              onChange={e => {
+                                const newClass = e.target.value;
+                                setStudentClassFilter(newClass);
+                                const availableStudents = newClass === 'ALL'
+                                  ? students
+                                  : students.filter(s => s.classId === newClass);
+                                if (availableStudents.length > 0) {
+                                  setSelectedStudentForAnalytics(availableStudents[0].id);
+                                }
+                              }}
+                              className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500"
+                            >
+                              <option value="ALL">Semua Kelas</option>
+                              {classes.map(c => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
                                 </option>
-                              );
-                            })}
-                          </select>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Filter 2: Pilih Siswa (Cascaded) */}
+                          <div>
+                            <label className="text-slate-500 dark:text-slate-400 font-medium block text-[10px] mb-0.5">Pilih Siswa:</label>
+                            <select
+                              value={activeStudentIdForAnalytics}
+                              onChange={e => setSelectedStudentForAnalytics(e.target.value)}
+                              className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500 max-w-[220px]"
+                            >
+                              {(studentClassFilter === 'ALL'
+                                ? students
+                                : students.filter(s => s.classId === studentClassFilter)
+                              ).map(s => {
+                                const cls = classes.find(c => c.id === s.classId);
+                                return (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name} ({s.nisn}) — {cls?.name || s.classId}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+
+                          {/* Filter 3: Pilih Try Out */}
+                          <div>
+                            <label className="text-slate-500 dark:text-slate-400 font-medium block text-[10px] mb-0.5">Paket Try Out:</label>
+                            <select
+                              value={studentTryoutFilter}
+                              onChange={e => setStudentTryoutFilter(e.target.value)}
+                              className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500"
+                            >
+                              {tryouts.map(t => (
+                                <option key={t.id} value={t.id}>
+                                  {t.code} — {t.title}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Action: Unduh Laporan Siswa */}
+                          <div className="self-end pt-3 sm:pt-0">
+                            <button
+                              onClick={() => {
+                                if (studentAnalyticsData) {
+                                  ExportService.exportStudentPerformanceExcel(
+                                    studentAnalyticsData.studentName,
+                                    studentAnalyticsData.nisn,
+                                    studentAnalyticsData.className,
+                                    studentAnalyticsData.tryoutTitle,
+                                    studentAnalyticsData.score.calculatedScore,
+                                    studentAnalyticsData.correctCount,
+                                    studentAnalyticsData.incorrectCount,
+                                    studentAnalyticsData.unansweredCount,
+                                    studentAnalyticsData.questionPerformance
+                                  );
+                                  triggerToast(`Laporan analisis siswa ${studentAnalyticsData.studentName} berhasil diunduh!`);
+                                }
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg flex items-center space-x-1.5 shadow-xs transition-colors cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Unduh Excel</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
 
                       {studentAnalyticsData ? (
                         <div className="space-y-4">
-                          {/* Student Header & Score Card */}
-                          <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 dark:from-[#0c142b] dark:via-[#090e1f] dark:to-[#070b18] text-white rounded-xl p-5 shadow-sm space-y-4 border border-indigo-800/60 dark:border-slate-800 transition-colors">
+                          {/* Student Header & Clean Score Card */}
+                          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-[#0c142b] dark:via-[#090e1f] dark:to-[#070b18] text-white rounded-xl p-5 shadow-sm space-y-4 border border-indigo-800/60 dark:border-slate-800 transition-colors">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-800/60 dark:border-slate-800 pb-3">
                               <div>
                                 <h3 className="text-lg font-bold text-white">{studentAnalyticsData.studentName}</h3>
@@ -2892,179 +2983,144 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               </div>
                             </div>
 
-                            {/* Score & Attainment Counters */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
+                            {/* Rekap Total Soal Benar, Salah, Kosong, & Nilai */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 text-xs">
                               <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Nilai Kalkulasi Database</span>
+                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Nilai Akhir Ujian</span>
                                 <span className="text-2xl font-bold font-mono text-emerald-400 mt-1 block">
                                   {studentAnalyticsData.score.calculatedScore}
                                 </span>
-                                <span className="text-[10px] text-indigo-300 dark:text-indigo-400">Skor Bersih Ujian</span>
+                                <span className="text-[10px] text-indigo-300 dark:text-indigo-400">Skala 0 - 100</span>
                               </div>
 
                               <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Google Form Score</span>
-                                <span className="text-2xl font-bold font-mono text-white mt-1 block">
-                                  {studentAnalyticsData.score.rawScoreGForm}
+                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Status Kelulusan</span>
+                                <span className="text-2xl font-bold font-mono mt-1 block text-white">
+                                  {studentAnalyticsData.score.calculatedScore >= 75 ? (
+                                    <span className="text-emerald-400">LULUS</span>
+                                  ) : (
+                                    <span className="text-rose-400">REMEDIAL</span>
+                                  )}
                                 </span>
-                                <span
-                                  className={`text-[10px] font-bold px-1 rounded ${
-                                    studentAnalyticsData.score.scoringStatus === 'MATCH'
-                                      ? 'text-emerald-400'
-                                      : 'text-amber-400 bg-amber-950/60'
-                                  }`}
-                                >
-                                  {studentAnalyticsData.score.scoringStatus}
-                                </span>
+                                <span className="text-[10px] text-indigo-300 dark:text-indigo-400">Batas KKM: 75</span>
                               </div>
 
                               <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Target Nilai</span>
-                                <span className="text-2xl font-bold font-mono text-cyan-300 mt-1 block">
-                                  {studentAnalyticsData.targetScore}
-                                </span>
-                                <span className="text-[10px] text-indigo-300 dark:text-indigo-400">Target Belajar</span>
-                              </div>
-
-                              <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Capaian Target</span>
-                                <span className="text-2xl font-bold font-mono text-white mt-1 block">
-                                  {studentAnalyticsData.attainment.percentage}%
-                                </span>
-                                <span
-                                  className={`text-[10px] font-bold px-1 rounded ${
-                                    studentAnalyticsData.attainment.status === 'TERCAPAI'
-                                      ? 'text-emerald-400'
-                                      : 'text-rose-400'
-                                  }`}
-                                >
-                                  {studentAnalyticsData.attainment.status === 'TERCAPAI' ? 'Tercapai' : 'Belum Tercapai'}{' '}
-                                  ({studentAnalyticsData.attainment.gap > 0 ? `+${studentAnalyticsData.attainment.gap}` : studentAnalyticsData.attainment.gap})
-                                </span>
-                              </div>
-
-                              <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Butir Benar</span>
+                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Total Soal Benar</span>
                                 <span className="text-2xl font-bold font-mono text-emerald-300 mt-1 block">
                                   {studentAnalyticsData.correctCount} Soal
                                 </span>
-                                <span className="text-[10px] text-indigo-300 dark:text-indigo-400">Jawaban Tepat</span>
+                                <span className="text-[10px] text-emerald-400">
+                                  {Math.round((studentAnalyticsData.correctCount / (studentAnalyticsData.questionPerformance.length || 1)) * 100)}% dari total soal
+                                </span>
                               </div>
 
                               <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Butir Salah / Kosong</span>
+                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Total Soal Salah</span>
                                 <span className="text-2xl font-bold font-mono text-rose-300 mt-1 block">
-                                  {studentAnalyticsData.incorrectCount} / {studentAnalyticsData.unansweredCount}
+                                  {studentAnalyticsData.incorrectCount} Soal
                                 </span>
-                                <span className="text-[10px] text-rose-300">Perlu Koreksi</span>
+                                <span className="text-[10px] text-rose-400">Jawaban keliru</span>
+                              </div>
+
+                              <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
+                                <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Tidak Terjawab / Kosong</span>
+                                <span className="text-2xl font-bold font-mono text-amber-300 mt-1 block">
+                                  {studentAnalyticsData.unansweredCount} Soal
+                                </span>
+                                <span className="text-[10px] text-amber-300">Belum diisi siswa</span>
                               </div>
                             </div>
                           </div>
 
-                          {/* Strong Material vs Weak Material */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm space-y-3 transition-colors">
-                              <div className="flex items-center justify-between text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
-                                <span className="flex items-center space-x-1.5">
-                                  <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                  <span>Materi Kuat Siswa (Strong Material &ge; 75%)</span>
-                                </span>
-                                <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded text-[10px]">
-                                  {studentAnalyticsData.strongMaterials.length} Topik
-                                </span>
-                              </div>
-
-                              {studentAnalyticsData.strongMaterials.length === 0 ? (
-                                <p className="text-xs text-slate-400 dark:text-slate-500 italic py-2">
-                                  Belum ada materi dengan tingkat penguasaan di atas 75%.
-                                </p>
-                              ) : (
-                                <div className="space-y-2">
-                                  {studentAnalyticsData.strongMaterials.map(m => (
-                                    <div key={m.materialId} className="bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 rounded-lg p-2.5 text-xs">
-                                      <div className="flex items-center justify-between font-bold text-emerald-950 dark:text-emerald-200">
-                                        <span>{m.title}</span>
-                                        <span className="font-mono text-emerald-700 dark:text-emerald-400">{m.masteryPercentage}%</span>
-                                      </div>
-                                      <div className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-0.5">
-                                        {m.correct} benar dari {m.total} butir soal
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm space-y-3 transition-colors">
-                              <div className="flex items-center justify-between text-xs font-bold text-rose-800 dark:text-rose-300 uppercase tracking-wider">
-                                <span className="flex items-center space-x-1.5">
-                                  <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400" />
-                                  <span>Materi Lemah / Butuh Remedial (Weak Material &lt; 70%)</span>
-                                </span>
-                                <span className="bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded text-[10px]">
-                                  {studentAnalyticsData.weakMaterials.length} Topik
-                                </span>
-                              </div>
-
-                              {studentAnalyticsData.weakMaterials.length === 0 ? (
-                                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold py-2">
-                                  Sangat baik! Seluruh materi dikuasai di atas ambang batas remedial.
-                                </p>
-                              ) : (
-                                <div className="space-y-2">
-                                  {studentAnalyticsData.weakMaterials.map(m => (
-                                    <div key={m.materialId} className="bg-rose-50/60 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-800/60 rounded-lg p-2.5 text-xs">
-                                      <div className="flex items-center justify-between font-bold text-rose-950 dark:text-rose-200">
-                                        <span>{m.title}</span>
-                                        <span className="font-mono text-rose-700 dark:text-rose-400">{m.masteryPercentage}%</span>
-                                      </div>
-                                      <div className="text-[10px] text-rose-700 dark:text-rose-400 mt-0.5">
-                                        Baru {m.correct} benar dari {m.total} butir soal. Perlu penguatan konsep.
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Progress Chart/Trend */}
+                          {/* Rekap Tren Progres Antar Try Out */}
                           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm space-y-3 transition-colors">
                             <div className="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                               <span className="flex items-center space-x-1.5">
                                 <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                                <span>Riwayat Tren Progres (Try Out 1 s.d. Try Out 4)</span>
+                                <span>Riwayat Tren Progres Try Out</span>
                               </span>
                               <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
-                                Target Siswa: <strong className="text-slate-900 dark:text-slate-100">{studentAnalyticsData.targetScore}</strong>
+                                Perbandingan nilai siswa pada seluruh Try Out yang telah diikuti
                               </span>
                             </div>
 
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                              {studentAnalyticsData.progress.map((p) => (
-                                <div key={p.tryoutId} className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 text-xs space-y-1">
-                                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 font-medium">
-                                    <span>{p.tryoutCode}</span>
-                                    <span className="text-[10px]">{p.date}</span>
+                              {studentAnalyticsData.progress.map((p, pIdx) => {
+                                const prevScore = pIdx > 0 ? studentAnalyticsData.progress[pIdx - 1].score : null;
+                                const diff = prevScore !== null ? Math.round((p.score - prevScore) * 10) / 10 : null;
+                                return (
+                                  <div
+                                    key={p.tryoutId}
+                                    onClick={() => setStudentTryoutFilter(p.tryoutId)}
+                                    className={`border rounded-lg p-3 text-xs space-y-1 cursor-pointer transition-all ${
+                                      p.tryoutId === activeStudentTryoutId
+                                        ? 'bg-indigo-50/70 dark:bg-indigo-950/50 border-indigo-500 dark:border-indigo-600 shadow-xs'
+                                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:border-indigo-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 font-medium">
+                                      <span className="font-bold">{p.tryoutCode}</span>
+                                      <span className="text-[10px]">{p.date}</span>
+                                    </div>
+                                    <div className="text-xl font-bold font-mono text-indigo-700 dark:text-indigo-400">{p.score}</div>
+                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">{p.tryoutTitle}</div>
+                                    <div className="pt-1.5 border-t border-slate-200 dark:border-slate-800 text-[10px] flex items-center justify-between">
+                                      <span className={`font-bold ${p.score >= 75 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
+                                        {p.score >= 75 ? 'Lulus KKM' : 'Remedial'}
+                                      </span>
+                                      {diff !== null && (
+                                        <span className={`font-mono font-bold ${diff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                          {diff >= 0 ? `+${diff}` : diff}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-                                  <div className="text-xl font-bold font-mono text-indigo-700 dark:text-indigo-400">{p.score}</div>
-                                  <div className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">{p.tryoutTitle}</div>
-                                  <div className="pt-1.5 border-t border-slate-200 dark:border-slate-800 text-[10px] flex items-center justify-between">
-                                    <span className="text-slate-400 dark:text-slate-500">Target: {p.targetScore}</span>
-                                    <span className={`font-bold ${p.score >= p.targetScore ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
-                                      {p.score >= p.targetScore ? 'Tercapai' : 'Belum'}
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
 
-                          {/* Question Performance Detail List */}
+                          {/* Question Performance Detail: Filter Tab (Semua, Benar Saja, Salah/Kosong Saja) */}
                           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-colors">
-                            <div className="p-3 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center space-x-1.5">
-                              <FileCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                              <span>Rincian Pengerjaan per Butir Soal</span>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center space-x-1.5">
+                                <FileCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                <span>Daftar Butir Soal ({studentAnalyticsData.tryoutCode})</span>
+                              </div>
+
+                              <div className="flex items-center space-x-1 bg-slate-200/70 dark:bg-slate-800 p-0.5 rounded-lg text-xs font-medium">
+                                <button
+                                  onClick={() => setStudentQuestionTab('ALL')}
+                                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                                    studentQuestionTab === 'ALL'
+                                      ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 font-bold shadow-xs'
+                                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                                  }`}
+                                >
+                                  Semua Soal ({studentAnalyticsData.questionPerformance.length})
+                                </button>
+                                <button
+                                  onClick={() => setStudentQuestionTab('CORRECT')}
+                                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                                    studentQuestionTab === 'CORRECT'
+                                      ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                                      : 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                                  }`}
+                                >
+                                  Daftar Soal Benar ({studentAnalyticsData.correctCount})
+                                </button>
+                                <button
+                                  onClick={() => setStudentQuestionTab('INCORRECT')}
+                                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                                    studentQuestionTab === 'INCORRECT'
+                                      ? 'bg-rose-600 text-white font-bold shadow-xs'
+                                      : 'text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                                  }`}
+                                >
+                                  Daftar Soal Salah &amp; Kosong ({studentAnalyticsData.incorrectCount + studentAnalyticsData.unansweredCount})
+                                </button>
+                              </div>
                             </div>
 
                             <table className="w-full text-left text-xs">
@@ -3072,51 +3128,59 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 <tr>
                                   <th className="py-2.5 px-3 w-12 text-center">No</th>
                                   <th className="py-2.5 px-3 w-32">Kode Soal</th>
-                                  <th className="py-2.5 px-3">Teks Ringkas</th>
-                                  <th className="py-2.5 px-3 w-24 text-center">Jawaban Siswa</th>
-                                  <th className="py-2.5 px-3 w-24 text-center">Kunci Sah</th>
-                                  <th className="py-2.5 px-3 w-28 text-center">Evaluasi</th>
+                                  <th className="py-2.5 px-3">Teks Ringkas Soal</th>
+                                  <th className="py-2.5 px-3 w-28 text-center">Jawaban Siswa</th>
+                                  <th className="py-2.5 px-3 w-28 text-center">Kunci Sah</th>
+                                  <th className="py-2.5 px-3 w-28 text-center">Hasil Evaluasi</th>
                                   <th className="py-2.5 px-3 w-20 text-center">Poin</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {studentAnalyticsData.questionPerformance.map((qp, idx) => (
-                                  <tr key={qp.questionId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                    <td className="py-2 px-3 text-center font-bold text-slate-500 dark:text-slate-400">{idx + 1}</td>
-                                    <td className="py-2 px-3 font-mono font-bold text-indigo-700 dark:text-indigo-400">{qp.uniqueCode}</td>
-                                    <td className="py-2 px-3 text-slate-700 dark:text-slate-300 line-clamp-1">{qp.questionText}</td>
-                                    <td className="py-2 px-3 text-center font-mono font-bold">
-                                      <span
-                                        className={`px-2 py-0.5 rounded text-[11px] ${
-                                          qp.studentAnswer === 'KOSONG'
-                                            ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                                            : qp.isCorrect
-                                            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
-                                            : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
-                                        }`}
-                                      >
-                                        {qp.studentAnswer}
-                                      </span>
-                                    </td>
-                                    <td className="py-2 px-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200">
-                                      {qp.correctAnswer}
-                                    </td>
-                                    <td className="py-2 px-3 text-center">
-                                      <span
-                                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                                          qp.isCorrect
-                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                                        }`}
-                                      >
-                                        {qp.isCorrect ? 'Benar' : 'Salah'}
-                                      </span>
-                                    </td>
-                                    <td className="py-2 px-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200">
-                                      {qp.score}
-                                    </td>
-                                  </tr>
-                                ))}
+                                {studentAnalyticsData.questionPerformance
+                                  .filter(qp => {
+                                    if (studentQuestionTab === 'CORRECT') return qp.isCorrect;
+                                    if (studentQuestionTab === 'INCORRECT') return !qp.isCorrect;
+                                    return true;
+                                  })
+                                  .map((qp, idx) => (
+                                    <tr key={qp.questionId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                      <td className="py-2.5 px-3 text-center font-bold text-slate-500 dark:text-slate-400">{qp.questionNumber || idx + 1}</td>
+                                      <td className="py-2.5 px-3 font-mono font-bold text-indigo-700 dark:text-indigo-400">{qp.uniqueCode}</td>
+                                      <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300 line-clamp-1">{qp.questionText}</td>
+                                      <td className="py-2.5 px-3 text-center font-mono font-bold">
+                                        <span
+                                          className={`px-2.5 py-0.5 rounded text-[11px] ${
+                                            qp.studentAnswer === 'KOSONG'
+                                              ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                                              : qp.isCorrect
+                                              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                                              : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                                          }`}
+                                        >
+                                          {qp.studentAnswer}
+                                        </span>
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200">
+                                        {qp.correctAnswer}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        <span
+                                          className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                            qp.studentAnswer === 'KOSONG'
+                                              ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                              : qp.isCorrect
+                                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                              : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                                          }`}
+                                        >
+                                          {qp.studentAnswer === 'KOSONG' ? 'Tidak Dijawab' : qp.isCorrect ? 'Benar' : 'Salah'}
+                                        </span>
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200">
+                                        {qp.score}
+                                      </td>
+                                    </tr>
+                                  ))}
                               </tbody>
                             </table>
                           </div>
@@ -3152,12 +3216,25 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             Analisis Butir Soal &amp; Pilihan Pengecoh
                           </h3>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Tingkat Kesukaran ($p$), Daya Pembeda ($D$), dan analisis pilihan pengecoh per butir soal.
+                            Rekapitulasi jumlah siswa menjawab benar, salah, kosong, tingkat kesukaran ($p$), dan daya pembeda ($D$).
                           </p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Mapel:</span>
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">Paket Try Out:</span>
+                          <select
+                            value={psychometricsTryoutId}
+                            onChange={e => setPsychometricsTryoutId(e.target.value)}
+                            className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-slate-800 dark:text-slate-200 font-semibold focus:outline-none"
+                          >
+                            {tryouts.map(t => (
+                              <option key={t.id} value={t.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
+                                {t.code} — {t.title}
+                              </option>
+                            ))}
+                          </select>
+
+                          <span className="text-slate-500 dark:text-slate-400 font-medium ml-2">Mapel:</span>
                           <select
                             value={selectedSubjectId}
                             onChange={e => setSelectedSubjectId(e.target.value)}
@@ -3169,6 +3246,23 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               </option>
                             ))}
                           </select>
+
+                          <button
+                            onClick={() => {
+                              const activeTo = tryouts.find(t => t.id === psychometricsTryoutId) || tryouts[0];
+                              const activeSub = subjects.find(s => s.id === selectedSubjectId);
+                              ExportService.exportItemAnalysisExcel(
+                                activeTo ? `${activeTo.code}_${activeTo.title}` : 'Try_Out',
+                                activeSub ? activeSub.name : 'Mapel',
+                                questionAnalysisList
+                              );
+                              triggerToast('Laporan Analisis Butir Soal Excel berhasil diunduh!');
+                            }}
+                            className="ml-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg flex items-center space-x-1 cursor-pointer transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Unduh Excel</span>
+                          </button>
                         </div>
                       </div>
 
@@ -3208,16 +3302,17 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               <th className="py-2.5 px-3 w-12 text-center">No</th>
                               <th className="py-2.5 px-3 w-28">Kode Soal</th>
                               <th className="py-2.5 px-3">Teks Ringkas &amp; Kunci</th>
+                              <th className="py-2.5 px-3 w-44 text-center">Rekap Jawaban Siswa</th>
                               <th className="py-2.5 px-3 w-28 text-center">Kesukaran (p)</th>
                               <th className="py-2.5 px-3 w-32 text-center">Daya Pembeda (D)</th>
-                              <th className="py-2.5 px-3 w-48 text-center">Sebaran Distraktor (A/B/C/D/E)</th>
-                              <th className="py-2.5 px-3 w-36 text-center">Status Informatif</th>
+                              <th className="py-2.5 px-3 w-48 text-center">Sebaran Pilihan (A/B/C/D/E)</th>
+                              <th className="py-2.5 px-3 w-36 text-center">Status Soal</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {questionAnalysisList.length === 0 ? (
                               <tr>
-                                <td colSpan={7} className="py-8 text-center text-slate-400 dark:text-slate-500 italic">
+                                <td colSpan={8} className="py-8 text-center text-slate-400 dark:text-slate-500 italic">
                                   Tidak ada butir soal pada mata pelajaran yang dipilih.
                                 </td>
                               </tr>
@@ -3231,7 +3326,23 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   <td className="py-3 px-3">
                                     <div className="text-slate-900 dark:text-slate-100 font-medium line-clamp-1">{qa.questionText}</div>
                                     <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                      Kunci: <strong className="text-emerald-700 dark:text-emerald-400">{qa.correctAnswer}</strong> | Benar: {qa.correctPercentage}% | Salah: {qa.incorrectPercentage}% | Kosong: {qa.unansweredPercentage}%
+                                      Kunci Jawaban Sah: <strong className="text-emerald-700 dark:text-emerald-400 font-mono font-bold">{qa.correctAnswer}</strong>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-3 text-center">
+                                    <div className="flex items-center justify-center space-x-1.5 text-[11px] font-mono font-bold">
+                                      <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800" title={`Benar: ${qa.correctPercentage}%`}>
+                                        {qa.correctCount} Benar
+                                      </span>
+                                      <span className="bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-800" title={`Salah: ${qa.incorrectPercentage}%`}>
+                                        {qa.incorrectCount} Salah
+                                      </span>
+                                      <span className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800" title={`Kosong: ${qa.unansweredPercentage}%`}>
+                                        {qa.unansweredCount} Kosong
+                                      </span>
+                                    </div>
+                                    <div className="text-[9px] text-slate-400 mt-1 font-mono">
+                                      Total Responden: {qa.totalRespondents} Siswa
                                     </div>
                                   </td>
                                   <td className="py-3 px-3 text-center">
@@ -3344,174 +3455,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </tbody>
                         </table>
                       </div>
-                    </div>
-                  )}
-
-                  {/* SUB-TAB 5: VERIFICATION & STRESS BENCHMARK (PHASE 9 TEST SUITE) */}
-                  {analyticsSubTab === 'TESTS' && (
-                    <div className="space-y-4">
-                      {/* Top Action Card */}
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-3 transition-colors">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center space-x-1.5">
-                              <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                              <span>Uji Validasi Sistem Analitik &amp; Performa</span>
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                              Memvalidasi secara ketat 6 skenario pengujian: Filter Bertingkat, Rekapitulasi Nilai, Akurasi Analisis Soal, Penanganan Data Kosong, Skalabilitas Dataset Besar (900+ Siswa), dan Hak Akses Guru.
-                            </p>
-                          </div>
-
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={handleExecuteAnalyticsTests}
-                              disabled={isLoading}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center space-x-1.5 shadow-sm transition-all cursor-pointer"
-                            >
-                              <Play className="w-4 h-4 fill-white" />
-                              <span>Jalankan 6 Test Case</span>
-                            </button>
-
-                            <button
-                              onClick={handleRunLargeDatasetBenchmark}
-                              disabled={isBenchmarking}
-                              className="bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center space-x-1.5 shadow-sm transition-all cursor-pointer"
-                            >
-                              <Cpu className="w-4 h-4 text-emerald-400" />
-                              <span>{isBenchmarking ? 'Memproses Benchmark...' : 'Live Benchmark 900+ Siswa'}</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {analyticsTestResult && (
-                          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                            <div className="flex items-center space-x-2">
-                              <span className="font-bold text-slate-700 dark:text-slate-300">Hasil Suite:</span>
-                              <span
-                                className={`font-bold px-2 py-0.5 rounded text-[11px] ${
-                                  analyticsTestResult.passed
-                                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                                    : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
-                                }`}
-                              >
-                                {analyticsTestResult.passed ? 'ALL SUITE PASSED (100% Deterministic)' : 'TEST FAILED'}
-                              </span>
-                              <span className="text-slate-500 dark:text-slate-400 font-mono">
-                                ({analyticsTestResult.passedTests}/{analyticsTestResult.totalTests} Lolos)
-                              </span>
-                            </div>
-                            <div className="text-slate-500 dark:text-slate-400 font-mono text-[11px]">
-                              Total Waktu Eksekusi: <strong className="text-slate-900 dark:text-slate-100">{analyticsTestResult.executionTimeMs} ms</strong>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Benchmark Live Result Box */}
-                      {benchmarkResult && (
-                        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-[#0a0f1d] dark:via-[#090b16] dark:to-[#070912] text-white rounded-xl p-5 shadow-sm space-y-3 border border-indigo-900/40 dark:border-slate-800 transition-colors">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              <Cpu className="w-5 h-5 text-emerald-400" />
-                              <span className="text-sm font-bold text-white">
-                                Hasil Live Stress Benchmark (Dataset Skala Besar)
-                              </span>
-                            </div>
-                            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded">
-                              Latency &lt; 250ms SLA Passed
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs pt-1">
-                            <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                              <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Populasi Siswa</span>
-                              <span className="text-xl font-bold font-mono text-emerald-400 mt-1 block">
-                                {benchmarkResult.studentCount}
-                              </span>
-                              <span className="text-[10px] text-indigo-300 dark:text-indigo-400">Target &ge; 900 Siswa</span>
-                            </div>
-
-                            <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                              <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Rombel / Kelas</span>
-                              <span className="text-xl font-bold font-mono text-white mt-1 block">
-                                {benchmarkResult.classCount}
-                              </span>
-                              <span className="text-[10px] text-indigo-300 dark:text-indigo-400">Target &ge; 29 Kelas</span>
-                            </div>
-
-                            <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                              <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Butir Jawaban Siswa</span>
-                              <span className="text-xl font-bold font-mono text-cyan-300 mt-1 block">
-                                {benchmarkResult.answersCount.toLocaleString()}
-                              </span>
-                              <span className="text-[10px] text-indigo-300 dark:text-indigo-400">Puluhan Ribu Baris</span>
-                            </div>
-
-                            <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                              <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Waktu Agregasi (Query)</span>
-                              <span className="text-xl font-bold font-mono text-emerald-300 mt-1 block">
-                                {benchmarkResult.aggregationTimeMs} ms
-                              </span>
-                              <span className="text-[10px] text-emerald-300">Sub-second Speed</span>
-                            </div>
-
-                            <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                              <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Rata-Rata Terhitung</span>
-                              <span className="text-xl font-bold font-mono text-white mt-1 block">
-                                {benchmarkResult.overallAverage}
-                              </span>
-                              <span className="text-[10px] text-indigo-300 dark:text-indigo-400">Distribusi Normal</span>
-                            </div>
-
-                            <div className="bg-white/10 dark:bg-slate-900/60 rounded-lg p-2.5 border border-white/5 dark:border-slate-800">
-                              <span className="text-indigo-200 dark:text-indigo-300 block text-[10px]">Tingkat Kelulusan</span>
-                              <span className="text-xl font-bold font-mono text-white mt-1 block">
-                                {benchmarkResult.overallPassingRate}%
-                              </span>
-                              <span className="text-[10px] text-indigo-300 dark:text-indigo-400">KKM 75</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Test Case Cards List */}
-                      {analyticsTestResult && (
-                        <div className="space-y-3">
-                          {analyticsTestResult.tests.map(t => (
-                            <div
-                              key={t.testId}
-                              className={`bg-white dark:bg-slate-900 border rounded-xl p-4 shadow-sm transition-all ${
-                                t.passed
-                                  ? 'border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/20 dark:bg-emerald-950/20'
-                                  : 'border-rose-200 dark:border-rose-800/80 bg-rose-50/20 dark:bg-rose-950/20'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between">
-                                <div className="space-y-1">
-                                  <div className="flex items-center space-x-2">
-                                    <span className="w-5 h-5 rounded-full bg-slate-900 dark:bg-slate-800 text-white text-[10px] font-bold flex items-center justify-center font-mono">
-                                      {t.testId}
-                                    </span>
-                                    <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">{t.name}</h4>
-                                  </div>
-                                  <p className="text-xs text-slate-700 dark:text-slate-300 pl-7 leading-relaxed">{t.message}</p>
-                                </div>
-                                <span
-                                  className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center space-x-1 ${
-                                    t.passed
-                                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                                      : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
-                                  }`}
-                                >
-                                  {t.passed ? <Check className="w-3 h-3 text-emerald-700 dark:text-emerald-400" /> : <X className="w-3 h-3 text-rose-700 dark:text-rose-400" />}
-                                  <span>{t.passed ? 'PASSED' : 'FAILED'}</span>
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

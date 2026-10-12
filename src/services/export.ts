@@ -600,6 +600,99 @@ export class ExportService {
     const sheet4 = XLSX.utils.json_to_sheet(qaRows);
     XLSX.utils.book_append_sheet(workbook, sheet4, 'Question Analysis');
 
+  /**
+   * Export Item Analysis Report to Excel
+   */
+  public static exportItemAnalysisExcel(
+    tryoutTitle: string,
+    subjectName: string,
+    questionAnalysisList: QuestionAnalysisResult[]
+  ) {
+    const workbook = XLSX.utils.book_new();
+    const rows = questionAnalysisList.map((qa, idx) => ({
+      'No Soal': qa.questionNumber || idx + 1,
+      'Kode Soal': qa.uniqueCode,
+      'Teks Soal': qa.questionText,
+      'Kunci Jawaban': qa.correctAnswer,
+      'Total Siswa Menjawab': qa.totalRespondents,
+      'Jumlah Benar': qa.correctCount,
+      'Jumlah Salah': qa.incorrectCount,
+      'Tidak Menjawab / Kosong': qa.unansweredCount,
+      '% Benar': `${qa.correctPercentage}%`,
+      '% Salah': `${qa.incorrectPercentage}%`,
+      '% Kosong': `${qa.unansweredPercentage}%`,
+      'Tingkat Kesukaran (p)': Number(qa.difficultyIndex.toFixed(2)),
+      'Kategori Kesukaran': qa.difficultyCategory,
+      'Daya Pembeda (D)': Number(qa.discriminationIndex.toFixed(2)),
+      'Kategori Daya Pembeda': qa.discriminationCategory,
+      'Pilihan A': qa.distractorCounts?.A || 0,
+      'Pilihan B': qa.distractorCounts?.B || 0,
+      'Pilihan C': qa.distractorCounts?.C || 0,
+      'Pilihan D': qa.distractorCounts?.D || 0,
+      'Pilihan E': qa.distractorCounts?.E || 0,
+      'Pilihan Kosong': qa.distractorCounts?.KOSONG || 0,
+      'Status Soal': qa.reviewRecommendation,
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Analisis Butir Soal');
+    const safeTitle = tryoutTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `Analisis_Butir_Soal_${safeTitle}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    return fileName;
+  }
+
+  /**
+   * Export Student Question Performance to Excel
+   */
+  public static exportStudentPerformanceExcel(
+    studentName: string,
+    nisn: string,
+    className: string,
+    tryoutTitle: string,
+    score: number,
+    correctCount: number,
+    incorrectCount: number,
+    unansweredCount: number,
+    questionList: Array<{
+      questionNumber?: number;
+      uniqueCode: string;
+      questionText: string;
+      studentAnswer: string;
+      correctAnswer: string;
+      isCorrect: boolean;
+      score: number;
+    }>
+  ) {
+    const workbook = XLSX.utils.book_new();
+    const summaryRows = [
+      { 'Parameter': 'Nama Siswa', 'Nilai': studentName },
+      { 'Parameter': 'NISN', 'Nilai': nisn },
+      { 'Parameter': 'Kelas', 'Nilai': className },
+      { 'Parameter': 'Paket Try Out', 'Nilai': tryoutTitle },
+      { 'Parameter': 'Total Nilai Akhir', 'Nilai': score },
+      { 'Parameter': 'Total Soal Benar', 'Nilai': correctCount },
+      { 'Parameter': 'Total Soal Salah', 'Nilai': incorrectCount },
+      { 'Parameter': 'Total Tidak Menjawab / Kosong', 'Nilai': unansweredCount },
+    ];
+    const detailRows = questionList.map((q, idx) => ({
+      'No': q.questionNumber || idx + 1,
+      'Kode Soal': q.uniqueCode,
+      'Pertanyaan': q.questionText,
+      'Jawaban Siswa': q.studentAnswer,
+      'Kunci Jawaban': q.correctAnswer,
+      'Status': q.studentAnswer === 'KOSONG' ? 'KOSONG' : q.isCorrect ? 'BENAR' : 'SALAH',
+      'Poin': q.score,
+    }));
+    const sheetSummary = XLSX.utils.json_to_sheet(summaryRows);
+    const sheetDetail = XLSX.utils.json_to_sheet(detailRows);
+    XLSX.utils.book_append_sheet(workbook, sheetSummary, 'Ringkasan');
+    XLSX.utils.book_append_sheet(workbook, sheetDetail, 'Daftar Soal');
+    const safeName = studentName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `Analisis_Siswa_${safeName}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    return fileName;
+  }
+
     // SHEET 5: COMPETENCY ANALYSIS
     const compRows = (materials || []).map((m, idx) => {
       const relatedQuestions = questions.filter(q => q.materialId === m.id);
