@@ -2328,12 +2328,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       <div className="flex items-center space-x-2">
                         <BarChart3 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                         <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Pusat Analisis Nilai &amp; Butir Soal</h2>
-                        <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                          Terverifikasi Otomatis
+                        <span className="bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 text-xs font-bold px-2.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 flex items-center space-x-1">
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Mapel: {activeSubjectObj?.name || 'Matematika'}</span>
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Agregasi analitik multi-dimensi real-time langsung dari basis data tanpa hardcoding.
+                        Agregasi analitik performa siswa dan butir soal mata pelajaran yang Anda ampu secara real-time.
                       </p>
                     </div>
 
@@ -2427,19 +2428,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </div>
 
                           <div>
-                            <label className="text-slate-500 dark:text-slate-400 font-medium block mb-1">Mata Pelajaran</label>
-                            <select
-                              value={selectedSubjectId}
-                              onChange={e => setSelectedSubjectId(e.target.value)}
-                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-medium focus:ring-1 focus:ring-indigo-500"
-                            >
-                              <option value="ALL">Semua Mapel yang Diampu</option>
-                              {permittedSubjects.map(s => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name} ({s.code})
-                                </option>
-                              ))}
-                            </select>
+                            <label className="text-slate-500 dark:text-slate-400 font-medium block mb-1">Mata Pelajaran (Diampu)</label>
+                            <div className="w-full bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-lg px-2.5 py-1.5 text-indigo-900 dark:text-indigo-200 font-bold flex items-center space-x-1.5">
+                              <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                              <span className="truncate">{activeSubjectObj?.name || 'Matematika'}</span>
+                            </div>
                           </div>
 
                           <div>
@@ -3217,7 +3210,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             Analisis Butir Soal &amp; Pilihan Pengecoh
                           </h3>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Rekapitulasi jumlah siswa menjawab benar, salah, kosong, tingkat kesukaran ($p$), dan daya pembeda ($D$).
+                            Rekapitulasi jumlah siswa menjawab benar, salah, kosong, tingkat kesukaran (p), dan daya pembeda (D).
                           </p>
                         </div>
 
@@ -3235,18 +3228,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             ))}
                           </select>
 
-                          <span className="text-slate-500 dark:text-slate-400 font-medium ml-2">Mapel:</span>
-                          <select
-                            value={selectedSubjectId}
-                            onChange={e => setSelectedSubjectId(e.target.value)}
-                            className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-slate-800 dark:text-slate-200 font-semibold focus:outline-none"
-                          >
-                            {permittedSubjects.map(s => (
-                              <option key={s.id} value={s.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
-                                {s.name} ({s.code})
-                              </option>
-                            ))}
-                          </select>
+                          <div className="flex items-center space-x-1.5 bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 rounded-lg px-2.5 py-1 text-indigo-900 dark:text-indigo-200 font-bold ml-1">
+                            <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                            <span>{activeSubjectObj?.name || 'Matematika'}</span>
+                          </div>
 
                           <span className="text-slate-500 dark:text-slate-400 font-medium ml-2">Kelas / Rombel:</span>
                           <select
