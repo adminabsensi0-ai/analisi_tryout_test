@@ -749,7 +749,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const navItems: NavItem[] = [
     { key: 'DASHBOARD', label: 'Ringkasan Master Data', icon: Layers },
     { key: 'USERS', label: 'Pengguna & Wali Kelas', icon: Users, count: teachers.length },
-    { key: 'STUDENTS', label: 'Data Siswa & Bulk Excel', icon: UserCheck, count: students.length },
+    { key: 'STUDENTS', label: 'Data Siswa', icon: UserCheck, count: students.length },
     { key: 'CLASSES', label: 'Kelas & Roster Sekolah', icon: School, count: classes.length },
     { key: 'SUBJECTS', label: 'Mata Pelajaran', icon: BookOpen, count: subjects.length },
     { key: 'ACADEMIC_YEARS', label: 'Tahun Akademik', icon: Calendar, count: academicYears.length },
@@ -1225,16 +1225,16 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
             </div>
           )}
 
-          {/* TAB 3: STUDENTS & BULK EXCEL UPLOAD */}
+          {/* TAB 3: DATA SISWA */}
           {!isLoading && activeTab === 'STUDENTS' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                    Data Siswa & Impor Massal via Excel
+                    Data Siswa
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Kelola data identitas siswa, NISN, NIS, dan target skor akademik. Gunakan Impor Excel/CSV untuk entri cepat.
+                    Kelola data identitas siswa, NISN, NIS, dan rombongan belajar kelas. Gunakan Impor Excel/CSV untuk entri massal cepat.
                   </p>
                 </div>
 
@@ -1338,14 +1338,13 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                         <th className="px-4 py-3">Nama Lengkap</th>
                         <th className="px-4 py-3 text-center">JK</th>
                         <th className="px-4 py-3">Kelas Roster</th>
-                        <th className="px-4 py-3 text-center">Target Nilai</th>
                         <th className="px-4 py-3 text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {paginatedStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="py-12 text-center text-slate-400 italic">
+                          <td colSpan={6} className="py-12 text-center text-slate-400 italic">
                             Tidak ada siswa yang sesuai kriteria.
                           </td>
                         </tr>
@@ -1380,9 +1379,6 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                               </td>
                               <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium">
                                 {cls?.name || s.classId}
-                              </td>
-                              <td className="px-4 py-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                {s.targetScore || 80}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <button
@@ -2288,17 +2284,6 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Target Nilai</label>
-                  <input
-                    type="number"
-                    value={formTargetScore}
-                    onChange={e => setFormTargetScore(Number(e.target.value))}
-                    placeholder="85"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100"
-                  />
                 </div>
               </div>
 
