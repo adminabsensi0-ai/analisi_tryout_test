@@ -3664,21 +3664,20 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         {studentProg && studentProg.points.length > 0 && (() => {
                           const pts = studentProg.points;
                           const targetScore = studentProg.targetScore || 75;
-                          const calcY = (val: number) => 175 - ((Math.max(0, Math.min(100, val)) / 100) * 140);
-                          const calcX = (idx: number) => 70 + (idx / Math.max(1, pts.length - 1)) * 510;
+                          const xPos = [80, 350, 620, 890];
+                          const getY = (val: number) => 260 - ((Math.max(0, Math.min(100, val)) / 100) * 220);
+                          const getX = (idx: number) => xPos[idx] ?? (80 + idx * 270);
 
                           const studentCoords = pts.map((pt, idx) => ({
                             ...pt,
-                            x: calcX(idx),
-                            y: calcY(pt.score),
-                            classY: calcY(pt.classAverage || 75),
+                            x: getX(idx),
+                            y: getY(pt.score),
                           }));
-
                           const studentPoly = studentCoords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
-                          const classPoly = studentCoords.map(c => `${c.x.toFixed(1)},${c.classY.toFixed(1)}`).join(' ');
-                          const firstX = studentCoords[0].x.toFixed(1);
-                          const lastX = studentCoords[studentCoords.length - 1].x.toFixed(1);
-                          const targetY = calcY(targetScore).toFixed(1);
+                          const classPoly = pts.map((pt, idx) => `${getX(idx).toFixed(1)},${getY(pt.classAverage || 75).toFixed(1)}`).join(' ');
+                          const firstX = studentCoords[0].x;
+                          const lastX = studentCoords[studentCoords.length - 1].x;
+                          const targetY = getY(targetScore).toFixed(1);
 
                           return (
                             <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
@@ -3709,8 +3708,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </div>
                               </div>
 
-                              <div className="relative w-full bg-slate-50/60 dark:bg-slate-950/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800/80">
-                                <svg className="w-full h-56 overflow-visible" viewBox="0 0 640 220" preserveAspectRatio="none">
+                              <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+                                <svg
+                                  className="w-full h-auto overflow-visible"
+                                  viewBox="0 0 1000 300"
+                                  preserveAspectRatio="xMidYMid meet"
+                                >
                                   <defs>
                                     <linearGradient id="studentAreaGrad" x1="0" y1="0" x2="0" y2="1">
                                       <stop offset="0%" stopColor="#6366f1" stopOpacity="0.25" />
@@ -3718,112 +3721,67 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     </linearGradient>
                                   </defs>
 
-                                  {/* Gridlines */}
-                                  {[100, 75, 50, 25, 0].map(val => {
-                                    const y = calcY(val);
-                                    return (
-                                      <g key={val}>
-                                        <line
-                                          x1="65"
-                                          y1={y}
-                                          x2="590"
-                                          y2={y}
-                                          stroke="currentColor"
-                                          className={val === 0 ? "text-slate-300 dark:text-slate-700" : "text-slate-200 dark:text-slate-800"}
-                                          strokeWidth="1"
-                                          strokeDasharray={val === 0 ? "none" : "3 3"}
-                                        />
-                                        <text x="56" y={y + 3.5} textAnchor="end" className="text-[10px] fill-slate-400 font-mono">
-                                          {val}
-                                        </text>
-                                      </g>
-                                    );
-                                  })}
+                                  {/* Horizontal Grid Lines */}
+                                  <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                                  <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
 
-                                  {/* Target Score Line */}
-                                  <line
-                                    x1="65"
-                                    y1={targetY}
-                                    x2="590"
-                                    y2={targetY}
-                                    stroke="#f59e0b"
-                                    strokeWidth="1.5"
-                                    strokeDasharray="4 3"
-                                  />
-                                  <rect x="525" y={Number(targetY) - 10} width="65" height="15" rx="4" fill="#f59e0b" />
-                                  <text x="557" y={Number(targetY) + 1} textAnchor="middle" className="text-[8.5px] font-mono font-bold fill-slate-950">
-                                    Target {targetScore}
-                                  </text>
+                                  {/* Target / KKM Line */}
+                                  <line x1="50" y1={targetY} x2="950" y2={targetY} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
+                                  <text x="35" y={Number(targetY) + 4} textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">{targetScore}</text>
+                                  <rect x="810" y={Number(targetY) - 12} width="130" height="22" rx="6" fill="#f59e0b" />
+                                  <text x="875" y={Number(targetY) + 3} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">Target ({targetScore} Poin)</text>
 
-                                  {/* Class Average Polyline */}
+                                  <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                                  <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
+
+                                  <line x1="50" y1="205" x2="950" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                                  <text x="35" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
+
+                                  <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
+                                  <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+
+                                  {/* Class Average Polyline (dashed emerald) */}
                                   <polyline
                                     fill="none"
                                     stroke="#10b981"
-                                    strokeWidth="2"
-                                    strokeDasharray="4 4"
+                                    strokeWidth="2.5"
+                                    strokeDasharray="6 4"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     points={classPoly}
                                   />
 
-                                  {/* Student Area Gradient */}
-                                  <polygon
-                                    fill="url(#studentAreaGrad)"
-                                    points={`${studentPoly} ${lastX},175 ${firstX},175`}
-                                  />
+                                  {/* Student Gradient Fill */}
+                                  <polygon points={`${firstX},260 ${studentPoly} ${lastX},260`} fill="url(#studentAreaGrad)" />
 
-                                  {/* Student Connected Line */}
+                                  {/* Student Connecting Line */}
                                   <polyline
                                     fill="none"
                                     stroke="#4f46e5"
-                                    strokeWidth="3.5"
+                                    strokeWidth="4"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     points={studentPoly}
                                   />
 
-                                  {/* Student Nodes */}
-                                  {studentCoords.map((node, i) => {
-                                    const yBadge = Math.max(12, node.y - 25);
-                                    return (
-                                      <g key={i}>
-                                        <rect
-                                          x={node.x - 22}
-                                          y={yBadge}
-                                          width="44"
-                                          height="18"
-                                          rx="5"
-                                          className="fill-slate-900 dark:fill-slate-100"
-                                        />
-                                        <text
-                                          x={node.x}
-                                          y={yBadge + 12}
-                                          textAnchor="middle"
-                                          className="text-[10px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700"
-                                        >
-                                          {node.score.toFixed(1)}
-                                        </text>
-                                        <circle cx={node.x} cy={node.y} r="5.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
-                                        <circle cx={node.x} cy={node.classY} r="3" fill="#10b981" />
-                                        <text
-                                          x={node.x}
-                                          y="200"
-                                          textAnchor="middle"
-                                          className="text-[11px] font-mono font-bold fill-slate-600 dark:fill-slate-400"
-                                        >
-                                          {node.tryoutCode}
-                                        </text>
-                                        <text
-                                          x={node.x}
-                                          y="213"
-                                          textAnchor="middle"
-                                          className="text-[9px] font-mono fill-slate-400"
-                                        >
-                                          (Avg {node.classAverage?.toFixed(0) || 75})
-                                        </text>
-                                      </g>
-                                    );
-                                  })}
+                                  {/* Student Nodes with Score Badges */}
+                                  {studentCoords.map((pt, i) => (
+                                    <g key={i}>
+                                      <rect x={pt.x - 30} y={pt.y - 34} width="60" height="22" rx="8" className="fill-slate-900 dark:fill-slate-100" />
+                                      <text x={pt.x} y={pt.y - 19} textAnchor="middle" className="text-[11px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700">
+                                        {pt.score.toFixed(1)}
+                                      </text>
+                                      <circle cx={pt.x} cy={pt.y} r="10" fill="#4f46e5" opacity="0.25" />
+                                      <circle cx={pt.x} cy={pt.y} r="5.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
+                                    </g>
+                                  ))}
+
+                                  {/* X-Axis Labels */}
+                                  {studentCoords.map((pt, i) => (
+                                    <text key={i} x={pt.x} y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">
+                                      {pt.tryoutCode}
+                                    </text>
+                                  ))}
                                 </svg>
                               </div>
                             </div>
@@ -3979,19 +3937,20 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         {/* Visual Trajectory Line Graph for Class */}
                         {classProg && classProg.points.length > 0 && (() => {
                           const pts = classProg.points;
-                          const calcY = (val: number) => 175 - ((Math.max(0, Math.min(100, val)) / 100) * 140);
-                          const calcX = (idx: number) => 70 + (idx / Math.max(1, pts.length - 1)) * 510;
+                          const xPos = [80, 350, 620, 890];
+                          const getY = (val: number) => 260 - ((Math.max(0, Math.min(100, val)) / 100) * 220);
+                          const getX = (idx: number) => xPos[idx] ?? (80 + idx * 270);
 
                           const viewCoords = pts.map((pt, idx) => ({
                             ...pt,
-                            x: calcX(idx),
-                            y: calcY(pt.averageScore),
+                            x: getX(idx),
+                            y: getY(pt.averageScore),
                           }));
 
                           const svgPolyPoints = viewCoords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
-                          const firstX = viewCoords[0].x.toFixed(1);
-                          const lastX = viewCoords[viewCoords.length - 1].x.toFixed(1);
-                          const kkmY = calcY(75).toFixed(1);
+                          const firstX = viewCoords[0].x;
+                          const lastX = viewCoords[viewCoords.length - 1].x;
+                          const kkmY = getY(75).toFixed(1);
 
                           return (
                             <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
@@ -4017,8 +3976,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </div>
                               </div>
 
-                              <div className="relative w-full bg-slate-50/60 dark:bg-slate-950/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800/80">
-                                <svg className="w-full h-56 overflow-visible" viewBox="0 0 640 220" preserveAspectRatio="none">
+                              <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+                                <svg
+                                  className="w-full h-auto overflow-visible"
+                                  viewBox="0 0 1000 300"
+                                  preserveAspectRatio="xMidYMid meet"
+                                >
                                   <defs>
                                     <linearGradient id="classAreaGrad" x1="0" y1="0" x2="0" y2="1">
                                       <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.25" />
@@ -4026,105 +3989,58 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     </linearGradient>
                                   </defs>
 
-                                  {/* Gridlines */}
-                                  {[100, 75, 50, 25, 0].map(val => {
-                                    const y = calcY(val);
-                                    return (
-                                      <g key={val}>
-                                        <line
-                                          x1="65"
-                                          y1={y}
-                                          x2="590"
-                                          y2={y}
-                                          stroke="currentColor"
-                                          className={val === 0 ? "text-slate-300 dark:text-slate-700" : "text-slate-200 dark:text-slate-800"}
-                                          strokeWidth="1"
-                                          strokeDasharray={val === 0 ? "none" : "3 3"}
-                                        />
-                                        <text x="56" y={y + 3.5} textAnchor="end" className="text-[10px] fill-slate-400 font-mono">
-                                          {val}
-                                        </text>
-                                      </g>
-                                    );
-                                  })}
+                                  {/* Horizontal Grid Lines */}
+                                  <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                                  <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
 
                                   {/* KKM Line */}
-                                  <line
-                                    x1="65"
-                                    y1={kkmY}
-                                    x2="590"
-                                    y2={kkmY}
-                                    stroke="#f59e0b"
-                                    strokeWidth="1.5"
-                                    strokeDasharray="4 3"
-                                  />
-                                  <rect x="525" y={Number(kkmY) - 10} width="65" height="15" rx="4" fill="#f59e0b" />
-                                  <text x="557" y={Number(kkmY) + 1} textAnchor="middle" className="text-[8.5px] font-mono font-bold fill-slate-950">
-                                    KKM (75)
-                                  </text>
+                                  <line x1="50" y1={kkmY} x2="950" y2={kkmY} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
+                                  <text x="35" y={Number(kkmY) + 4} textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">75</text>
+                                  <rect x="810" y={Number(kkmY) - 12} width="130" height="22" rx="6" fill="#f59e0b" />
+                                  <text x="875" y={Number(kkmY) + 3} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">Garis KKM (75.0 Poin)</text>
 
-                                  {/* Area Gradient */}
-                                  <polygon
-                                    fill="url(#classAreaGrad)"
-                                    points={`${svgPolyPoints} ${lastX},175 ${firstX},175`}
-                                  />
+                                  <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                                  <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
 
-                                  {/* Polyline */}
+                                  <line x1="50" y1="205" x2="950" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                                  <text x="35" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
+
+                                  <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
+                                  <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+
+                                  {/* Gradient Fill */}
+                                  <polygon points={`${firstX},260 ${svgPolyPoints} ${lastX},260`} fill="url(#classAreaGrad)" />
+
+                                  {/* Connecting Line */}
                                   <polyline
                                     fill="none"
                                     stroke="#4f46e5"
-                                    strokeWidth="3.5"
+                                    strokeWidth="4"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     points={svgPolyPoints}
                                   />
 
-                                  {/* Nodes */}
-                                  {viewCoords.map((node, i) => {
-                                    const yBadge = Math.max(12, node.y - 25);
-                                    return (
-                                      <g key={i}>
-                                        <rect
-                                          x={node.x - 22}
-                                          y={yBadge}
-                                          width="44"
-                                          height="18"
-                                          rx="5"
-                                          className="fill-slate-900 dark:fill-slate-100"
-                                        />
-                                        <text
-                                          x={node.x}
-                                          y={yBadge + 12}
-                                          textAnchor="middle"
-                                          className="text-[10px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700"
-                                        >
-                                          {node.averageScore.toFixed(1)}
-                                        </text>
-                                        <circle cx={node.x} cy={node.y} r="5.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
-                                        <text
-                                          x={node.x}
-                                          y="200"
-                                          textAnchor="middle"
-                                          className="text-[11px] font-mono font-bold fill-slate-600 dark:fill-slate-400"
-                                        >
-                                          {node.tryoutCode}
-                                        </text>
-                                        <text
-                                          x={node.x}
-                                          y="213"
-                                          textAnchor="middle"
-                                          className="text-[9px] font-mono fill-emerald-600 dark:fill-emerald-400 font-bold"
-                                        >
-                                          {node.passingRatePct}% Tuntas
-                                        </text>
-                                      </g>
-                                    );
-                                  })}
+                                  {/* Nodes with Score Badges */}
+                                  {viewCoords.map((pt, i) => (
+                                    <g key={i}>
+                                      <rect x={pt.x - 30} y={pt.y - 34} width="60" height="22" rx="8" className="fill-slate-900 dark:fill-slate-100" />
+                                      <text x={pt.x} y={pt.y - 19} textAnchor="middle" className="text-[11px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700">
+                                        {pt.averageScore.toFixed(1)}
+                                      </text>
+                                      <circle cx={pt.x} cy={pt.y} r="10" fill="#4f46e5" opacity="0.25" />
+                                      <circle cx={pt.x} cy={pt.y} r="5.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
+                                      <text x={pt.x} y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">
+                                        {pt.tryoutCode}
+                                      </text>
+                                    </g>
+                                  ))}
                                 </svg>
                               </div>
                             </div>
                           );
                         })()}
+
                       </div>
                     );
                   })()}
@@ -4168,19 +4084,20 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                         {/* Visual Trajectory Line Graph for Subject */}
                         {subjProg && points.length > 0 && (() => {
-                          const calcY = (val: number) => 175 - ((Math.max(0, Math.min(100, val)) / 100) * 140);
-                          const calcX = (idx: number) => 70 + (idx / Math.max(1, points.length - 1)) * 510;
+                          const xPos = [80, 350, 620, 890];
+                          const getY = (val: number) => 260 - ((Math.max(0, Math.min(100, val)) / 100) * 220);
+                          const getX = (idx: number) => xPos[idx] ?? (80 + idx * 270);
 
                           const viewCoords = points.map((pt, idx) => ({
                             ...pt,
-                            x: calcX(idx),
-                            y: calcY(pt.averageScore),
+                            x: getX(idx),
+                            y: getY(pt.averageScore),
                           }));
 
                           const svgPolyPoints = viewCoords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
-                          const firstX = viewCoords[0].x.toFixed(1);
-                          const lastX = viewCoords[viewCoords.length - 1].x.toFixed(1);
-                          const kkmY = calcY(75).toFixed(1);
+                          const firstX = viewCoords[0].x;
+                          const lastX = viewCoords[viewCoords.length - 1].x;
+                          const kkmY = getY(75).toFixed(1);
 
                           return (
                             <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
@@ -4206,8 +4123,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </div>
                               </div>
 
-                              <div className="relative w-full bg-slate-50/60 dark:bg-slate-950/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800/80">
-                                <svg className="w-full h-56 overflow-visible" viewBox="0 0 640 220" preserveAspectRatio="none">
+                              <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+                                <svg
+                                  className="w-full h-auto overflow-visible"
+                                  viewBox="0 0 1000 300"
+                                  preserveAspectRatio="xMidYMid meet"
+                                >
                                   <defs>
                                     <linearGradient id="subjectAreaGrad" x1="0" y1="0" x2="0" y2="1">
                                       <stop offset="0%" stopColor="#0d9488" stopOpacity="0.25" />
@@ -4215,100 +4136,52 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     </linearGradient>
                                   </defs>
 
-                                  {/* Gridlines */}
-                                  {[100, 75, 50, 25, 0].map(val => {
-                                    const y = calcY(val);
-                                    return (
-                                      <g key={val}>
-                                        <line
-                                          x1="65"
-                                          y1={y}
-                                          x2="590"
-                                          y2={y}
-                                          stroke="currentColor"
-                                          className={val === 0 ? "text-slate-300 dark:text-slate-700" : "text-slate-200 dark:text-slate-800"}
-                                          strokeWidth="1"
-                                          strokeDasharray={val === 0 ? "none" : "3 3"}
-                                        />
-                                        <text x="56" y={y + 3.5} textAnchor="end" className="text-[10px] fill-slate-400 font-mono">
-                                          {val}
-                                        </text>
-                                      </g>
-                                    );
-                                  })}
+                                  {/* Horizontal Grid Lines */}
+                                  <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                                  <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
 
                                   {/* KKM Line */}
-                                  <line
-                                    x1="65"
-                                    y1={kkmY}
-                                    x2="590"
-                                    y2={kkmY}
-                                    stroke="#f59e0b"
-                                    strokeWidth="1.5"
-                                    strokeDasharray="4 3"
-                                  />
-                                  <rect x="525" y={Number(kkmY) - 10} width="65" height="15" rx="4" fill="#f59e0b" />
-                                  <text x="557" y={Number(kkmY) + 1} textAnchor="middle" className="text-[8.5px] font-mono font-bold fill-slate-950">
-                                    KKM (75)
-                                  </text>
+                                  <line x1="50" y1={kkmY} x2="950" y2={kkmY} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
+                                  <text x="35" y={Number(kkmY) + 4} textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">75</text>
+                                  <rect x="810" y={Number(kkmY) - 12} width="130" height="22" rx="6" fill="#f59e0b" />
+                                  <text x="875" y={Number(kkmY) + 3} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">Garis KKM (75.0 Poin)</text>
 
-                                  {/* Area Gradient */}
-                                  <polygon
-                                    fill="url(#subjectAreaGrad)"
-                                    points={`${svgPolyPoints} ${lastX},175 ${firstX},175`}
-                                  />
+                                  <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                                  <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
 
-                                  {/* Polyline */}
+                                  <line x1="50" y1="205" x2="950" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                                  <text x="35" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
+
+                                  <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
+                                  <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+
+                                  {/* Gradient Fill */}
+                                  <polygon points={`${firstX},260 ${svgPolyPoints} ${lastX},260`} fill="url(#subjectAreaGrad)" />
+
+                                  {/* Connecting Line */}
                                   <polyline
                                     fill="none"
                                     stroke="#0d9488"
-                                    strokeWidth="3.5"
+                                    strokeWidth="4"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     points={svgPolyPoints}
                                   />
 
-                                  {/* Nodes */}
-                                  {viewCoords.map((node, i) => {
-                                    const yBadge = Math.max(12, node.y - 25);
-                                    return (
-                                      <g key={i}>
-                                        <rect
-                                          x={node.x - 22}
-                                          y={yBadge}
-                                          width="44"
-                                          height="18"
-                                          rx="5"
-                                          className="fill-slate-900 dark:fill-slate-100"
-                                        />
-                                        <text
-                                          x={node.x}
-                                          y={yBadge + 12}
-                                          textAnchor="middle"
-                                          className="text-[10px] font-mono font-bold fill-teal-400 dark:fill-teal-700"
-                                        >
-                                          {node.averageScore.toFixed(1)}
-                                        </text>
-                                        <circle cx={node.x} cy={node.y} r="5.5" fill="#0d9488" stroke="#ffffff" strokeWidth="2.5" />
-                                        <text
-                                          x={node.x}
-                                          y="200"
-                                          textAnchor="middle"
-                                          className="text-[11px] font-mono font-bold fill-slate-600 dark:fill-slate-400"
-                                        >
-                                          {node.tryoutCode}
-                                        </text>
-                                        <text
-                                          x={node.x}
-                                          y="213"
-                                          textAnchor="middle"
-                                          className="text-[9px] font-mono fill-slate-400"
-                                        >
-                                          Nilai Rata-Rata
-                                        </text>
-                                      </g>
-                                    );
-                                  })}
+                                  {/* Nodes with Score Badges */}
+                                  {viewCoords.map((pt, i) => (
+                                    <g key={i}>
+                                      <rect x={pt.x - 30} y={pt.y - 34} width="60" height="22" rx="8" className="fill-slate-900 dark:fill-slate-100" />
+                                      <text x={pt.x} y={pt.y - 19} textAnchor="middle" className="text-[11px] font-mono font-bold fill-teal-400 dark:fill-teal-700">
+                                        {pt.averageScore.toFixed(1)}
+                                      </text>
+                                      <circle cx={pt.x} cy={pt.y} r="10" fill="#0d9488" opacity="0.25" />
+                                      <circle cx={pt.x} cy={pt.y} r="5.5" fill="#0d9488" stroke="#ffffff" strokeWidth="2.5" />
+                                      <text x={pt.x} y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">
+                                        {pt.tryoutCode}
+                                      </text>
+                                    </g>
+                                  ))}
                                 </svg>
                               </div>
                             </div>
