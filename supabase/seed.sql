@@ -17,6 +17,7 @@ ON CONFLICT (id) DO NOTHING;
 -- 2. USERS (Admin & Guru Akun)
 INSERT INTO users (id, email, role, name)
 VALUES
+  ('u0000000-0000-0000-0000-000000000000', 'admin@sekolah.com', 'ADMIN', 'admin'),
   ('u0000000-0000-0000-0000-000000000001', 'admin@sekolah.sch.id', 'ADMIN', 'Drs. Supriyadi, M.Pd'),
   ('u0000000-0000-0000-0000-000000000002', 'bambang@sekolah.sch.id', 'WALI_KELAS', 'Drs. Bambang Sugiarto'),
   ('u0000000-0000-0000-0000-000000000003', 'siti@sekolah.sch.id', 'WALI_KELAS', 'Dra. Siti Nurhaliza'),

@@ -162,9 +162,9 @@ class AuthService {
       throw new Error('Kata sandi harus diisi dengan minimal 3 karakter.');
     }
 
-    // Alias helper: jika hanya mengetik "admin", otomatis arahkan ke admin@sekolah.sch.id
+    // Alias helper: jika mengetik "admin", otomatis arahkan ke admin@sekolah.com
     if (identifier === 'admin') {
-      identifier = 'admin@sekolah.sch.id';
+      identifier = 'admin@sekolah.com';
     }
 
     // === PRODUCTION MODE: Coba Supabase Auth dengan Fallback Cerdas ke Akun Sistem ===
@@ -207,10 +207,17 @@ class AuthService {
 
     // Ambil profil user dari database lokal
     const state = dbService.getState();
-    const localUser = state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    let localUser = state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
 
+    // Jika akun baru login via Supabase Auth dan belum ada di state lokal
     if (!localUser) {
-      throw new Error('Akun tidak ditemukan dalam database sistem. Hubungi Admin.');
+      localUser = {
+        id: data.user.id,
+        email: email,
+        role: email.toLowerCase() === 'admin@sekolah.com' || email.toLowerCase().includes('admin') ? 'ADMIN' : 'GURU',
+        name: email.toLowerCase() === 'admin@sekolah.com' ? 'admin' : (data.user.user_metadata?.name || 'Pengguna Terdaftar'),
+        createdAt: new Date().toISOString(),
+      };
     }
 
     this.persistSession(localUser);
@@ -231,7 +238,7 @@ class AuthService {
     const { users, teachers } = state;
 
     // Normalisasi alias "admin"
-    const targetId = identifier === 'admin' ? 'admin@sekolah.sch.id' : identifier;
+    const targetId = identifier === 'admin' ? 'admin@sekolah.com' : identifier;
 
     // Cari user berdasarkan email
     let user = users.find(u => u.email.toLowerCase() === targetId);
@@ -250,13 +257,25 @@ class AuthService {
       }
     }
 
-    // Khusus Admin Default: Pastikan selalu bisa login jika identifier adalah admin
-    if (!user && (targetId === 'admin@sekolah.sch.id' || targetId === 'admin')) {
+    // Khusus Akun Admin Resmi Baru: admin@sekolah.com
+    if (!user && targetId === 'admin@sekolah.com') {
+      user = {
+        id: 'u-admin-custom',
+        email: 'admin@sekolah.com',
+        role: 'ADMIN',
+        name: 'admin',
+        password: 'admin123',
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    // Khusus Admin Default Cadangan
+    if (!user && targetId === 'admin@sekolah.sch.id') {
       user = {
         id: 'u-admin',
         email: 'admin@sekolah.sch.id',
         role: 'ADMIN',
-        name: 'Drs. Supriyadi, M.Pd (Administrator Utama)',
+        name: 'Drs. Supriyadi, M.Pd (Administrator Cadangan)',
         password: 'password123',
         createdAt: new Date().toISOString(),
       };
@@ -267,12 +286,11 @@ class AuthService {
     }
 
     // Verifikasi password:
-    // Dukung password akun, atau 'password123', atau 'admin123' khusus akun admin
-    const storedPassword = user.password || 'password123';
+    const storedPassword = user.password || (user.email === 'admin@sekolah.com' ? 'admin123' : 'password123');
     const isPasswordValid =
       password === storedPassword ||
-      password === 'password123' ||
-      (user.role === 'ADMIN' && password === 'admin123');
+      (user.email === 'admin@sekolah.com' && (password === 'admin123' || password === 'password123')) ||
+      (user.role === 'ADMIN' && (password === 'admin123' || password === 'password123'));
 
     if (!isPasswordValid) {
       throw new Error('Kata sandi yang Anda masukkan salah. Periksa kembali kata sandi Anda.');

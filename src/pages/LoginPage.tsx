@@ -182,7 +182,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                       type="text"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
-                      placeholder="admin@sekolah.sch.id / ketik 'admin' / NIP"
+                      placeholder="admin@sekolah.com atau ketik 'admin'"
                       className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                       required
                     />
@@ -193,14 +193,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
                     <span>Kata Sandi</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">Sandi Admin: <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono font-bold text-slate-700 dark:text-slate-300">password123</code></span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">Sandi Admin: <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono font-bold text-slate-700 dark:text-slate-300">admin123</code></span>
                   </label>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={e => setPassword(e.target.value)}
-                      placeholder="Masukkan kata sandi (default: password123)..."
+                      placeholder="Masukkan kata sandi (admin: admin123)..."
                       className="w-full pl-9 pr-10 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                       required
                     />
@@ -254,7 +254,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                 <div className="flex items-center justify-between mb-2.5">
                   <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
                     <Sparkles className="w-3 h-3 text-amber-500 dark:text-amber-400" />
-                    Akses Demo Cepat
+                    Akses Cepat (1-Klik)
                   </span>
                   <button
                     type="button"
@@ -269,20 +269,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                   <button
                     type="button"
                     disabled={loading}
-                    onClick={() => handleQuickDemoLogin('admin@sekolah.sch.id')}
+                    onClick={() => handleQuickDemoLogin('admin@sekolah.com')}
                     className="w-full p-2.5 bg-slate-50 dark:bg-slate-950/80 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-left text-xs font-medium text-slate-900 dark:text-slate-100 flex items-center justify-between transition-all group cursor-pointer"
                   >
                     <div>
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                          Demo Admin
+                          Login Admin Utama
                         </span>
                         <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-1.5 py-0.5 rounded font-mono font-bold">
                           ADMIN
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Drs. Supriyadi, M.Pd &rarr; Panel Admin
+                        admin@sekolah.com (sandi: admin123) &rarr; Panel Admin
                       </span>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />

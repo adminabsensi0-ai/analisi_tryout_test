@@ -11,6 +11,7 @@ export const INITIAL_ACADEMIC_YEARS: AcademicYear[] = [
 ];
 
 export const INITIAL_USERS: User[] = [
+  { id: 'u-admin-custom', email: 'admin@sekolah.com', role: 'ADMIN', name: 'admin', password: 'admin123', createdAt: '2025-07-01T08:00:00Z' },
   { id: 'u-admin', email: 'admin@sekolah.sch.id', role: 'ADMIN', name: 'Drs. Supriyadi, M.Pd', password: 'password123', createdAt: '2025-07-01T08:00:00Z' },
   { id: 'u-guru1', email: 'bambang@sekolah.sch.id', role: 'WALI_KELAS', name: 'Drs. Bambang Sugiarto', password: 'password123', createdAt: '2025-07-01T08:00:00Z' },
   { id: 'u-guru2', email: 'siti@sekolah.sch.id', role: 'WALI_KELAS', name: 'Dra. Siti Nurhaliza', password: 'password123', createdAt: '2025-07-01T08:00:00Z' },
