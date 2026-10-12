@@ -956,6 +956,8 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
               </div>
             </div>
           );
+        })()}
+
         {/* TAB BUKU NILAI SISWA (GRADEBOOK MATRIX) */}
         {activeTab === 'GRADEBOOK' && (() => {
           // List of Tryouts
