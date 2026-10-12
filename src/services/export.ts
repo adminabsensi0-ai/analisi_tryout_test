@@ -868,9 +868,121 @@ export class ExportService {
     return fileName;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // ANSWER KEY TEMPLATE — Download & Upload (Google Form Integration)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Generates and triggers download of a blank answer key Excel template.
+   * @param tryoutCode   e.g. "TO-2026-01"
+   * @param tryoutTitle  Display name of the try out
+   * @param questionCount Number of questions (rows to pre-fill)
+   */
+  public static downloadAnswerKeyTemplate(
+    tryoutCode: string,
+    tryoutTitle: string,
+    questionCount: number = 40
+  ): void {
+    const rows = Array.from({ length: questionCount }, (_, i) => ({
+      'No. Soal': i + 1,
+      'Kunci Jawaban (A/B/C/D/E)': '',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // Style: column widths
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }];
+
+    // Add header notes via cell comment (using cell A1 info row prepended)
+    XLSX.utils.sheet_add_aoa(
+      ws,
+      [
+        [`Template Kunci Jawaban — ${tryoutCode}: ${tryoutTitle}`],
+        ['Isi kolom "Kunci Jawaban" dengan huruf A, B, C, D, atau E (kapital)'],
+        ['No. Soal', 'Kunci Jawaban (A/B/C/D/E)'],
+        ...Array.from({ length: questionCount }, (_, i) => [i + 1, '']),
+      ],
+      { origin: 'A1' }
+    );
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Kunci Jawaban');
+    const fileName = `Template_Kunci_${tryoutCode.replace(/[^A-Za-z0-9-]/g, '_')}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }
+
+  /**
+   * Parses an uploaded Excel file and extracts the answer key array.
+   * Returns an array of uppercase letter strings ('A'-'E') indexed by question number (0-based).
+   * Invalid or empty cells become ''.
+   * @param file  The File object from an <input type="file"> element
+   * @returns     Promise resolving to { answerKey: string[], totalQuestions: number, errors: string[] }
+   */
+  public static parseAnswerKeyFromExcel(file: File): Promise<{
+    answerKey: string[];
+    totalQuestions: number;
+    errors: string[];
+  }> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target!.result as ArrayBuffer);
+          const wb = XLSX.read(data, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+          const answerKey: string[] = [];
+          const errors: string[] = [];
+          const VALID_ANSWERS = new Set(['A', 'B', 'C', 'D', 'E']);
+
+          // Find the header row (the one containing "No. Soal" or "No")
+          let dataStartRow = -1;
+          for (let i = 0; i < Math.min(rawRows.length, 5); i++) {
+            const row = rawRows[i];
+            if (
+              row.some(
+                (cell: any) =>
+                  typeof cell === 'string' &&
+                  (cell.toLowerCase().includes('no') || cell.toLowerCase().includes('soal'))
+              )
+            ) {
+              dataStartRow = i + 1;
+              break;
+            }
+          }
+          if (dataStartRow === -1) dataStartRow = 1; // fallback: skip first row
+
+          for (let i = dataStartRow; i < rawRows.length; i++) {
+            const row = rawRows[i];
+            if (!row || row.every((c: any) => c === '' || c === null || c === undefined)) continue;
+
+            // Column 0 = No. Soal, Column 1 = Kunci Jawaban
+            const raw = String(row[1] ?? '').trim().toUpperCase();
+            if (raw === '') {
+              answerKey.push('');
+            } else if (VALID_ANSWERS.has(raw)) {
+              answerKey.push(raw);
+            } else {
+              errors.push(`Baris ${i + 1}: nilai "${row[1]}" tidak valid (harus A/B/C/D/E).`);
+              answerKey.push('');
+            }
+          }
+
+          resolve({ answerKey, totalQuestions: answerKey.length, errors });
+        } catch (err) {
+          reject(new Error(`Gagal membaca file Excel: ${(err as Error).message}`));
+        }
+      };
+      reader.onerror = () => reject(new Error('Gagal membuka file.'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
   /**
    * Legacy Helper Methods for backward compatibility
    */
+
   public static exportClassToExcel(className: string, tryoutTitle: string, students: Student[], scores: Score[]) {
     const rows = students.map((std, idx) => {
       const s = scores.find(sc => sc.studentId === std.id);

@@ -133,12 +133,40 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [qStatus, setQStatus] = useState<QuestionStatus>('ACTIVE');
   const [selectedPassFailTO, setSelectedPassFailTO] = useState<string>('TO 4');
 
-  // TryOut Dynamic Modal State
   const [showTryoutModal, setShowTryoutModal] = useState(false);
   const [newToCode, setNewToCode] = useState('');
   const [newToTitle, setNewToTitle] = useState('');
   const [newToGFormUrl, setNewToGFormUrl] = useState('');
   const [newToGSheetUrl, setNewToGSheetUrl] = useState('');
+  // Answer key state for the tryout modal
+  const [newToQuestionCount, setNewToQuestionCount] = useState(40);
+  const [newToAnswerKey, setNewToAnswerKey] = useState<string[]>(Array(40).fill(''));
+  const [answerKeyUploadErrors, setAnswerKeyUploadErrors] = useState<string[]>([]);
+  const [answerKeyUploadSuccess, setAnswerKeyUploadSuccess] = useState(false);
+
+  // Sync answer key length when question count changes
+  const handleQuestionCountChange = (count: number) => {
+    setNewToQuestionCount(count);
+    setNewToAnswerKey(prev => {
+      const next = Array(count).fill('');
+      return next.map((_, i) => prev[i] ?? '');
+    });
+  };
+
+  const handleAnswerKeyExcelUpload = async (file: File) => {
+    setAnswerKeyUploadErrors([]);
+    setAnswerKeyUploadSuccess(false);
+    try {
+      const result = await ExportService.parseAnswerKeyFromExcel(file);
+      setNewToAnswerKey(result.answerKey);
+      setNewToQuestionCount(result.totalQuestions);
+      setAnswerKeyUploadErrors(result.errors);
+      setAnswerKeyUploadSuccess(true);
+      triggerToast(`✅ Kunci jawaban berhasil dimuat: ${result.totalQuestions} soal.`);
+    } catch (err) {
+      setAnswerKeyUploadErrors([(err as Error).message]);
+    }
+  };
 
   const handleCreateTryoutPackage = () => {
     if (!newToTitle.trim()) {
@@ -159,7 +187,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       scoringConfig: {
         scoringType: 'EQUAL_WEIGHT',
         maxScore: 100,
-        correctScore: 5,
+        correctScore: Math.round(100 / (newToQuestionCount || 40)),
         wrongScore: 0,
         unansweredScore: 0,
         allowNegativeMarking: false,
@@ -167,7 +195,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       },
       googleFormUrl: newToGFormUrl.trim() || 'https://forms.google.com/sample',
       googleSheetUrl: newToGSheetUrl.trim() || 'https://docs.google.com/spreadsheets/d/sample/edit',
-      description: `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.`
+      description: `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.`,
+      answerKey: newToAnswerKey,
     };
 
     dbService.saveTryout(newToObj);
@@ -177,8 +206,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setNewToTitle('');
     setNewToGFormUrl('');
     setNewToGSheetUrl('');
-    triggerToast(`Paket TryOut '${newToObj.title}' berhasil ditambahkan!`);
+    setNewToAnswerKey(Array(40).fill(''));
+    setNewToQuestionCount(40);
+    setAnswerKeyUploadErrors([]);
+    setAnswerKeyUploadSuccess(false);
+    triggerToast(`Paket TryOut '${newToObj.title}' berhasil ditambahkan! Kunci jawaban ${newToAnswerKey.filter(a => a !== '').length}/${newToQuestionCount} soal tersimpan.`);
   };
+
 
   // Contextual Confirmation Delete State (Safe replacement for window.confirm)
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<{ id: string; code: string; title: string; type?: 'QUESTION' | 'MATERIAL' | 'COMPETENCY' } | null>(null);
@@ -1709,6 +1743,28 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             </a>
                           </div>
 
+                          {/* Answer Key Status Badge */}
+                          <div className={`flex items-center justify-between px-3 py-2 rounded-xl border text-[11px] font-semibold ${
+                            to.answerKey && to.answerKey.filter(a => a !== '').length > 0
+                              ? 'bg-teal-50 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300'
+                              : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+                          }`}>
+                            <div className="flex items-center gap-1.5">
+                              <Key className="w-3.5 h-3.5 shrink-0" />
+                              <span>Kunci Jawaban:</span>
+                              {to.answerKey && to.answerKey.filter(a => a !== '').length > 0 ? (
+                                <span className="font-bold">
+                                  {to.answerKey.filter(a => a !== '').length}/{to.answerKey.length} soal terisi
+                                </span>
+                              ) : (
+                                <span className="font-bold">Belum diisi</span>
+                              )}
+                            </div>
+                            {(!to.answerKey || to.answerKey.filter(a => a !== '').length === 0) && (
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400">Skor otomatis tidak aktif</span>
+                            )}
+                          </div>
+
                           <button
                             type="button"
                             onClick={() => {
@@ -1719,6 +1775,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             <RefreshCw className="w-3.5 h-3.5" />
                             <span>Sinkronkan Data Google Sheet (Siswa Susulan)</span>
                           </button>
+
 
                           <button
                             type="button"
@@ -7417,33 +7474,58 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       {/* ADD TRYOUT PACKAGE MODAL */}
       {showTryoutModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[92vh]">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4 shrink-0">
               <div className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-bold text-sm">
                 <Layers className="w-5 h-5" />
                 <span>Tambah Paket TryOut Baru</span>
               </div>
               <button
                 type="button"
-                onClick={() => setShowTryoutModal(false)}
+                onClick={() => {
+                  setShowTryoutModal(false);
+                  setAnswerKeyUploadErrors([]);
+                  setAnswerKeyUploadSuccess(false);
+                }}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                  Kode TryOut (Opsional)
-                </label>
-                <input
-                  type="text"
-                  value={newToCode}
-                  onChange={e => setNewToCode(e.target.value)}
-                  placeholder="Contoh: TO-2026-05"
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
+            {/* Scrollable Body */}
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5 text-xs">
+
+              {/* ── Info Dasar ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Kode TryOut <span className="font-normal text-slate-400">(opsional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={newToCode}
+                    onChange={e => setNewToCode(e.target.value)}
+                    placeholder="Contoh: TO-2026-05"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Jumlah Soal <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={newToQuestionCount}
+                    onChange={e => handleQuestionCountChange(Number(e.target.value))}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  >
+                    {[10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(n => (
+                      <option key={n} value={n}>{n} soal</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -7459,57 +7541,167 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 />
               </div>
 
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                  Tautan Link Google Form (Soal Ujian)
-                </label>
-                <input
-                  type="url"
-                  value={newToGFormUrl}
-                  onChange={e => setNewToGFormUrl(e.target.value)}
-                  placeholder="https://forms.gle/..."
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Link Google Form <span className="font-normal text-slate-400">(untuk siswa)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={newToGFormUrl}
+                    onChange={e => setNewToGFormUrl(e.target.value)}
+                    placeholder="https://forms.gle/..."
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Link Google Sheet <span className="font-normal text-slate-400">(respons)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={newToGSheetUrl}
+                    onChange={e => setNewToGSheetUrl(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                  Tautan Link Google Sheet (Respons Nilai)
-                </label>
-                <input
-                  type="url"
-                  value={newToGSheetUrl}
-                  onChange={e => setNewToGSheetUrl(e.target.value)}
-                  placeholder="https://docs.google.com/spreadsheets/d/..."
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
+              {/* ── Kunci Jawaban Section ── */}
+              <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+                {/* Section Header */}
+                <div className="bg-slate-50 dark:bg-slate-800/60 px-4 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                    <span className="font-bold text-slate-800 dark:text-slate-100">Kunci Jawaban</span>
+                    <span className="text-[10px] bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 px-2 py-0.5 rounded-full font-semibold">
+                      {newToAnswerKey.filter(a => a !== '').length}/{newToQuestionCount} terisi
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* Download Template */}
+                    <button
+                      type="button"
+                      onClick={() => ExportService.downloadAnswerKeyTemplate(
+                        newToCode.trim() || 'TO-BARU',
+                        newToTitle.trim() || 'Paket TryOut',
+                        newToQuestionCount
+                      )}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-900 transition-colors cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Unduh Template</span>
+                    </button>
+                    {/* Upload Excel */}
+                    <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900 transition-colors cursor-pointer">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload dari Excel</span>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (file) handleAnswerKeyExcelUpload(file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Upload feedback */}
+                {answerKeyUploadSuccess && answerKeyUploadErrors.length === 0 && (
+                  <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 border-b border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>Kunci jawaban berhasil dimuat dari Excel.</span>
+                  </div>
+                )}
+                {answerKeyUploadErrors.length > 0 && (
+                  <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 space-y-0.5">
+                    <div className="font-bold flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Peringatan ({answerKeyUploadErrors.length} baris):</div>
+                    {answerKeyUploadErrors.slice(0, 3).map((e, i) => <div key={i}>• {e}</div>)}
+                    {answerKeyUploadErrors.length > 3 && <div>• ...dan {answerKeyUploadErrors.length - 3} peringatan lainnya</div>}
+                  </div>
+                )}
+
+                {/* Answer Key Grid — scrollable, 5 columns */}
+                <div className="p-3 max-h-56 overflow-y-auto">
+                  <div className="grid gap-1" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                    {Array.from({ length: newToQuestionCount }, (_, i) => (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border transition-colors ${
+                          newToAnswerKey[i]
+                            ? 'bg-teal-50 dark:bg-teal-950/40 border-teal-300 dark:border-teal-700'
+                            : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 w-5 shrink-0 text-right">{i + 1}.</span>
+                        <select
+                          value={newToAnswerKey[i] ?? ''}
+                          onChange={e => {
+                            const updated = [...newToAnswerKey];
+                            updated[i] = e.target.value;
+                            setNewToAnswerKey(updated);
+                          }}
+                          className="flex-1 min-w-0 bg-transparent border-0 text-[11px] font-bold text-teal-700 dark:text-teal-300 focus:outline-none cursor-pointer appearance-none text-center"
+                        >
+                          <option value="">—</option>
+                          <option value="A">A</option>
+                          <option value="B">B</option>
+                          <option value="C">C</option>
+                          <option value="D">D</option>
+                          <option value="E">E</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400">
+                  💡 Isi kunci jawaban sekarang atau tambahkan nanti melalui tombol Edit pada kartu Try Out.
+                </div>
               </div>
 
+              {/* Info box */}
               <div className="p-3 bg-teal-50 dark:bg-teal-950/40 rounded-xl border border-teal-200 dark:border-teal-800 text-[11px] text-teal-800 dark:text-teal-300 leading-relaxed">
-                💡 <strong>Informasi:</strong> Setelah disimpan, paket TryOut baru akan langsung terintegrasi secara otomatis pada Grafik Perkembangan, Diagram Ketuntasan KKM, dan Tabel Rekapitulasi Nilai Lintas TryOut.
+                💡 <strong>Informasi:</strong> Kunci jawaban digunakan untuk menghitung skor otomatis saat data respons siswa dari Google Sheet disinkronkan. Urutan kunci harus sama dengan urutan soal di Google Form.
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setShowTryoutModal(false)}
-                className="px-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateTryoutPackage}
-                className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Save className="w-4 h-4" />
-                <span>Simpan Paket TryOut</span>
-              </button>
+            {/* Footer */}
+            <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                {newToAnswerKey.filter(a => a !== '').length} / {newToQuestionCount} kunci terisi
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTryoutModal(false);
+                    setAnswerKeyUploadErrors([]);
+                    setAnswerKeyUploadSuccess(false);
+                  }}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateTryoutPackage}
+                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Simpan Paket TryOut</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
 
       {/* CONTEXTUAL DELETE CONFIRMATION MODAL */}
       {deleteConfirmItem && (

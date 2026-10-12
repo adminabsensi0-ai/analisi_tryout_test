@@ -160,6 +160,8 @@ export interface Tryout {
   description?: string;
   googleFormUrl?: string;
   googleSheetUrl?: string;
+  /** Kunci jawaban per nomor soal. Index 0 = Soal no.1. Nilai: 'A'|'B'|'C'|'D'|'E'|'' */
+  answerKey?: string[];
 }
 
 export interface TryoutSubject {
