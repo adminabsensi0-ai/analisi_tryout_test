@@ -460,9 +460,7 @@ export const StudentPortalPage: React.FC = () => {
                   <span>·</span>
                   <span>NIS: <strong className="text-slate-800 dark:text-slate-200 font-mono">{verifiedStudent.nis}</strong></span>
                   <span>·</span>
-                  <span>Kelas: <strong className="text-slate-800 dark:text-slate-200">XII IPA 1</strong></span>
-                  <span>·</span>
-                  <span>Target Ambisi: <strong className="text-slate-800 dark:text-slate-200 font-mono">{verifiedStudent.targetScore || 80.0}</strong></span>
+                  <span>Kelas: <strong className="text-slate-800 dark:text-slate-200">{studentClassName}</strong></span>
                 </div>
               </div>
 
@@ -594,21 +592,11 @@ export const StudentPortalPage: React.FC = () => {
                     </div>
 
                     <div className="pt-4 border-t border-slate-800 mt-4 text-xs">
-                      <div className="flex justify-between text-slate-300 mb-1">
-                        <span>Target Anda:</span>
-                        <strong className="font-mono">{verifiedStudent.targetScore || 80.0}</strong>
-                      </div>
-                      <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${
-                            activeScore.calculatedScore >= (verifiedStudent.targetScore || 80)
-                              ? 'bg-emerald-500'
-                              : 'bg-amber-500'
-                          }`}
-                          style={{
-                            width: `${Math.min(100, (activeScore.calculatedScore / (verifiedStudent.targetScore || 80)) * 100)}%`,
-                          }}
-                        />
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span>Predikat Capaian:</span>
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${academicPredicate.badge}`}>
+                          {academicPredicate.grade} — {academicPredicate.label}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -893,21 +881,20 @@ export const StudentPortalPage: React.FC = () => {
                         Progres Nilai Siswa Lintas Try Out
                       </h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Evaluasi pertumbuhan belajar siswa dari Try Out 1 hingga Try Out 4 vs Target Ambisi Siswa ({verifiedStudent?.targetScore || 85.0} Poin).
+                        Evaluasi pertumbuhan belajar siswa dari Try Out 1 hingga Try Out 4 dibandingkan terhadap rata-rata kelas.
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2 text-xs font-mono font-semibold">
                       <span className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 rounded-xl flex items-center gap-1.5 border border-emerald-200 dark:border-emerald-800 font-bold">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>Peningkatan: +{Math.max(0, (activeScore?.calculatedScore || 85) - ((verifiedStudent?.targetScore || 80) - 8)).toFixed(1)} Poin</span>
+                        <span>Peningkatan Skor: +{Math.max(0, (progressHistory[progressHistory.length - 1]?.score || 0) - (progressHistory[0]?.score || 0)).toFixed(1)} Poin</span>
                       </span>
                     </div>
                   </div>
 
                   {/* SVG Chart Viewport */}
                   {(() => {
-                    const targetScore = verifiedStudent?.targetScore || 85.0;
                     const coords = progressHistory.map((item, i) => {
                       const x = 80 + (i / Math.max(1, progressHistory.length - 1)) * 840;
                       const y = 260 - (Math.min(100, Math.max(0, item.score)) / 100) * 220;
@@ -920,7 +907,6 @@ export const StudentPortalPage: React.FC = () => {
                     const firstX = coords[0]?.x || 80;
                     const lastX = coords[coords.length - 1]?.x || 920;
                     const polygonPoints = `${firstX},260 ${svgPolyPoints} ${lastX},260`;
-                    const targetY = 260 - (Math.min(100, Math.max(0, targetScore)) / 100) * 220;
 
                     return (
                       <div className="p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-5">
@@ -929,8 +915,8 @@ export const StudentPortalPage: React.FC = () => {
                             <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block" />
                             <span>Bagan Grafik Pertumbuhan Belajar Siswa</span>
                           </span>
-                          <span className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-800">
-                            Garis Target Ambisi: {targetScore.toFixed(1)} Poin
+                          <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                            Komparasi vs Rata-Rata Kelas
                           </span>
                         </div>
 
@@ -954,13 +940,6 @@ export const StudentPortalPage: React.FC = () => {
                             <text x="45" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
                             <line x1="60" y1="260" x2="940" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-700" strokeWidth="1.5" />
                             <text x="45" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
-
-                            {/* Target Line */}
-                            <line x1="60" y1={targetY} x2="940" y2={targetY} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
-                            <rect x="780" y={targetY - 12} width="150" height="20" rx="6" fill="#f59e0b" />
-                            <text x="855" y={targetY + 2} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">
-                              Target Siswa ({targetScore.toFixed(1)} Poin)
-                            </text>
 
                             {/* Polygon Area Fill */}
                             <polygon points={polygonPoints} fill="url(#studentChartGradMain)" />
@@ -1007,10 +986,6 @@ export const StudentPortalPage: React.FC = () => {
                             <span className="w-5 h-0.5 border-t-2 border-dashed border-emerald-500 inline-block" />
                             <span>Rata-Rata Kelas</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="w-5 h-0.5 border-t-2 border-dashed border-amber-500 inline-block" />
-                            <span>Target Ambisi ({targetScore.toFixed(0)} Poin)</span>
-                          </div>
                         </div>
                       </div>
                     );
@@ -1051,6 +1026,9 @@ export const StudentPortalPage: React.FC = () => {
                   setSelectedVideoTitle(title);
                 }}
                 activeTryoutCode={activeTryout?.code || 'Try Out'}
+                tryouts={tryouts}
+                selectedTryoutId={selectedTryoutId}
+                onSelectTryout={id => setSelectedTryoutId(id)}
               />
             )}
 
@@ -1124,32 +1102,48 @@ export const StudentPortalPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* View Switcher: Katalog Cards vs Modul */}
-                      <div className="flex items-center bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl border border-slate-200 dark:border-slate-800">
-                        <button
-                          type="button"
-                          onClick={() => setResourceViewMode('CARDS')}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                            resourceViewMode === 'CARDS'
-                              ? 'bg-indigo-600 text-white shadow-xs'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          <LayoutGrid className="w-3.5 h-3.5" />
-                          <span>Katalog Kartu ({studentResourceCardsList.length})</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setResourceViewMode('MODULES')}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                            resourceViewMode === 'MODULES'
-                              ? 'bg-indigo-600 text-white shadow-xs'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          <BookOpen className="w-3.5 h-3.5" />
-                          <span>Modul Lengkap ({filteredExplanations.length})</span>
-                        </button>
+                      {/* Tryout Selector & View Switcher */}
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                          <span className="font-semibold text-slate-500 dark:text-slate-400">Paket:</span>
+                          <select
+                            value={selectedTryoutId}
+                            onChange={e => setSelectedTryoutId(e.target.value)}
+                            className="bg-transparent text-xs font-bold font-mono text-indigo-600 dark:text-indigo-400 focus:outline-none cursor-pointer"
+                          >
+                            {tryouts.map(t => (
+                              <option key={t.id} value={t.id} className="text-slate-900 dark:text-slate-100">
+                                {t.code} — {t.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex items-center bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl border border-slate-200 dark:border-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => setResourceViewMode('CARDS')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              resourceViewMode === 'CARDS'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            <LayoutGrid className="w-3.5 h-3.5" />
+                            <span>Katalog Kartu ({studentResourceCardsList.length})</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setResourceViewMode('MODULES')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              resourceViewMode === 'MODULES'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                            <span>Modul Lengkap ({filteredExplanations.length})</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
 

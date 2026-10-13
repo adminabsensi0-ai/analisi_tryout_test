@@ -3,7 +3,7 @@ import {
   CheckCircle2, XCircle, HelpCircle, BookOpen, Play, FileText, Search,
   Filter, Check, AlertCircle, ArrowUpRight, Sparkles, ExternalLink
 } from 'lucide-react';
-import { Question, Subject, Explanation } from '../../types/database';
+import { Question, Subject, Explanation, Tryout } from '../../types/database';
 import { QuestionPerformanceDetail } from '../../services/analytics';
 
 interface StudentQuestionSheetProps {
@@ -13,6 +13,9 @@ interface StudentQuestionSheetProps {
   explanations: Explanation[];
   onWatchVideo: (url: string, title: string) => void;
   activeTryoutCode: string;
+  tryouts?: Tryout[];
+  selectedTryoutId?: string;
+  onSelectTryout?: (tryoutId: string) => void;
 }
 
 export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
@@ -22,6 +25,9 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
   explanations,
   onWatchVideo,
   activeTryoutCode,
+  tryouts,
+  selectedTryoutId,
+  onSelectTryout,
 }) => {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'CORRECT' | 'INCORRECT' | 'UNANSWERED'>('ALL');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('ALL');
@@ -87,7 +93,25 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Tryout Selector in Header */}
+            {tryouts && tryouts.length > 0 && onSelectTryout && (
+              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Paket:</span>
+                <select
+                  value={selectedTryoutId}
+                  onChange={e => onSelectTryout(e.target.value)}
+                  className="bg-transparent text-xs font-bold font-mono text-indigo-600 dark:text-indigo-400 focus:outline-none cursor-pointer"
+                >
+                  {tryouts.map(t => (
+                    <option key={t.id} value={t.id} className="text-slate-900 dark:text-slate-100">
+                      {t.code} — {t.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <span className="text-xs font-mono font-bold bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800">
               Akurasi: {accuracyPct}% ({correctCount}/{totalQuestions})
             </span>
