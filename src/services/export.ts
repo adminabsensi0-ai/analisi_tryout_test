@@ -161,21 +161,20 @@ export class ExportService {
 
     // Kolom 2 Metadata Ujian
     const col2LabelX = leftMargin + 105;
-    const col2ValueX = leftMargin + 132;
+    const col2ValueX = leftMargin + 130;
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
     doc.text('Paket / Kode', col2LabelX, yPos + 6.5);
     doc.text('Tahun Ajaran', col2LabelX, yPos + 13);
-    doc.text('Status Scoring', col2LabelX, yPos + 19.5);
+    doc.text('Tanggal Ujian', col2LabelX, yPos + 19.5);
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
-    const tryoutTitleShort = tryout.title.length > 18 ? tryout.title.slice(0, 18) + '..' : tryout.title;
+    const tryoutTitleShort = tryout.title.length > 20 ? tryout.title.slice(0, 20) + '..' : tryout.title;
     doc.text(`:  ${tryout.code} - ${tryoutTitleShort}`, col2ValueX, yPos + 6.5);
     doc.text(`:  ${schoolInfo.academicYear}`, col2ValueX, yPos + 13);
-    doc.setTextColor(score.scoringStatus === 'MATCH' ? 5 : 180, score.scoringStatus === 'MATCH' ? 120 : 80, 50);
-    doc.text(`:  ${score.scoringStatus === 'MATCH' ? 'MATCH (Terverifikasi)' : score.scoringStatus}`, col2ValueX, yPos + 19.5);
+    doc.text(`:  ${tryout.date || new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}`, col2ValueX, yPos + 19.5);
     doc.setFontSize(8); // restore
 
     // 3. EXECUTIVE METRICS CARDS (Skor Akhir, Peringkat Kelas, Peringkat Angkatan, Rerata Kelas)
@@ -390,8 +389,8 @@ export class ExportService {
     // Footer Page 1
     doc.setFontSize(6.8);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Dokumen Asesmen Resmi ${schoolInfo.name} - Halaman 1 dari 2 (Lembar Hasil Siswa)`, leftMargin, 288);
-    doc.text(`ID Verifikasi: ${student.id}-${tryout.id}`, rightMargin, 288, { align: 'right' });
+    doc.text(`Dokumen Resmi ${schoolInfo.name} | Hal. 1 dari 2`, leftMargin, 288);
+    doc.text('Dikembangkan oleh MIDStudio (2026)', rightMargin, 288, { align: 'right' });
 
     // ==========================================
     // PAGE 2: TRANSKRIP LINTAS TO, GRAFIK PERKEMBANGAN & REKAP SOAL
@@ -791,8 +790,8 @@ export class ExportService {
     // Footer Page 2
     doc.setFontSize(6.8);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Dokumen Asesmen Resmi ${schoolInfo.name} - Halaman 2 dari 2 (Transkrip Lintas TO & Rekap Soal)`, leftMargin, 288);
-    doc.text('Diterbitkan Otomatis oleh Sistem Asesmen Sekolah', rightMargin, 288, { align: 'right' });
+    doc.text(`Dokumen Resmi ${schoolInfo.name} | Hal. 2 dari 2`, leftMargin, 288);
+    doc.text('Dikembangkan oleh MIDStudio (2026)', rightMargin, 288, { align: 'right' });
 
     const cleanNisn = student.nisn || '0000000000';
     const cleanCode = (tryout.code || 'TO3').replace(/[^a-zA-Z0-9_\-]/g, '_');
@@ -973,9 +972,10 @@ export class ExportService {
     doc.text('Distractor efektif jika dipilih oleh minimal 5% peserta yang menjawab salah.', 14, yPos);
 
     // Footer
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(148, 163, 184);
-    doc.text('Dokumen analitik diterbitkan oleh Modul Guru — School Try Out & Assessment Analytics System.', 14, 282);
+    doc.text(`Dokumen Resmi ${cls.name} | Laporan Analitik Try Out`, 14, 282);
+    doc.text('Dikembangkan oleh MIDStudio (2026)', 196, 282, { align: 'right' });
 
     const cleanClassName = cls.name.replace(/\s+/g, '_');
     const cleanCode = tryout.code.replace(/[^a-zA-Z0-9_\-]/g, '_');
