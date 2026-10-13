@@ -266,7 +266,7 @@ export class ExportService {
     doc.text('A (>= 88.0 Sangat Baik)  |  B (78.0 - 87.9 Baik)  |  C (65.0 - 77.9 Cukup)  |  D (< 65.0 Bimbingan)', leftMargin + 33, yPos + 3.8);
 
     // 4. STATISTIK AKURASI JAWABAN
-    yPos += 9;
+    yPos += 11.5;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
@@ -296,7 +296,7 @@ export class ExportService {
     doc.text(`• Total Akurasi : ${akurasiPct}% (${score.totalCorrect}/${totalSoal} Soal)`, leftMargin + 135, yPos + 6.5);
 
     // 5. RINCIAN CAPAIAN NILAI PER MATA PELAJARAN (PAKET AKTIF)
-    yPos += 14.5;
+    yPos += 15.5;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
@@ -361,7 +361,7 @@ export class ExportService {
     });
 
     // 6. MATRIKS REKAP PENGERJAAN BUTIR SOAL PER MATA PELAJARAN (dipindah ke Hal. 1)
-    yPos += 7;
+    yPos += 9.5;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
@@ -606,9 +606,9 @@ export class ExportService {
       doc.text(`${compositeAvg.toFixed(1)}`, rerataX, p2Y + 4, { align: 'center' });
       doc.setTextColor(21, 128, 61);
       doc.text('TERVERIFIKASI', statusX, p2Y + 4, { align: 'center' });
-      p2Y += 9;
+      p2Y += 11;
     } else {
-      p2Y += 4;
+      p2Y += 7;
     }
 
     // SECTION 2: GRAFIK GARIS PERKEMBANGAN NILAI MAPEL SISWA LINTAS TRY OUT
@@ -617,8 +617,8 @@ export class ExportService {
     doc.setFontSize(9);
     doc.text(`IV. GRAFIK PERKEMBANGAN NILAI TIAP-TIAP MATA PELAJARAN (LINTAS ${activeToKeys[0] || 'TO-1'} S/D ${activeToKeys[activeToKeys.length - 1] || 'TO-4'})`, leftMargin, p2Y);
 
-    p2Y += 3.5;
-    const lineChartH = 46;
+    p2Y += 3.8;
+    const lineChartH = 44;
     doc.setFillColor(248, 250, 252);
     doc.rect(leftMargin, p2Y, contentWidth, lineChartH, 'F');
     doc.setDrawColor(226, 232, 240);
@@ -746,7 +746,7 @@ export class ExportService {
       doc.text('Rerata TO', rightMargin - 30, legYAvg);
     }
 
-    p2Y += lineChartH + 5.5;
+    p2Y += lineChartH + 7.5;
 
     // SECTION 2B: GRAFIK BATANG PERBANDINGAN NILAI SISWA VS RATA-RATA KELAS
     if (pHistory.length > 0) {
@@ -754,9 +754,9 @@ export class ExportService {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.text('V. PERBANDINGAN NILAI SISWA VS RATA-RATA KELAS (PER TRY OUT)', leftMargin, p2Y);
-      p2Y += 3.5;
+      p2Y += 3.8;
 
-      const barChartH = 46;
+      const barChartH = 42;
       doc.setFillColor(248, 250, 252);
       doc.rect(leftMargin, p2Y, contentWidth, barChartH, 'F');
       doc.setDrawColor(226, 232, 240);
@@ -830,7 +830,7 @@ export class ExportService {
       doc.rect(leftMargin + 28, p2Y + 2, 3, 2, 'F');
       doc.text('Rata-rata Kelas', leftMargin + 32.5, p2Y + 3.8);
 
-      p2Y += barChartH + 5.5;
+      p2Y += barChartH + 7;
     }
 
     // SECTION 3: AKSES MEDIA PEMBAHASAN RESMI (Ringkas 1 Baris)
