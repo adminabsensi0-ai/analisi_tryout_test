@@ -370,7 +370,18 @@ export const StudentPortalPage: React.FC = () => {
       studentClass,
       studentAnalytics,
       publishedExplanations,
-      subjectRecapRows
+      subjectRecapRows,
+      {
+        classRank,
+        classTotalStudents,
+        overallRank,
+        overallTotalStudents,
+        classAvgScore,
+        classMaxScore,
+        academicPredicate,
+        activeSubjectCards: activeTryoutSubjectCards,
+        progressHistory,
+      }
     );
   };
 
