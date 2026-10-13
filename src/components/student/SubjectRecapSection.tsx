@@ -1,0 +1,718 @@
+import React, { useState } from 'react';
+import {
+  BookOpen, BarChart3, Layers, Search, Download, CheckCircle2, XCircle,
+  ArrowUpRight, ArrowDownRight, LayoutGrid, Table, Video, Sparkles
+} from 'lucide-react';
+import { Subject, Student } from '../../types/database';
+
+export interface SubjectRecapRow {
+  subject: Subject;
+  passingGrade: number;
+  toScores: Record<string, number>;
+  avgScore: number;
+  isPassing: boolean;
+  trend: number;
+}
+
+interface SubjectRecapSectionProps {
+  student: Student;
+  subjects: Subject[];
+  progressHistory: Array<{ code: string; title: string; date: string; score: number; classAverage?: number }>;
+  subjectRecapRows: SubjectRecapRow[];
+  onOpenSubjectExplanations: (subjectId: string) => void;
+  onExportCSV: () => void;
+}
+
+export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
+  student,
+  subjects,
+  progressHistory,
+  subjectRecapRows,
+  onOpenSubjectExplanations,
+  onExportCSV,
+}) => {
+  const [selectedSubjectChartId, setSelectedSubjectChartId] = useState<string>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'WAJIB' | 'PEMINATAN'>('ALL');
+  const [displayMode, setDisplayMode] = useState<'TABLE' | 'CARDS'>('TABLE');
+
+  const tryoutCodes = progressHistory.map(p => p.code);
+
+  // Filtered rows
+  const filteredRows = subjectRecapRows.filter(r => {
+    const matchSearch =
+      r.subject.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.subject.code.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchCategory =
+      categoryFilter === 'ALL' || r.subject.category === categoryFilter;
+    return matchSearch && matchCategory;
+  });
+
+  // Composite column averages
+  const compositeToAverages: Record<string, number> = {};
+  tryoutCodes.forEach(code => {
+    const vals = subjectRecapRows.map(r => r.toScores[code] || 0);
+    const avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : 0;
+    compositeToAverages[code] = avg;
+  });
+
+  const overallAvg = subjectRecapRows.length > 0
+    ? Math.round((subjectRecapRows.reduce((a, b) => a + b, 0) / subjectRecapRows.length) * 10) / 10
+    : 0;
+
+  const totalPassed = subjectRecapRows.filter(r => r.isPassing).length;
+
+  // Chart datasets
+  const activeSubjectObj = subjects.find(s => s.id === selectedSubjectChartId);
+  const activeRow = subjectRecapRows.find(r => r.subject.id === selectedSubjectChartId);
+  const currentPassingGrade = activeSubjectObj?.passingGrade ?? 75.0;
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* 1. GRAFIK PERKEMBANGAN PER-MATA PELAJARAN */}
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-6 transition-colors">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2 text-teal-600 dark:text-teal-400 text-xs font-bold uppercase tracking-wider font-mono">
+              <BookOpen className="w-4 h-4" />
+              <span>Grafik Try Out Per-Mata Pelajaran</span>
+            </div>
+            <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
+              {selectedSubjectChartId === 'ALL'
+                ? 'Perkembangan Seluruh Mata Pelajaran'
+                : `Perkembangan Nilai ${activeSubjectObj?.name}`}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Visualisasi dinamika pertumbuhan belajar siswa dari Try Out awal hingga akhir.
+            </p>
+          </div>
+
+          {/* Subject Filter Pills */}
+          <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setSelectedSubjectChartId('ALL')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                selectedSubjectChartId === 'ALL'
+                  ? 'bg-indigo-600 text-white shadow-xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Semua Mapel
+            </button>
+            {subjects.map(s => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSelectedSubjectChartId(s.id)}
+                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedSubjectChartId === s.id
+                    ? 'bg-teal-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span className="font-mono text-[10px] px-1 rounded bg-black/10 dark:bg-white/10 font-bold">{s.code}</span>
+                <span>{s.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart Viewport */}
+        <div className="p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+              <span>
+                {selectedSubjectChartId === 'ALL'
+                  ? 'Grafik Komposit Lintas Mata Pelajaran'
+                  : `Pencapaian Mapel ${activeSubjectObj?.name}`}
+              </span>
+            </div>
+            {selectedSubjectChartId !== 'ALL' && (
+              <span className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-800">
+                Batas KKM Target: {currentPassingGrade.toFixed(1)} Poin
+              </span>
+            )}
+          </div>
+
+          <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+            <svg
+              className="w-full h-auto overflow-visible"
+              viewBox="0 0 1000 300"
+              preserveAspectRatio="xMidYMid meet"
+            >
+              <defs>
+                <linearGradient id="subjChartGrad2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0d9488" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="#0d9488" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+
+              {/* Horizontal Grid lines */}
+              <line x1="60" y1="40" x2="940" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+              <text x="45" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
+
+              <line x1="60" y1="95" x2="940" y2="95" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" strokeDasharray="4 4" />
+              <text x="45" y="99" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">75</text>
+
+              <line x1="60" y1="150" x2="940" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" strokeDasharray="4 4" />
+              <text x="45" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
+
+              <line x1="60" y1="205" x2="940" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" strokeDasharray="4 4" />
+              <text x="45" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
+
+              <line x1="60" y1="260" x2="940" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-700" strokeWidth="1.5" />
+              <text x="45" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+
+              {/* SINGLE SUBJECT VIEW */}
+              {selectedSubjectChartId !== 'ALL' && activeRow && (() => {
+                const points = progressHistory.map((item, idx) => {
+                  const score = activeRow.toScores[item.code] ?? 0;
+                  const classAvg = item.classAverage ?? 75.0;
+                  return {
+                    code: item.code,
+                    date: item.date,
+                    score,
+                    classAvg,
+                    x: 80 + (idx / Math.max(1, progressHistory.length - 1)) * 840,
+                    y: 260 - (Math.min(100, Math.max(0, score)) / 100) * 220,
+                    classAvgY: 260 - (Math.min(100, Math.max(0, classAvg)) / 100) * 220,
+                  };
+                });
+
+                const polyStr = points.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+                const classAvgStr = points.map(c => `${c.x.toFixed(1)},${c.classAvgY.toFixed(1)}`).join(' ');
+                const firstX = points[0]?.x || 80;
+                const lastX = points[points.length - 1]?.x || 920;
+                const polyGonStr = `${firstX},260 ${polyStr} ${lastX},260`;
+                const targetY = 260 - (currentPassingGrade / 100) * 220;
+
+                return (
+                  <g>
+                    {/* KKM Target Line */}
+                    <line x1="60" y1={targetY} x2="940" y2={targetY} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
+                    <rect x="780" y={targetY - 12} width="150" height="20" rx="6" fill="#f59e0b" />
+                    <text x="855" y={targetY + 2} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">
+                      KKM Target ({currentPassingGrade.toFixed(0)} Poin)
+                    </text>
+
+                    {/* Gradient Fill */}
+                    <polygon points={polyGonStr} fill="url(#subjChartGrad2)" />
+
+                    {/* Class Avg */}
+                    <polyline fill="none" stroke="#6366f1" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.8" points={classAvgStr} />
+
+                    {/* Student Score Line */}
+                    <polyline fill="none" stroke="#0d9488" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={polyStr} />
+
+                    {/* Nodes */}
+                    {points.map((c, i) => (
+                      <g key={i}>
+                        <line x1={c.x} y1="40" x2={c.x} y2="260" stroke="currentColor" className="text-slate-100 dark:text-slate-800/60" strokeDasharray="3 3" />
+                        <circle cx={c.x} cy={c.classAvgY} r="4" fill="#6366f1" stroke="#ffffff" strokeWidth="1.5" />
+                        <circle cx={c.x} cy={c.y} r="9" fill="#0d9488" opacity="0.2" />
+                        <circle cx={c.x} cy={c.y} r="5.5" fill="#0d9488" stroke="#ffffff" strokeWidth="2.5" />
+
+                        <g transform={`translate(${c.x - 38}, ${c.y - 32})`}>
+                          <rect width="76" height="22" rx="7" className="fill-slate-900 dark:fill-slate-100 shadow-sm" />
+                          <text x="38" y="15" textAnchor="middle" className="text-[11px] font-mono font-bold fill-teal-300 dark:fill-teal-700">
+                            {c.score.toFixed(1)} Poin
+                          </text>
+                        </g>
+
+                        <text x={c.x} y="280" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-800 dark:fill-slate-200">
+                          {c.code}
+                        </text>
+                        <text x={c.x} y="295" textAnchor="middle" className="text-[10px] font-sans fill-slate-400">
+                          {c.date}
+                        </text>
+                      </g>
+                    ))}
+                  </g>
+                );
+              })()}
+
+              {/* ALL SUBJECTS COMPOSITE VIEW */}
+              {selectedSubjectChartId === 'ALL' && (() => {
+                const colors = ['#6366f1', '#0d9488', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'];
+                return (
+                  <g>
+                    {subjectRecapRows.map((row, sIdx) => {
+                      const strokeColor = colors[sIdx % colors.length];
+                      const points = progressHistory.map((item, idx) => {
+                        const score = row.toScores[item.code] ?? 0;
+                        return {
+                          code: item.code,
+                          x: 80 + (idx / Math.max(1, progressHistory.length - 1)) * 840,
+                          y: 260 - (Math.min(100, Math.max(0, score)) / 100) * 220,
+                        };
+                      });
+                      const polyStr = points.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+
+                      return (
+                        <g key={row.subject.id}>
+                          <polyline fill="none" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" points={polyStr} />
+                          {points.map((c, i) => (
+                            <g key={i}>
+                              <circle cx={c.x} cy={c.y} r="5" fill={strokeColor} stroke="#ffffff" strokeWidth="2" />
+                              {sIdx === 0 && (
+                                <text x={c.x} y="280" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-800 dark:fill-slate-200">
+                                  {c.code}
+                                </text>
+                              )}
+                            </g>
+                          ))}
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
+              })()}
+            </svg>
+          </div>
+
+          {/* Chart Legend */}
+          {selectedSubjectChartId === 'ALL' ? (
+            <div className="flex flex-wrap items-center justify-center gap-4 pt-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+              {subjectRecapRows.map((row, sIdx) => {
+                const colors = ['#6366f1', '#0d9488', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'];
+                return (
+                  <div key={row.subject.id} className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 rounded-full inline-block" style={{ backgroundColor: colors[sIdx % colors.length] }} />
+                    <span>{row.subject.name} (Rata: {row.avgScore.toFixed(1)})</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-center gap-6 pt-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-1 bg-teal-600 rounded-full inline-block" />
+                <span>Skor Siswa ({activeSubjectObj?.name})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-0.5 border-t-2 border-dashed border-indigo-500 inline-block" />
+                <span>Rata-Rata Kelas</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-0.5 border-t-2 border-dashed border-amber-500 inline-block" />
+                <span>KKM Target ({currentPassingGrade.toFixed(0)} Poin)</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2. TABEL / KARTU REKAPITULASI NILAI LINTAS TRY OUT */}
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-6 transition-colors">
+        {/* Header & Controls */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 text-xs font-bold uppercase tracking-wider font-mono">
+              <Layers className="w-4 h-4" />
+              <span>Matriks Rekapitulasi Nilai Seluruh Mata Pelajaran</span>
+            </div>
+            <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
+              Rekapitulasi Nilai Per-Mapel Lintas Try Out
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Rekap perolehan nilai seluruh mata pelajaran untuk Try Out 1 hingga Try Out 4.
+            </p>
+          </div>
+
+          {/* Action Toolbar */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Search */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Cari mapel..."
+                className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('ALL')}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                  categoryFilter === 'ALL'
+                    ? 'bg-slate-900 dark:bg-slate-800 text-white font-bold'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Semua
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('WAJIB')}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                  categoryFilter === 'WAJIB'
+                    ? 'bg-indigo-600 text-white font-bold'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Wajib
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('PEMINATAN')}
+                className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                  categoryFilter === 'PEMINATAN'
+                    ? 'bg-indigo-600 text-white font-bold'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Peminatan
+              </button>
+            </div>
+
+            {/* Display Mode Toggle (Table vs Cards) */}
+            <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setDisplayMode('TABLE')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                  displayMode === 'TABLE'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+                title="Tampilan Tabel"
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Tabel</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayMode('CARDS')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                  displayMode === 'CARDS'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs font-bold'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+                title="Tampilan Kartu Ringkas (Mobile Friendly)"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Kartu</span>
+              </button>
+            </div>
+
+            {/* Export CSV */}
+            <button
+              type="button"
+              onClick={onExportCSV}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
+              title="Unduh Rekapitulasi Nilai ke format CSV/Excel"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Unduh CSV</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 3 Summary Badges */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium block">Total Mata Pelajaran</span>
+              <strong className="text-lg font-bold text-slate-900 dark:text-slate-100 font-mono">{subjectRecapRows.length} Mapel</strong>
+            </div>
+            <span className="text-xs bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold px-2 py-1 rounded-lg">
+              Wajib &amp; Peminatan
+            </span>
+          </div>
+
+          <div className="p-3.5 bg-emerald-50/60 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium block">Tuntas KKM Target</span>
+              <strong className="text-lg font-bold text-emerald-900 dark:text-emerald-100 font-mono">
+                {totalPassed} / {subjectRecapRows.length} Mapel
+              </strong>
+            </div>
+            <span className="text-xs bg-emerald-600 text-white font-bold px-2 py-1 rounded-lg">
+              {Math.round((totalPassed / Math.max(1, subjectRecapRows.length)) * 100)}% Tuntas
+            </span>
+          </div>
+
+          <div className="p-3.5 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-800 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] text-indigo-800 dark:text-indigo-300 font-medium block">Rata-Rata Komposit Multimapel</span>
+              <strong className="text-lg font-bold text-indigo-900 dark:text-indigo-100 font-mono">
+                {overallAvg.toFixed(1)} Poin
+              </strong>
+            </div>
+            <span className="text-xs bg-indigo-600 text-white font-bold px-2 py-1 rounded-lg">
+              Skala 0-100
+            </span>
+          </div>
+        </div>
+
+        {/* MODE A: TABLE VIEW */}
+        {displayMode === 'TABLE' && (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100 dark:bg-slate-950/90 text-slate-700 dark:text-slate-300 font-bold font-mono border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider">
+                  <th className="py-3 px-3.5 w-12 text-center">No</th>
+                  <th className="py-3 px-3.5 min-w-[180px]">Mata Pelajaran</th>
+                  <th className="py-3 px-2.5 text-center">Kategori</th>
+                  <th className="py-3 px-2.5 text-center">KKM</th>
+                  {tryoutCodes.map(code => (
+                    <th key={code} className="py-3 px-3.5 text-center min-w-[80px]">
+                      {code}
+                    </th>
+                  ))}
+                  <th className="py-3 px-3.5 text-center min-w-[100px] bg-slate-200/60 dark:bg-slate-800/60">
+                    Rata-Rata TO
+                  </th>
+                  <th className="py-3 px-3.5 text-center min-w-[110px]">Status KKM</th>
+                  <th className="py-3 px-3.5 text-center min-w-[90px]">Tren</th>
+                  <th className="py-3 px-3 text-center min-w-[110px]">Media Belajar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900">
+                {filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7 + tryoutCodes.length} className="py-8 text-center text-slate-500 dark:text-slate-400">
+                      Tidak ada data mata pelajaran yang cocok dengan pencarian '{searchQuery}'.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRows.map((row, idx) => (
+                    <tr
+                      key={row.subject.id}
+                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
+                    >
+                      <td className="py-3 px-3.5 text-center font-mono font-medium text-slate-400">
+                        {idx + 1}
+                      </td>
+
+                      <td className="py-3 px-3.5 font-semibold text-slate-900 dark:text-slate-100">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono font-bold text-[10px] text-slate-700 dark:text-slate-300">
+                            {row.subject.code}
+                          </span>
+                          <span>{row.subject.name}</span>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-2.5 text-center">
+                        <span
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded-md uppercase font-mono ${
+                            row.subject.category === 'WAJIB'
+                              ? 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              : 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                          }`}
+                        >
+                          {row.subject.category}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-2.5 text-center font-mono font-bold text-amber-600 dark:text-amber-400">
+                        {row.passingGrade.toFixed(0)}
+                      </td>
+
+                      {tryoutCodes.map(code => {
+                        const score = row.toScores[code] ?? 0;
+                        const passed = score >= row.passingGrade;
+                        return (
+                          <td key={code} className="py-3 px-3.5 text-center font-mono font-bold">
+                            <span
+                              className={`inline-block px-2.5 py-1 rounded-lg text-xs ${
+                                passed
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80'
+                                  : 'bg-amber-50 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80'
+                              }`}
+                            >
+                              {score.toFixed(1)}
+                            </span>
+                          </td>
+                        );
+                      })}
+
+                      <td className="py-3 px-3.5 text-center font-mono font-black text-indigo-700 dark:text-indigo-300 bg-slate-50 dark:bg-slate-950/60 text-sm">
+                        {row.avgScore.toFixed(1)}
+                      </td>
+
+                      <td className="py-3 px-3.5 text-center">
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full font-mono ${
+                            row.isPassing
+                              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                          }`}
+                        >
+                          {row.isPassing ? (
+                            <>
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>TUNTAS KKM</span>
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-3 h-3 text-rose-600" />
+                              <span>BELUM TUNTAS</span>
+                            </>
+                          )}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3.5 text-center font-mono font-bold">
+                        <span
+                          className={`inline-flex items-center gap-0.5 text-xs ${
+                            row.trend >= 0
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {row.trend >= 0 ? (
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                          ) : (
+                            <ArrowDownRight className="w-3.5 h-3.5" />
+                          )}
+                          <span>{row.trend >= 0 ? `+${row.trend.toFixed(1)}` : row.trend.toFixed(1)}</span>
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => onOpenSubjectExplanations(row.subject.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-semibold transition-all cursor-pointer shadow-2xs hover:scale-102"
+                          title={`Buka Link Pembahasan untuk ${row.subject.name}`}
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span>Solusi &amp; YT</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              <tfoot className="bg-slate-100 dark:bg-slate-950 font-bold border-t-2 border-slate-200 dark:border-slate-800">
+                <tr>
+                  <td colSpan={4} className="py-3.5 px-3.5 text-right uppercase tracking-wider font-mono text-slate-700 dark:text-slate-300">
+                    Rata-Rata Komposit Seluruh Mapel:
+                  </td>
+                  {tryoutCodes.map(code => (
+                    <td key={code} className="py-3.5 px-3.5 text-center font-mono text-indigo-700 dark:text-indigo-300 font-extrabold">
+                      {compositeToAverages[code]?.toFixed(1) ?? '0.0'}
+                    </td>
+                  ))}
+                  <td className="py-3.5 px-3.5 text-center font-mono text-emerald-600 dark:text-emerald-400 font-black text-sm bg-slate-200/80 dark:bg-slate-800/80">
+                    {overallAvg.toFixed(1)}
+                  </td>
+                  <td colSpan={3} className="py-3.5 px-3.5 text-center">
+                    <span className="text-[10px] bg-indigo-600 text-white font-mono font-bold px-2.5 py-1 rounded-lg">
+                      {totalPassed === subjectRecapRows.length ? 'SELESAI TUNTAS' : 'PENGAYAAN BERJALAN'}
+                    </span>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {/* MODE B: MOBILE RESPONSIVE CARDS VIEW */}
+        {displayMode === 'CARDS' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredRows.map(row => (
+              <div
+                key={row.subject.id}
+                className="bg-slate-50 dark:bg-slate-950 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-4 transition-all hover:border-indigo-300 dark:hover:border-indigo-800 shadow-xs"
+              >
+                {/* Header Card */}
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-mono font-bold text-xs text-slate-700 dark:text-slate-300">
+                        {row.subject.code}
+                      </span>
+                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                        {row.subject.name}
+                      </h4>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                      <span>Kategori: <strong>{row.subject.category}</strong></span>
+                      <span>•</span>
+                      <span>KKM Target: <strong className="text-amber-600">{row.passingGrade.toFixed(0)}</strong></span>
+                    </div>
+                  </div>
+
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full font-mono ${
+                      row.isPassing
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                        : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                    }`}
+                  >
+                    {row.isPassing ? 'TUNTAS KKM' : 'BELUM TUNTAS'}
+                  </span>
+                </div>
+
+                {/* Score Pills Grid */}
+                <div className="grid grid-cols-4 gap-2 pt-1">
+                  {tryoutCodes.map(code => {
+                    const score = row.toScores[code] ?? 0;
+                    const passed = score >= row.passingGrade;
+                    return (
+                      <div
+                        key={code}
+                        className={`p-2 rounded-xl text-center border ${
+                          passed
+                            ? 'bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-800'
+                            : 'bg-white dark:bg-slate-900 border-amber-200 dark:border-amber-800'
+                        }`}
+                      >
+                        <span className="text-[10px] text-slate-400 font-mono block">{code}</span>
+                        <strong className={`font-mono text-sm block mt-0.5 ${
+                          passed ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                        }`}>
+                          {score.toFixed(1)}
+                        </strong>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Footer Metric & Action */}
+                <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Rata-Rata</span>
+                      <strong className="text-sm font-black font-mono text-indigo-700 dark:text-indigo-300">
+                        {row.avgScore.toFixed(1)}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Tren Nilai</span>
+                      <span className={`font-mono font-bold flex items-center ${
+                        row.trend >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                      }`}>
+                        {row.trend >= 0 ? `+${row.trend.toFixed(1)}` : row.trend.toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => onOpenSubjectExplanations(row.subject.id)}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Lihat Pembahasan</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
