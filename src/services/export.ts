@@ -691,80 +691,140 @@ export class ExportService {
       p2Y += barChartH + 5.5;
     }
 
-    // SECTION 3: REKAPITULASI PENGERJAAN BUTIR SOAL (QUESTION SHEET GRID)
+    // SECTION 3: REKAPITULASI PENGERJAAN BUTIR SOAL (QUESTION SHEET GRID PER MAPEL)
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`V. MATRIKS REKAP PENGERJAAN BUTIR SOAL (${tryout.code})`, leftMargin, p2Y);
+    doc.text(`V. MATRIKS REKAP PENGERJAAN BUTIR SOAL PER MATA PELAJARAN (${tryout.code})`, leftMargin, p2Y);
 
     p2Y += 3.5;
     const questionsList = studentAnalytics?.questionPerformance || [];
     const qCount = questionsList.length;
 
     if (qCount > 0) {
-      const colsPerRow = 20;
-      const boxSize = 7.8;
-      const gapX = (contentWidth - colsPerRow * boxSize) / (colsPerRow - 1);
-      const rowGap = 2;
+      // Group questions by subject
+      const pdfSubjectGroups = new Map<string, {
+        code: string;
+        name: string;
+        items: typeof questionsList;
+      }>();
 
-      let currentX = leftMargin;
-      let currentY = p2Y;
+      questionsList.forEach((qp) => {
+        // Find subject from subjectRecapData or uniqueCode prefix
+        let subCode = 'MAPEL';
+        let subName = 'Mata Pelajaran';
 
-      questionsList.forEach((qp, idx) => {
-        const qNum = qp.questionNumber || (idx + 1);
-        const isUnanswered = !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong';
-
-        if (qp.isCorrect) {
-          doc.setFillColor(220, 252, 231); // emerald light
-          doc.setDrawColor(134, 239, 172);
-          doc.setTextColor(21, 128, 61);
-        } else if (isUnanswered) {
-          doc.setFillColor(254, 243, 199); // amber light
-          doc.setDrawColor(252, 211, 77);
-          doc.setTextColor(180, 83, 9);
-        } else {
-          doc.setFillColor(255, 228, 230); // rose light
-          doc.setDrawColor(253, 164, 175);
-          doc.setTextColor(225, 29, 72);
+        if (subjectRecapData && subjectRecapData.length > 0) {
+          const matchedSub = subjectRecapData.find(
+            s => qp.uniqueCode.toUpperCase().startsWith(s.subject.code.toUpperCase()) ||
+                 s.subject.id === (qp as any).subjectId
+          );
+          if (matchedSub) {
+            subCode = matchedSub.subject.code;
+            subName = matchedSub.subject.name;
+          }
         }
 
-        doc.roundedRect(currentX, currentY, boxSize, boxSize, 0.8, 0.8, 'FD');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(5.8);
-        doc.text(`${qNum}`, currentX + boxSize / 2, currentY + boxSize / 2 + 1.6, { align: 'center' });
-
-        if ((idx + 1) % colsPerRow === 0) {
-          currentX = leftMargin;
-          currentY += boxSize + rowGap;
-        } else {
-          currentX += boxSize + gapX;
+        // Fallback: extract code from uniqueCode (e.g. "MAT-01" -> "MAT")
+        if (subCode === 'MAPEL' && qp.uniqueCode.includes('-')) {
+          subCode = qp.uniqueCode.split('-')[0].trim().toUpperCase();
+          subName = subCode;
         }
+
+        if (!pdfSubjectGroups.has(subCode)) {
+          pdfSubjectGroups.set(subCode, {
+            code: subCode,
+            name: subName,
+            items: [],
+          });
+        }
+        pdfSubjectGroups.get(subCode)!.items.push(qp);
       });
 
-      p2Y = currentY + boxSize + 2.5;
+      const boxSize = 6.8;
+      const boxGap = 1.6;
+      let currentY = p2Y;
+
+      Array.from(pdfSubjectGroups.values()).forEach((grp) => {
+        const correctInGroup = grp.items.filter(q => q.isCorrect).length;
+        const totalInGroup = grp.items.length;
+
+        // Subject Header Tag
+        doc.setFillColor(241, 245, 249);
+        doc.roundedRect(leftMargin, currentY, 32, 5.2, 0.8, 0.8, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(79, 70, 229);
+        doc.text(`${grp.code}`, leftMargin + 2, currentY + 3.8);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(5.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`(${correctInGroup}/${totalInGroup} Benar)`, leftMargin + 13, currentY + 3.8);
+
+        // Boxes Row for this subject
+        let startBoxX = leftMargin + 34;
+        grp.items.forEach((qp, idx) => {
+          const qNum = qp.questionNumber || (idx + 1);
+          const isUnanswered = !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong';
+
+          if (startBoxX + boxSize > rightMargin) {
+            currentY += boxSize + boxGap;
+            startBoxX = leftMargin + 34;
+          }
+
+          if (qp.isCorrect) {
+            doc.setFillColor(220, 252, 231); // emerald light
+            doc.setDrawColor(134, 239, 172);
+            doc.setTextColor(21, 128, 61);
+          } else if (isUnanswered) {
+            doc.setFillColor(254, 243, 199); // amber light
+            doc.setDrawColor(252, 211, 77);
+            doc.setTextColor(180, 83, 9);
+          } else {
+            doc.setFillColor(255, 228, 230); // rose light
+            doc.setDrawColor(253, 164, 175);
+            doc.setTextColor(225, 29, 72);
+          }
+
+          doc.roundedRect(startBoxX, currentY, boxSize, boxSize, 0.6, 0.6, 'FD');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5.2);
+          doc.text(`${qNum}`, startBoxX + boxSize / 2, currentY + boxSize / 2 + 1.4, { align: 'center' });
+
+          startBoxX += boxSize + boxGap;
+        });
+
+        currentY += boxSize + 2.5;
+      });
+
+      p2Y = currentY + 1;
 
       // Legend Butir Soal
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.5);
+      doc.setFontSize(6.2);
       doc.setFillColor(220, 252, 231);
       doc.setDrawColor(134, 239, 172);
-      doc.roundedRect(leftMargin, p2Y, 3.5, 3.5, 0.5, 0.5, 'FD');
+      doc.roundedRect(leftMargin, p2Y, 3.2, 3.2, 0.5, 0.5, 'FD');
       doc.setTextColor(21, 128, 61);
-      doc.text('Jawaban Benar', leftMargin + 5.5, p2Y + 2.8);
+      doc.text('Jawaban Benar', leftMargin + 4.8, p2Y + 2.5);
 
       doc.setFillColor(255, 228, 230);
       doc.setDrawColor(253, 164, 175);
-      doc.roundedRect(leftMargin + 35, p2Y, 3.5, 3.5, 0.5, 0.5, 'FD');
+      doc.roundedRect(leftMargin + 32, p2Y, 3.2, 3.2, 0.5, 0.5, 'FD');
       doc.setTextColor(225, 29, 72);
-      doc.text('Jawaban Salah', leftMargin + 40.5, p2Y + 2.8);
+      doc.text('Jawaban Salah', leftMargin + 36.8, p2Y + 2.5);
 
       doc.setFillColor(254, 243, 199);
       doc.setDrawColor(252, 211, 77);
-      doc.roundedRect(leftMargin + 70, p2Y, 3.5, 3.5, 0.5, 0.5, 'FD');
+      doc.roundedRect(leftMargin + 64, p2Y, 3.2, 3.2, 0.5, 0.5, 'FD');
       doc.setTextColor(180, 83, 9);
-      doc.text('Kosong / Tidak Dijawab', leftMargin + 75.5, p2Y + 2.8);
+      doc.text('Kosong / Tidak Dijawab', leftMargin + 68.8, p2Y + 2.5);
 
-      p2Y += 6.5;
+      doc.setTextColor(100, 116, 139);
+      doc.text('*Nomor butir soal dikelompokkan berdasarkan mata pelajaran.', rightMargin, p2Y + 2.5, { align: 'right' });
+
+      p2Y += 5.5;
     }
 
     // SECTION 4: AKSES MEDIA PEMBAHASAN RESMI

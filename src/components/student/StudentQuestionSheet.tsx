@@ -74,6 +74,36 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
     });
   }, [questionPerformance, questions, statusFilter, selectedSubjectId, searchQuery, selectedQuestionNumber]);
 
+  // Group matrix items by subject
+  const groupedMatrixBySubject = useMemo(() => {
+    const groupMap = new Map<string, {
+      subjectId: string;
+      subjectName: string;
+      subjectCode: string;
+      items: typeof questionPerformance;
+    }>();
+
+    questionPerformance.forEach(qp => {
+      const qObj = questions.find(q => q.id === qp.questionId);
+      const subObj = qObj ? subjects.find(s => s.id === qObj.subjectId) : null;
+      const subId = subObj?.id || 'DEFAULT_MAPEL';
+      const subCode = subObj?.code || 'MAPEL';
+      const subName = subObj?.name || 'Mata Pelajaran';
+
+      if (!groupMap.has(subId)) {
+        groupMap.set(subId, {
+          subjectId: subId,
+          subjectName: subName,
+          subjectCode: subCode,
+          items: [],
+        });
+      }
+      groupMap.get(subId)!.items.push(qp);
+    });
+
+    return Array.from(groupMap.values());
+  }, [questionPerformance, questions, subjects]);
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header & Overall Performance Metric */}
@@ -156,64 +186,123 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
           </div>
         </div>
 
-        {/* Quick Matrix Grid of Question Numbers */}
-        <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
-            <span>Matriks Pengerjaan Cepat (Klik nomor untuk menyaring butir):</span>
+        {/* Quick Matrix Grid of Question Numbers Grouped By Subject */}
+        <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-800 dark:text-slate-200">
+                Matriks Pengerjaan Cepat Per Mata Pelajaran:
+              </span>
+              <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400">
+                (Klik nomor untuk langsung meninjau soal)
+              </span>
+            </div>
             {selectedQuestionNumber !== null && (
               <button
                 type="button"
                 onClick={() => setSelectedQuestionNumber(null)}
-                className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer self-start sm:self-auto"
               >
-                Reset Pilihan Nomor
+                Reset Pilihan Nomor (#{selectedQuestionNumber})
               </button>
             )}
           </div>
 
-          <div className="flex flex-wrap gap-1.5 p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
-            {questionPerformance.map((qp, idx) => {
-              const qNum = qp.questionNumber || (idx + 1);
-              const isUnanswered = !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong';
-              const isSelected = selectedQuestionNumber === qNum;
-
-              let colorClass = 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400';
-              if (qp.isCorrect) {
-                colorClass = 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700';
-              } else if (isUnanswered) {
-                colorClass = 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700';
-              } else {
-                colorClass = 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-700';
-              }
+          {/* Grouped by Subject Matrix */}
+          <div className="space-y-3">
+            {groupedMatrixBySubject.map((group) => {
+              const groupTotal = group.items.length;
+              const groupCorrect = group.items.filter(qp => qp.isCorrect).length;
+              const groupUnanswered = group.items.filter(qp => !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong').length;
+              const groupIncorrect = groupTotal - groupCorrect - groupUnanswered;
 
               return (
-                <button
-                  key={qp.questionId}
-                  type="button"
-                  onClick={() => setSelectedQuestionNumber(isSelected ? null : qNum)}
-                  className={`w-8 h-8 rounded-lg font-mono text-xs font-bold flex items-center justify-center border transition-all cursor-pointer ${colorClass} ${
-                    isSelected ? 'ring-2 ring-indigo-600 scale-110 shadow-sm' : 'hover:scale-105'
-                  }`}
-                  title={`Soal No. ${qNum}: ${qp.isCorrect ? 'Benar' : isUnanswered ? 'Tidak Dijawab' : 'Salah'}`}
+                <div
+                  key={group.subjectId}
+                  className="p-3 bg-slate-50/80 dark:bg-slate-950/70 rounded-2xl border border-slate-200/90 dark:border-slate-800 space-y-2 transition-colors"
                 >
-                  {qNum}
-                </button>
+                  {/* Subject Row Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-lg font-mono font-bold text-xs bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                        {group.subjectCode}
+                      </span>
+                      <span className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                        {group.subjectName}
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        ({groupTotal} Soal)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[10px] font-mono">
+                      <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-950/70 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
+                        {groupCorrect} Benar
+                      </span>
+                      <span className="text-rose-700 dark:text-rose-400 bg-rose-100/70 dark:bg-rose-950/70 px-1.5 py-0.5 rounded border border-rose-300 dark:border-rose-800">
+                        {groupIncorrect} Salah
+                      </span>
+                      {groupUnanswered > 0 && (
+                        <span className="text-amber-700 dark:text-amber-400 bg-amber-100/70 dark:bg-amber-950/70 px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-800">
+                          {groupUnanswered} Kosong
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Grid Numbers for this Subject */}
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {group.items.map((qp, idx) => {
+                      const qNum = qp.questionNumber || (idx + 1);
+                      const isUnanswered = !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong';
+                      const isSelected = selectedQuestionNumber === qNum;
+
+                      let colorClass = 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400';
+                      if (qp.isCorrect) {
+                        colorClass = 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700';
+                      } else if (isUnanswered) {
+                        colorClass = 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700';
+                      } else {
+                        colorClass = 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-700';
+                      }
+
+                      return (
+                        <button
+                          key={qp.questionId}
+                          type="button"
+                          onClick={() => setSelectedQuestionNumber(isSelected ? null : qNum)}
+                          className={`w-8 h-8 rounded-lg font-mono text-xs font-bold flex items-center justify-center border transition-all cursor-pointer ${colorClass} ${
+                            isSelected ? 'ring-2 ring-indigo-600 scale-110 shadow-sm' : 'hover:scale-105'
+                          }`}
+                          title={`[${group.subjectCode}] Soal No. ${qNum}: ${qp.isCorrect ? 'Benar' : isUnanswered ? 'Tidak Dijawab' : 'Salah'}`}
+                        >
+                          {qNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </div>
 
-          <div className="flex items-center gap-4 text-[11px] text-slate-500 dark:text-slate-400 pt-1">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-              <span>Benar</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-              <span>Salah</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-              <span>Kosong</span>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <span>Benar</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                <span>Salah</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span>Kosong</span>
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-400">
+              *Tiap kotak nomor otomatis dikelompokkan berdasarkan mata pelajaran ujian.
             </span>
           </div>
         </div>
