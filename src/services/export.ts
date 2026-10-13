@@ -170,11 +170,13 @@ export class ExportService {
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    const tryoutTitleShort = tryout.title.length > 20 ? tryout.title.slice(0, 20) + '..' : tryout.title;
+    doc.setFontSize(7.5);
+    const tryoutTitleShort = tryout.title.length > 18 ? tryout.title.slice(0, 18) + '..' : tryout.title;
     doc.text(`:  ${tryout.code} - ${tryoutTitleShort}`, col2ValueX, yPos + 6.5);
     doc.text(`:  ${schoolInfo.academicYear}`, col2ValueX, yPos + 13);
     doc.setTextColor(score.scoringStatus === 'MATCH' ? 5 : 180, score.scoringStatus === 'MATCH' ? 120 : 80, 50);
-    doc.text(`:  ${score.scoringStatus === 'MATCH' ? 'MATCH (Terverifikasi 100%)' : score.scoringStatus}`, col2ValueX, yPos + 19.5);
+    doc.text(`:  ${score.scoringStatus === 'MATCH' ? 'MATCH (Terverifikasi)' : score.scoringStatus}`, col2ValueX, yPos + 19.5);
+    doc.setFontSize(8); // restore
 
     // 3. EXECUTIVE METRICS CARDS (Skor Akhir, Peringkat Kelas, Peringkat Angkatan, Rerata Kelas)
     yPos += 26.5;
@@ -413,14 +415,25 @@ export class ExportService {
 
     let p2Y = 32;
 
-    // SECTION 1: MATRIKS PEROLEHAN NILAI SELURUH MATA PELAJARAN (TO-1 s/d TO-4)
+    // SECTION 1: MATRIKS PEROLEHAN NILAI SELURUH MATA PELAJARAN
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('III. MATRIKS PEROLEHAN NILAI SELURUH MATA PELAJARAN (TO-1 s/d TO-4)', leftMargin, p2Y);
+
+    // Derive TO columns dynamically from progressHistory or subjectRecapData keys
+    const progressItems = extraMetrics?.progressHistory || [];
+    const toColumnKeys: string[] = progressItems.length > 0
+      ? progressItems.map(p => p.code)
+      : (subjectRecapData && subjectRecapData.length > 0
+        ? Object.keys(subjectRecapData[0].toScores)
+        : ['TO-1', 'TO-2', 'TO-3', 'TO-4']);
+    const toColumnCount = Math.min(toColumnKeys.length, 4); // max 4 columns
+    const activeToKeys = toColumnKeys.slice(0, toColumnCount);
+
+    doc.text(`III. MATRIKS PEROLEHAN NILAI SELURUH MATA PELAJARAN (${activeToKeys.join(' s/d ')})`, leftMargin, p2Y);
 
     p2Y += 3.5;
-    // Kolom Matriks: No (8), Mapel (62), KKM (18), TO-1 (18), TO-2 (18), TO-3 (18), TO-4 (18), Rerata (20) = 180 / 182
+    // Dynamic column widths: No(8), Mapel(62), KKM(18), TO cols (18 each), Rerata(20), Status(remaining)
     doc.setFillColor(15, 23, 42);
     doc.rect(leftMargin, p2Y, contentWidth, 6.5, 'F');
     doc.setTextColor(255, 255, 255);
@@ -429,12 +442,19 @@ export class ExportService {
     doc.text('NO', leftMargin + 4, p2Y + 4.5, { align: 'center' });
     doc.text('MATA PELAJARAN', leftMargin + 12, p2Y + 4.5);
     doc.text('KKM', leftMargin + 76, p2Y + 4.5, { align: 'center' });
-    doc.text('TO-1', leftMargin + 94, p2Y + 4.5, { align: 'center' });
-    doc.text('TO-2', leftMargin + 112, p2Y + 4.5, { align: 'center' });
-    doc.text('TO-3', leftMargin + 130, p2Y + 4.5, { align: 'center' });
-    doc.text('TO-4', leftMargin + 148, p2Y + 4.5, { align: 'center' });
-    doc.text('RERATA', leftMargin + 166, p2Y + 4.5, { align: 'center' });
-    doc.text('STATUS', leftMargin + 184, p2Y + 4.5, { align: 'center' });
+
+    // Dynamic TO column headers
+    const toColStartX = leftMargin + 94;
+    const toColWidth = 18;
+    activeToKeys.forEach((key, i) => {
+      const shortLabel = key.length > 5 ? key.slice(0, 5) : key;
+      doc.text(shortLabel, toColStartX + i * toColWidth, p2Y + 4.5, { align: 'center' });
+    });
+
+    const rerataX = toColStartX + toColumnCount * toColWidth;
+    const statusX = rerataX + 18;
+    doc.text('RERATA', rerataX, p2Y + 4.5, { align: 'center' });
+    doc.text('STATUS', statusX, p2Y + 4.5, { align: 'center' });
 
     p2Y += 6.5;
 
@@ -453,17 +473,19 @@ export class ExportService {
 
         doc.setFont('helvetica', 'normal');
         doc.text(`${(row.subject.passingGrade ?? 75).toFixed(0)}`, leftMargin + 76, p2Y + 3.8, { align: 'center' });
-        doc.text(`${(row.toScores['TO-1'] ?? 0).toFixed(1)}`, leftMargin + 94, p2Y + 3.8, { align: 'center' });
-        doc.text(`${(row.toScores['TO-2'] ?? 0).toFixed(1)}`, leftMargin + 112, p2Y + 3.8, { align: 'center' });
-        doc.text(`${(row.toScores['TO-3'] ?? 0).toFixed(1)}`, leftMargin + 130, p2Y + 3.8, { align: 'center' });
-        doc.text(`${(row.toScores['TO-4'] ?? 0).toFixed(1)}`, leftMargin + 148, p2Y + 3.8, { align: 'center' });
+
+        // Dynamic TO score columns - use actual keys from data
+        activeToKeys.forEach((key, i) => {
+          const val = row.toScores[key] ?? 0;
+          doc.text(`${val.toFixed(1)}`, toColStartX + i * toColWidth, p2Y + 3.8, { align: 'center' });
+        });
 
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(15, 23, 42);
-        doc.text(`${row.avgScore.toFixed(1)}`, leftMargin + 166, p2Y + 3.8, { align: 'center' });
+        doc.text(`${row.avgScore.toFixed(1)}`, rerataX, p2Y + 3.8, { align: 'center' });
 
         doc.setTextColor(row.isPassing ? 21 : 225, row.isPassing ? 128 : 29, row.isPassing ? 61 : 72);
-        doc.text(row.isPassing ? 'TUNTAS' : 'BELUM', leftMargin + 184, p2Y + 3.8, { align: 'center' });
+        doc.text(row.isPassing ? 'TUNTAS' : 'BELUM', statusX, p2Y + 3.8, { align: 'center' });
 
         doc.setDrawColor(241, 245, 249);
         doc.line(leftMargin, p2Y + 5.2, rightMargin, p2Y + 5.2);
@@ -478,9 +500,9 @@ export class ExportService {
       doc.setFontSize(6.8);
       doc.setTextColor(15, 23, 42);
       doc.text('RATA-RATA KOMPOSIT MULTIMAPEL:', leftMargin + 12, p2Y + 4);
-      doc.text(`${compositeAvg.toFixed(1)}`, leftMargin + 166, p2Y + 4, { align: 'center' });
+      doc.text(`${compositeAvg.toFixed(1)}`, rerataX, p2Y + 4, { align: 'center' });
       doc.setTextColor(21, 128, 61);
-      doc.text('TERVERIFIKASI', leftMargin + 184, p2Y + 4, { align: 'center' });
+      doc.text('TERVERIFIKASI', statusX, p2Y + 4, { align: 'center' });
       p2Y += 9;
     } else {
       p2Y += 4;
@@ -490,7 +512,7 @@ export class ExportService {
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('IV. GRAFIK PERKEMBANGAN NILAI TIAP-TIAP MATA PELAJARAN (LINTAS TO-1 S/D TO-4)', leftMargin, p2Y);
+    doc.text(`IV. GRAFIK PERKEMBANGAN NILAI TIAP-TIAP MATA PELAJARAN (LINTAS ${activeToKeys[0] || 'TO-1'} S/D ${activeToKeys[activeToKeys.length - 1] || 'TO-4'})`, leftMargin, p2Y);
 
     p2Y += 3.5;
     const lineChartH = 38;
@@ -519,16 +541,17 @@ export class ExportService {
       doc.text(`${val}`, chartLeft - 3, yVal + 1.5, { align: 'right' });
     });
 
-    // TO X Positions
-    const toLabels = ['TO-1', 'TO-2', 'TO-3', 'TO-4'];
-    const xStep = chartWidth / (toLabels.length - 1);
-    const xCoords = toLabels.map((_, i) => chartLeft + i * xStep);
+    // TO X Positions - dynamic from activeToKeys
+    const chartToLabels = activeToKeys.length > 0 ? activeToKeys : ['TO-1', 'TO-2', 'TO-3', 'TO-4'];
+    const xStep = chartWidth / Math.max(1, chartToLabels.length - 1);
+    const xCoords = chartToLabels.map((_, i) => chartLeft + i * xStep);
 
-    toLabels.forEach((label, i) => {
+    chartToLabels.forEach((label, i) => {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(label, xCoords[i], chartBottom + 5.5, { align: 'center' });
+      const shortLabel = label.length > 5 ? label.slice(0, 5) : label;
+      doc.text(shortLabel, xCoords[i], chartBottom + 5.5, { align: 'center' });
     });
 
     // Palette Warna Garis Mapel
@@ -541,16 +564,12 @@ export class ExportService {
       [16, 185, 129],  // Emerald - BIO
     ];
 
-    // Gambar Garis Tren tiap Mapel
+    // Gambar Garis Tren tiap Mapel - use dynamic keys
     if (subjectRecapData && subjectRecapData.length > 0) {
       subjectRecapData.slice(0, 6).forEach((row, sIdx) => {
         const color = lineColors[sIdx % lineColors.length];
-        const scores = [
-          row.toScores['TO-1'] ?? 70,
-          row.toScores['TO-2'] ?? 72,
-          row.toScores['TO-3'] ?? 75,
-          row.toScores['TO-4'] ?? 78,
-        ];
+        // Use dynamic keys instead of hardcoded 'TO-1' etc.
+        const scores = activeToKeys.map(key => row.toScores[key] ?? 0);
 
         const points = scores.map((val, idx) => ({
           x: xCoords[idx],
@@ -586,6 +605,92 @@ export class ExportService {
     }
 
     p2Y += lineChartH + 5.5;
+
+    // SECTION 2B: GRAFIK BATANG PERBANDINGAN NILAI SISWA VS RATA-RATA KELAS
+    const pHistory = extraMetrics?.progressHistory || [];
+    if (pHistory.length > 0) {
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('IV-B. PERBANDINGAN NILAI SISWA VS RATA-RATA KELAS (PER TRY OUT)', leftMargin, p2Y);
+      p2Y += 3.5;
+
+      const barChartH = 32;
+      doc.setFillColor(248, 250, 252);
+      doc.rect(leftMargin, p2Y, contentWidth, barChartH, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(leftMargin, p2Y, contentWidth, barChartH, 'S');
+
+      const bChartLeft = leftMargin + 16;
+      const bChartRight = rightMargin - 16;
+      const bChartWidth = bChartRight - bChartLeft;
+      const bChartTop = p2Y + 5;
+      const bChartBottom = p2Y + barChartH - 8;
+      const bChartHeight = bChartBottom - bChartTop;
+
+      // Y Gridlines
+      [0, 25, 50, 75, 100].forEach(val => {
+        const yVal = bChartBottom - (val / 100) * bChartHeight;
+        doc.setDrawColor(236, 240, 244);
+        doc.setLineWidth(0.15);
+        doc.line(bChartLeft, yVal, bChartRight, yVal);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(5);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`${val}`, bChartLeft - 3, yVal + 1.2, { align: 'right' });
+      });
+
+      const barGroupWidth = bChartWidth / pHistory.length;
+      const barWidth = Math.min(barGroupWidth * 0.3, 12);
+      const barGap = 2;
+
+      pHistory.forEach((item, i) => {
+        const groupCenterX = bChartLeft + (i + 0.5) * barGroupWidth;
+        const studentBarX = groupCenterX - barWidth - barGap / 2;
+        const classBarX = groupCenterX + barGap / 2;
+
+        // Student bar (indigo)
+        const sVal = Math.min(100, Math.max(0, item.score || 0));
+        const sBarH = (sVal / 100) * bChartHeight;
+        doc.setFillColor(79, 70, 229);
+        doc.rect(studentBarX, bChartBottom - sBarH, barWidth, sBarH, 'F');
+
+        // Class average bar (amber)
+        const cVal = Math.min(100, Math.max(0, item.classAverage || 0));
+        const cBarH = (cVal / 100) * bChartHeight;
+        doc.setFillColor(245, 158, 11);
+        doc.rect(classBarX, bChartBottom - cBarH, barWidth, cBarH, 'F');
+
+        // Value labels on top of bars
+        doc.setFontSize(5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(79, 70, 229);
+        doc.text(`${sVal.toFixed(0)}`, studentBarX + barWidth / 2, bChartBottom - sBarH - 1.2, { align: 'center' });
+        doc.setTextColor(180, 83, 9);
+        doc.text(`${cVal.toFixed(0)}`, classBarX + barWidth / 2, bChartBottom - cBarH - 1.2, { align: 'center' });
+
+        // X-axis label
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5.5);
+        doc.setTextColor(15, 23, 42);
+        const shortCode = item.code.length > 5 ? item.code.slice(0, 5) : item.code;
+        doc.text(shortCode, groupCenterX, bChartBottom + 4, { align: 'center' });
+      });
+
+      // Legend
+      doc.setFillColor(79, 70, 229);
+      doc.rect(leftMargin + 3, p2Y + 2, 3, 2, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Nilai Siswa', leftMargin + 7.5, p2Y + 3.8);
+
+      doc.setFillColor(245, 158, 11);
+      doc.rect(leftMargin + 28, p2Y + 2, 3, 2, 'F');
+      doc.text('Rata-rata Kelas', leftMargin + 32.5, p2Y + 3.8);
+
+      p2Y += barChartH + 5.5;
+    }
 
     // SECTION 3: REKAPITULASI PENGERJAAN BUTIR SOAL (QUESTION SHEET GRID)
     doc.setTextColor(15, 23, 42);
