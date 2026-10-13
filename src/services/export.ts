@@ -75,7 +75,7 @@ export class ExportService {
     const schoolInfo: SchoolProfile = extraMetrics?.schoolProfile || {
       name: 'SMA NEGERI 1 UTAMA',
       subHeader: 'SISTEM ASESMEN & ANALISIS TRY OUT TERPADU (STANDAR KURIKULUM NASIONAL)',
-      address: 'Jl. Pendidikan No. 45, Jakarta · Akreditasi A · NPSN: 20103450',
+      address: 'Jl. Pendidikan No. 45, Jakarta | Akreditasi A | NPSN: 20103450',
       principalName: 'Drs. Supriyadi, M.Pd.',
       principalNip: '196803121994031002',
       academicYear: '2025/2026 (Semester Genap)',
@@ -136,7 +136,7 @@ export class ExportService {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Paket Ujian: ${tryout.title} (${tryout.code}) · Berdasarkan Data Respons Terverifikasi`, leftMargin, yPos + 4.5);
+    doc.text(`Paket Ujian: ${tryout.title} (${tryout.code}) - Berdasarkan Data Respons Terverifikasi`, leftMargin, yPos + 4.5);
 
     // 2. KARTU IDENTITAS SISWA (Box Profil Elegan)
     yPos += 9.5;
@@ -160,18 +160,21 @@ export class ExportService {
     doc.text(`:  ${classObj?.name || 'XII IPA 1'} (Tingkat ${classObj?.gradeLevel || 'XII'})`, leftMargin + 30, yPos + 19.5);
 
     // Kolom 2 Metadata Ujian
+    const col2LabelX = leftMargin + 105;
+    const col2ValueX = leftMargin + 132;
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text('Paket / Kode', leftMargin + 105, yPos + 6.5);
-    doc.text('Tahun Ajaran', leftMargin + 105, yPos + 13);
-    doc.text('Status Scoring', leftMargin + 105, yPos + 19.5);
+    doc.text('Paket / Kode', col2LabelX, yPos + 6.5);
+    doc.text('Tahun Ajaran', col2LabelX, yPos + 13);
+    doc.text('Status Scoring', col2LabelX, yPos + 19.5);
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.text(`:  ${tryout.code} — ${tryout.title.slice(0, 22)}`, leftMargin + 128, yPos + 6.5);
-    doc.text(`:  ${schoolInfo.academicYear}`, leftMargin + 128, yPos + 13);
+    const tryoutTitleShort = tryout.title.length > 20 ? tryout.title.slice(0, 20) + '..' : tryout.title;
+    doc.text(`:  ${tryout.code} - ${tryoutTitleShort}`, col2ValueX, yPos + 6.5);
+    doc.text(`:  ${schoolInfo.academicYear}`, col2ValueX, yPos + 13);
     doc.setTextColor(score.scoringStatus === 'MATCH' ? 5 : 180, score.scoringStatus === 'MATCH' ? 120 : 80, 50);
-    doc.text(`:  ${score.scoringStatus === 'MATCH' ? 'MATCH (Terverifikasi 100%)' : score.scoringStatus}`, leftMargin + 128, yPos + 19.5);
+    doc.text(`:  ${score.scoringStatus === 'MATCH' ? 'MATCH (Terverifikasi 100%)' : score.scoringStatus}`, col2ValueX, yPos + 19.5);
 
     // 3. EXECUTIVE METRICS CARDS (Skor Akhir, Peringkat Kelas, Peringkat Angkatan, Rerata Kelas)
     yPos += 26.5;
@@ -250,24 +253,24 @@ export class ExportService {
     // Keterangan Regulasi Standar Predikat Kurikulum & Tie-Breaker (2 Baris Rapi Tanpa Tabrakan)
     yPos += cardH + 3.5;
     doc.setFillColor(241, 245, 249);
-    doc.rect(leftMargin, yPos, contentWidth, 8, 'F');
+    doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.rect(leftMargin, yPos, contentWidth, 8, 'S');
+    doc.rect(leftMargin, yPos, contentWidth, 10, 'S');
 
     doc.setFontSize(6.5);
     doc.setTextColor(71, 85, 105);
     doc.setFont('helvetica', 'bold');
-    doc.text('STANDAR PREDIKAT:', leftMargin + 3, yPos + 3.8);
+    doc.text('STANDAR PREDIKAT:', leftMargin + 3, yPos + 4);
     doc.setFont('helvetica', 'normal');
-    doc.text('A (≥ 88.0 Sangat Baik)   ·   B (78.0 - 87.9 Baik)   ·   C (65.0 - 77.9 Cukup)   ·   D (< 65.0 Bimbingan)', leftMargin + 32, yPos + 3.8);
+    doc.text('A (>= 88.0 Sangat Baik)  |  B (78.0 - 87.9 Baik)  |  C (65.0 - 77.9 Cukup)  |  D (< 65.0 Bimbingan)', leftMargin + 33, yPos + 4);
 
     doc.setFont('helvetica', 'bold');
-    doc.text('ATURAN TIE-BREAKER:', leftMargin + 3, yPos + 6.8);
+    doc.text('ATURAN TIE-BREAKER:', leftMargin + 3, yPos + 8);
     doc.setFont('helvetica', 'normal');
-    doc.text('1. Total Skor Ujian   →   2. Total Benar Seluruh Mapel   →   3. Total Benar Mapel Matematika', leftMargin + 36, yPos + 6.8);
+    doc.text('1. Total Skor Ujian  >  2. Total Benar Seluruh Mapel  >  3. Total Benar Mapel Matematika', leftMargin + 37, yPos + 8);
 
     // 4. STATISTIK AKURASI JAWABAN
-    yPos += 11;
+    yPos += 13;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
@@ -385,7 +388,7 @@ export class ExportService {
     // Footer Page 1
     doc.setFontSize(6.8);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Dokumen Asesmen Resmi ${schoolInfo.name} · Halaman 1 dari 2 (Lembar Hasil Siswa)`, leftMargin, 288);
+    doc.text(`Dokumen Asesmen Resmi ${schoolInfo.name} - Halaman 1 dari 2 (Lembar Hasil Siswa)`, leftMargin, 288);
     doc.text(`ID Verifikasi: ${student.id}-${tryout.id}`, rightMargin, 288, { align: 'right' });
 
     // ==========================================
@@ -405,7 +408,7 @@ export class ExportService {
     doc.text('TRANSKRIP AKADEMIK LINTAS TRY OUT & LEMBAR EVALUASI SOAL', leftMargin, 11);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text(`Siswa: ${student.name.toUpperCase()} · NISN: ${student.nisn || '-'} · Kelas: ${classObj?.name || 'XII IPA 1'} · ${schoolInfo.name}`, leftMargin, 18);
+    doc.text(`Siswa: ${student.name.toUpperCase()} | NISN: ${student.nisn || '-'} | Kelas: ${classObj?.name || 'XII IPA 1'} | ${schoolInfo.name}`, leftMargin, 18);
     doc.text('Halaman 2 dari 2', rightMargin, 18, { align: 'right' });
 
     let p2Y = 32;
@@ -683,7 +686,7 @@ export class ExportService {
     // Footer Page 2
     doc.setFontSize(6.8);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Dokumen Asesmen Resmi ${schoolInfo.name} · Halaman 2 dari 2 (Transkrip Lintas TO & Rekap Soal)`, leftMargin, 288);
+    doc.text(`Dokumen Asesmen Resmi ${schoolInfo.name} - Halaman 2 dari 2 (Transkrip Lintas TO & Rekap Soal)`, leftMargin, 288);
     doc.text('Diterbitkan Otomatis oleh Sistem Asesmen Sekolah', rightMargin, 288, { align: 'right' });
 
     const cleanNisn = student.nisn || '0000000000';
