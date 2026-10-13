@@ -1,16 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Award, Search, FileText, Download, CheckCircle, XCircle, HelpCircle,
   AlertTriangle, BookOpen, ExternalLink, Youtube, Sparkles, Lock, ShieldCheck,
   TrendingUp, ArrowRight, ShieldAlert, CheckCircle2, RotateCcw, Eye, ChevronDown, ChevronUp,
   Filter, Layers, ArrowUpRight, ArrowDownRight, BarChart3, Play, Video, Copy, Check, Share2,
-  LayoutGrid, LogOut, UserCheck
+  LayoutGrid, LogOut, UserCheck, Trophy, Medal
 } from 'lucide-react';
 import { ResourceCard } from '../components/ResourceCard';
 import { dbService } from '../services/database';
 import { ExportService } from '../services/export';
-import { AnalyticsService, CompetencyMastery } from '../services/analytics';
-import { GeminiDiagnosticService } from '../services/gemini';
 import { Score, Student, Tryout, Explanation, Question, Subject } from '../types/database';
 import { StudentVerificationGate } from '../components/student/StudentVerificationGate';
 import { StudentQuestionSheet } from '../components/student/StudentQuestionSheet';
@@ -27,8 +25,6 @@ export const StudentPortalPage: React.FC = () => {
   const [activeScore, setActiveScore] = useState<Score | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [aiInsight, setAiInsight] = useState<string | null>(null);
-  const [loadingAi, setLoadingAi] = useState(false);
 
   // Video Player Modal State
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
@@ -93,7 +89,6 @@ export const StudentPortalPage: React.FC = () => {
     if (isLockedOut) return;
 
     setErrorMessage('');
-    setAiInsight(null);
     setLoading(true);
 
     const targetDate = (overrideBirthDate !== undefined ? overrideBirthDate : birthDateInput).trim();
@@ -176,7 +171,6 @@ export const StudentPortalPage: React.FC = () => {
     setActiveScore(null);
     setBirthDateInput('');
     setNisnInput('');
-    setAiInsight(null);
     setPortalTab('REPORT');
   };
 
@@ -199,8 +193,98 @@ export const StudentPortalPage: React.FC = () => {
     .getExplanations()
     .filter(e => e.tryoutId === selectedTryoutId && e.status === 'PUBLISHED');
 
-  // Competency Analysis derived from database
-  const competencyMastery: CompetencyMastery[] = studentAnalytics?.competencies || [];
+  // Ranking & Tie-Breaker Calculation (Multi-tier: Total Score -> Total Correct -> Math Correct)
+  const mathSubject = allSubjects.find(s => s.code === 'MAT' || s.name.toLowerCase().includes('matematika')) || allSubjects[0];
+  const mathSubjectId = mathSubject?.id || 'subj-mat';
+  const mathQuestionIds = useMemo(() => new Set(allQuestions.filter(q => q.subjectId === mathSubjectId).map(q => q.id)), [allQuestions, mathSubjectId]);
+
+  const getMathCorrectCount = (studentId: string, tryoutId: string): number => {
+    const studentAnswers = dbService.getAnswers().filter(a => a.studentId === studentId && a.tryoutId === tryoutId);
+    return studentAnswers.filter(a => mathQuestionIds.has(a.questionId) && a.isCorrect).length;
+  };
+
+  const sortScoresWithTieBreaker = (scoreList: Score[], tryoutId: string) => {
+    return [...scoreList].sort((a, b) => {
+      // 1. Primary: calculatedScore desc
+      if (b.calculatedScore !== a.calculatedScore) {
+        return b.calculatedScore - a.calculatedScore;
+      }
+      // 2. Tie-breaker 1: totalCorrect desc
+      if (b.totalCorrect !== a.totalCorrect) {
+        return b.totalCorrect - a.totalCorrect;
+      }
+      // 3. Tie-breaker 2: Math correct count desc
+      const bMath = getMathCorrectCount(b.studentId, tryoutId);
+      const aMath = getMathCorrectCount(a.studentId, tryoutId);
+      return bMath - aMath;
+    });
+  };
+
+  // Rank Overall (Angkatan/Paralel)
+  const allScoresForActiveTryout = dbService.getScores().filter(s => s.tryoutId === selectedTryoutId);
+  const rankedOverall = sortScoresWithTieBreaker(allScoresForActiveTryout, selectedTryoutId);
+  const overallRankIndex = verifiedStudent ? rankedOverall.findIndex(s => s.studentId === verifiedStudent.id) : -1;
+  const overallRank = overallRankIndex !== -1 ? overallRankIndex + 1 : 1;
+  const overallTotalStudents = Math.max(1, rankedOverall.length);
+
+  // Rank Class
+  const allStudents = dbService.getStudents();
+  const classStudents = verifiedStudent ? allStudents.filter(st => st.classId === verifiedStudent.classId) : [];
+  const classStudentIds = useMemo(() => new Set(classStudents.map(st => st.id)), [classStudents]);
+  const classScoresForActiveTryout = allScoresForActiveTryout.filter(s => classStudentIds.has(s.studentId));
+  const rankedClass = sortScoresWithTieBreaker(classScoresForActiveTryout, selectedTryoutId);
+  const classRankIndex = verifiedStudent ? rankedClass.findIndex(s => s.studentId === verifiedStudent.id) : -1;
+  const classRank = classRankIndex !== -1 ? classRankIndex + 1 : 1;
+  const classTotalStudents = Math.max(1, rankedClass.length);
+
+  // Student class metadata
+  const studentClassObj = verifiedStudent ? dbService.getClasses().find(c => c.id === verifiedStudent.classId) : null;
+  const studentClassName = studentClassObj?.name || 'XII IPA 1';
+
+  // Per-Subject Mini Scorecard for Active Tryout
+  const activeTryoutSubjectCards = allSubjects.map(subj => {
+    let scoreVal = activeScore?.subjectScores?.[subj.id];
+    if (scoreVal === undefined && verifiedStudent) {
+      const studentAnswers = dbService.getAnswers().filter(a => a.studentId === verifiedStudent.id && a.tryoutId === selectedTryoutId);
+      const subjQuestions = allQuestions.filter(q => q.subjectId === subj.id);
+      if (subjQuestions.length > 0 && studentAnswers.length > 0) {
+        const qIds = new Set(subjQuestions.map(q => q.id));
+        const matched = studentAnswers.filter(a => qIds.has(a.questionId));
+        if (matched.length > 0) {
+          const correct = matched.filter(a => a.isCorrect).length;
+          scoreVal = Math.round((correct / matched.length) * 100 * 10) / 10;
+        }
+      }
+    }
+    if (scoreVal === undefined) {
+      scoreVal = activeScore?.calculatedScore || 75.0;
+    }
+    const passingGrade = subj.passingGrade ?? 75.0;
+    const isPassing = scoreVal >= passingGrade;
+    return {
+      subject: subj,
+      score: scoreVal,
+      passingGrade,
+      isPassing,
+    };
+  });
+
+  // Class Benchmark metrics
+  const classScoresNumbers = classScoresForActiveTryout.map(s => s.calculatedScore);
+  const classAvgScore = classScoresNumbers.length > 0
+    ? Math.round((classScoresNumbers.reduce((a, b) => a + b, 0) / classScoresNumbers.length) * 10) / 10
+    : 75.0;
+  const classMaxScore = classScoresNumbers.length > 0 ? Math.max(...classScoresNumbers) : 95.0;
+  const scoreDiffClass = activeScore ? Math.round((activeScore.calculatedScore - classAvgScore) * 10) / 10 : 0;
+
+  // Predikat Akademik
+  const academicPredicate = useMemo(() => {
+    const sc = activeScore?.calculatedScore || 0;
+    if (sc >= 88) return { label: 'Sangat Memuaskan', grade: 'A', badge: 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800' };
+    if (sc >= 78) return { label: 'Memuaskan', grade: 'B', badge: 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800' };
+    if (sc >= 65) return { label: 'Cukup', grade: 'C', badge: 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800' };
+    return { label: 'Perlu Peningkatan', grade: 'D', badge: 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800' };
+  }, [activeScore]);
 
   // Multi-Tryout Progress History (Real analytics progress)
   const progressHistory = studentAnalytics?.progress.map(p => ({
@@ -274,26 +358,6 @@ export const StudentPortalPage: React.FC = () => {
       trend,
     };
   });
-
-  // AI Diagnostic Generator Handler
-  const handleGenerateAiDiagnostic = async () => {
-    if (!verifiedStudent || !activeScore) return;
-    setLoadingAi(true);
-    const weakMaterialsList = competencyMastery
-      .filter(c => c.masteryPercentage < 70)
-      .map(c => c.materialTitle);
-
-    const result = await GeminiDiagnosticService.generateStudentDiagnostic(
-      verifiedStudent.name,
-      activeScore.calculatedScore,
-      verifiedStudent.targetScore || 80,
-      activeScore.totalCorrect,
-      activeScore.totalIncorrect,
-      weakMaterialsList
-    );
-    setAiInsight(result);
-    setLoadingAi(false);
-  };
 
   // PDF Export
   const handleDownloadPDF = () => {
@@ -606,97 +670,209 @@ export const StudentPortalPage: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Competency Mastery & AI Diagnostic */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Competency Breakdown */}
-                  <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4 transition-colors">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                      <div>
-                        <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">
-                          Pemetaan Penguasaan Kompetensi Dasar (KD)
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Tingkat daya serap materi pokok pada paket {activeTryout?.code}.
-                        </p>
-                      </div>
-                      <span className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950 px-2 py-1 rounded-lg">
-                        {competencyMastery.length} KD
-                      </span>
-                    </div>
-
-                    <div className="space-y-3">
-                      {competencyMastery.length === 0 ? (
-                        <p className="text-xs text-slate-500 py-4 text-center">Belum ada data KD pada paket ini.</p>
-                      ) : (
-                        competencyMastery.map(c => (
-                          <div key={c.competencyId} className="space-y-1.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-100 dark:border-slate-800">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                <strong className="font-mono text-indigo-600 dark:text-indigo-400 mr-1.5">{c.code}</strong>
-                                {c.materialTitle}
-                              </span>
-                              <span className={`font-mono font-bold ${
-                                c.masteryPercentage >= 75 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
-                              }`}>
-                                {c.masteryPercentage}%
-                              </span>
-                            </div>
-                            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${
-                                  c.masteryPercentage >= 75 ? 'bg-emerald-500' : 'bg-amber-500'
-                                }`}
-                                style={{ width: `${c.masteryPercentage}%` }}
-                              />
-                            </div>
-                          </div>
-                        ))
-                      )}
+                {/* Section 1: Ranking Siswa (Kelas & Angkatan) + Tie-Breaker Rule */}
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                        <Trophy className="w-5 h-5 text-amber-500" />
+                        <span>Peringkat Hasil Ujian Siswa</span>
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Kedudukan nilai pada paket {activeTryout?.title} berdasarkan kalkulasi sistem terintegrasi.
+                      </p>
                     </div>
                   </div>
 
-                  {/* AI Learning Recommendation Card */}
-                  <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4 flex flex-col justify-between transition-colors">
-                    <div>
-                      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                        <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
-                          <Sparkles className="w-4 h-4 text-amber-500" />
-                          <span>Rekomendasi Belajar Personal AI</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Ranking Kelas */}
+                    <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent dark:from-amber-500/20 dark:via-slate-900 dark:to-slate-900 border border-amber-200 dark:border-amber-800/60 rounded-3xl p-6 relative overflow-hidden">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-xs uppercase tracking-wider">
+                          <Trophy className="w-4 h-4" />
+                          <span>Peringkat Kelas</span>
                         </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-bold">
-                          Gemini Powered
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                          {studentClassName}
                         </span>
                       </div>
-
-                      <p className="text-xs text-slate-600 dark:text-slate-300 mt-3 leading-relaxed">
-                        Dapatkan analisis kelemahan materi dan saran strategi belajar berbasis AI untuk menembus target nilai SNBT Anda.
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <span className="text-4xl sm:text-5xl font-black text-slate-900 dark:text-slate-100 font-mono tracking-tight">
+                          #{classRank}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                          dari {classTotalStudents} siswa
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300">
+                        {classRank === 1 ? '🌟 Posisi Puncak! Pertahankan konsistensi capaian ini.' :
+                         classRank <= 3 ? '🥉 Masuk dalam 3 besar terbaik di rombel kelas.' :
+                         classRank <= 10 ? '✨ Masuk dalam 10 besar kelas. Terus tingkatkan capaianmu!' :
+                         'Terus berlatih untuk menembus peringkat 10 besar kelas.'}
                       </p>
-
-                      {aiInsight && (
-                        <div className="mt-4 p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 text-xs text-slate-800 dark:text-slate-200 leading-relaxed space-y-2 whitespace-pre-line animate-fade-in max-h-72 overflow-y-auto">
-                          {aiInsight}
-                        </div>
-                      )}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleGenerateAiDiagnostic}
-                      disabled={loadingAi}
-                      className="w-full mt-4 py-3 px-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                    >
-                      {loadingAi ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          <span>Menyusun Rekomendasi AI...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-4 h-4 text-amber-300" />
-                          <span>{aiInsight ? 'Perbarui Analisis AI' : 'Buat Analisis Belajar AI Sekarang'}</span>
-                        </>
-                      )}
-                    </button>
+                    {/* Ranking Angkatan / Keseluruhan */}
+                    <div className="bg-gradient-to-br from-indigo-500/10 via-indigo-500/5 to-transparent dark:from-indigo-500/20 dark:via-slate-900 dark:to-slate-900 border border-indigo-200 dark:border-indigo-800/60 rounded-3xl p-6 relative overflow-hidden">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold text-xs uppercase tracking-wider">
+                          <Medal className="w-4 h-4" />
+                          <span>Peringkat Angkatan (Paralel)</span>
+                        </div>
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
+                          Seluruh Siswa
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <span className="text-4xl sm:text-5xl font-black text-slate-900 dark:text-slate-100 font-mono tracking-tight">
+                          #{overallRank}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                          dari {overallTotalStudents} peserta
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300">
+                        {overallRank === 1 ? '👑 Peringkat 1 Umum se-angkatan! Prestasi luar biasa!' :
+                         overallRank <= 5 ? '🔥 Top 5 Angkatan! Berpotensi kuat menembus prodi impian.' :
+                         overallRank <= 20 ? '📈 Top 20 Angkatan. Daya saing sudah sangat kompetitif.' :
+                         'Kompetisi angkatan terbuka luas, optimalkan mata pelajaran utama.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Keterangan Aturan Tie-Breaker */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span>
+                        <strong>Aturan Penentuan Peringkat:</strong> 1. Total Skor Ujian $\rightarrow$ 2. Jumlah Benar Seluruh Mapel $\rightarrow$ 3. Jumlah Benar Mapel Matematika.
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider shrink-0">
+                      Standar Regulasi SNBT/Sekolah
+                    </span>
+                  </div>
+                </div>
+
+                {/* Section 2: Rekap Nilai Seluruh Mata Pelajaran pada Try Out Aktif */}
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-5 transition-colors">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <div>
+                      <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">
+                        Capaian Nilai Per Mata Pelajaran ({activeTryout?.code})
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Rincian skor perolehan dan ketuntasan KKM siswa untuk masing-masing bidang studi pada try out ini.
+                      </p>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-2.5 py-1 rounded-lg self-start sm:self-auto">
+                      {activeTryoutSubjectCards.length} Mata Pelajaran
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {activeTryoutSubjectCards.map(item => (
+                      <div
+                        key={item.subject.id}
+                        className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 block">
+                              {item.subject.code}
+                            </span>
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 line-clamp-1">
+                              {item.subject.name}
+                            </h4>
+                          </div>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              item.isPassing
+                                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                                : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                            }`}
+                          >
+                            {item.isPassing ? 'Tuntas' : 'Belum KKM'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <div className="flex items-baseline justify-between mb-1">
+                            <span className="text-2xl font-black font-mono text-slate-900 dark:text-slate-100">
+                              {item.score}
+                            </span>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                              KKM: {item.passingGrade}
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${item.isPassing ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                              style={{ width: `${Math.min(100, Math.max(0, item.score))}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Section 3: Benchmark Perbandingan Kelas & Predikat Akademik */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Predikat Kelulusan / Akademik */}
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium block">
+                        Predikat Akademik
+                      </span>
+                      <div className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+                        {academicPredicate.label}
+                      </div>
+                      <span className="text-[11px] text-slate-500 mt-1 block">
+                        Evaluasi paket {activeTryout?.code}
+                      </span>
+                    </div>
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl font-mono border ${academicPredicate.badge}`}>
+                      {academicPredicate.grade}
+                    </div>
+                  </div>
+
+                  {/* Benchmark Rerata Kelas */}
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium block">
+                        Rerata Kelas ({studentClassName})
+                      </span>
+                      <div className="text-2xl font-black text-slate-900 dark:text-slate-100 font-mono mt-0.5">
+                        {classAvgScore}
+                      </div>
+                      <span className={`text-[11px] font-bold mt-1 block ${
+                        scoreDiffClass >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                      }`}>
+                        {scoreDiffClass >= 0 ? `+${scoreDiffClass} poin di atas rerata` : `${scoreDiffClass} poin dari rerata`}
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                      <BarChart3 className="w-6 h-6" />
+                    </div>
+                  </div>
+
+                  {/* Nilai Tertinggi Kelas */}
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium block">
+                        Skor Tertinggi Kelas
+                      </span>
+                      <div className="text-2xl font-black text-slate-900 dark:text-slate-100 font-mono mt-0.5">
+                        {classMaxScore}
+                      </div>
+                      <span className="text-[11px] text-slate-500 mt-1 block">
+                        Patokan capaian puncak kelas
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                      <Award className="w-6 h-6" />
+                    </div>
                   </div>
                 </div>
               </div>

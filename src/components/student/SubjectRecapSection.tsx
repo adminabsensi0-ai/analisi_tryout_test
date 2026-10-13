@@ -311,13 +311,13 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
           <div>
             <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 text-xs font-bold uppercase tracking-wider font-mono">
               <Layers className="w-4 h-4" />
-              <span>Matriks Rekapitulasi Nilai Seluruh Mata Pelajaran</span>
+              <span>Transkrip Akademik</span>
             </div>
             <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
-              Rekapitulasi Nilai Per-Mapel Lintas Try Out
+              Matriks Nilai Seluruh Mata Pelajaran
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Rekap perolehan nilai seluruh mata pelajaran untuk Try Out 1 hingga Try Out 4.
+              Perbandingan capaian nilai dan perkembangan ketuntasan KKM siswa dari Try Out 1 hingga Try Out 4.
             </p>
           </div>
 
@@ -472,13 +472,12 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                   </th>
                   <th className="py-3 px-3.5 text-center min-w-[110px]">Status KKM</th>
                   <th className="py-3 px-3.5 text-center min-w-[90px]">Tren</th>
-                  <th className="py-3 px-3 text-center min-w-[110px]">Media Belajar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 bg-white dark:bg-slate-900">
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7 + tryoutCodes.length} className="py-8 text-center text-slate-500 dark:text-slate-400">
+                    <td colSpan={6 + tryoutCodes.length} className="py-8 text-center text-slate-500 dark:text-slate-400">
                       Tidak ada data mata pelajaran yang cocok dengan pencarian '{searchQuery}'.
                     </td>
                   </tr>
@@ -577,18 +576,6 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                           <span>{row.trend >= 0 ? `+${row.trend.toFixed(1)}` : row.trend.toFixed(1)}</span>
                         </span>
                       </td>
-
-                      <td className="py-3 px-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => onOpenSubjectExplanations(row.subject.id)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-semibold transition-all cursor-pointer shadow-2xs hover:scale-102"
-                          title={`Buka Link Pembahasan untuk ${row.subject.name}`}
-                        >
-                          <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                          <span>Solusi &amp; YT</span>
-                        </button>
-                      </td>
                     </tr>
                   ))
                 )}
@@ -606,7 +593,7 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                   <td className="py-3.5 px-3.5 text-center font-mono text-emerald-600 dark:text-emerald-400 font-black text-sm bg-slate-200/80 dark:bg-slate-800/80">
                     {overallAvg.toFixed(1)}
                   </td>
-                  <td colSpan={3} className="py-3.5 px-3.5 text-center">
+                  <td colSpan={2} className="py-3.5 px-3.5 text-center">
                     <span className="text-[10px] bg-indigo-600 text-white font-mono font-bold px-2.5 py-1 rounded-lg">
                       {totalPassed === subjectRecapRows.length ? 'SELESAI TUNTAS' : 'PENGAYAAN BERJALAN'}
                     </span>
@@ -699,19 +686,34 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => onOpenSubjectExplanations(row.subject.id)}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                  >
-                    <BookOpen className="w-3.5 h-3.5" />
-                    <span>Lihat Pembahasan</span>
-                  </button>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg font-mono ${
+                    row.isPassing
+                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                  }`}>
+                    {row.isPassing ? 'MEMENUHI KKM' : 'DI BAWAH KKM'}
+                  </span>
                 </div>
               </div>
             ))}
           </div>
         )}
+
+        {/* Unified Callout to Explanations Tab */}
+        <div className="p-4 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200/80 dark:border-indigo-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-indigo-950 dark:text-indigo-200">
+          <div className="flex items-center gap-2.5">
+            <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <span>Ingin mempelajari modul solusi &amp; video pembahasan resmi dari guru? Buka tab <strong>Media Pembahasan</strong> atau tab <strong>Rekap Butir Soal</strong>.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenSubjectExplanations('ALL')}
+            className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shrink-0 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
+          >
+            <span>Buka Media Pembahasan</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );
