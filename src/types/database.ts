@@ -362,3 +362,13 @@ export interface SheetImportSummary {
   duplicateCount: number;
   errorDetails: string[];
 }
+
+export interface SchoolProfile {
+  name: string;
+  subHeader: string;
+  address: string;
+  principalName: string;
+  principalNip: string;
+  academicYear: string;
+}
+

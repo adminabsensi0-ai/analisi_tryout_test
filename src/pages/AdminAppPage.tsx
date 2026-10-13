@@ -111,6 +111,15 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const [formPassingGrade, setFormPassingGrade] = useState<number>(75.0);
   const [formSemester, setFormSemester] = useState<'ODD' | 'EVEN'>('EVEN');
 
+  // School Profile Settings State
+  const initialSchoolProfile = dbService.getSchoolProfile();
+  const [schoolName, setSchoolName] = useState(initialSchoolProfile.name);
+  const [schoolSubHeader, setSchoolSubHeader] = useState(initialSchoolProfile.subHeader);
+  const [schoolAddress, setSchoolAddress] = useState(initialSchoolProfile.address);
+  const [schoolPrincipalName, setSchoolPrincipalName] = useState(initialSchoolProfile.principalName);
+  const [schoolPrincipalNip, setSchoolPrincipalNip] = useState(initialSchoolProfile.principalNip);
+  const [schoolAcademicYear, setSchoolAcademicYear] = useState(initialSchoolProfile.academicYear);
+
   // Assign Wali Kelas State
   const [assigningClass, setAssigningClass] = useState<ClassRoom | null>(null);
   const [selectedWaliTeacherId, setSelectedWaliTeacherId] = useState('');
@@ -1715,6 +1724,127 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Konfigurasi pemeliharaan database dan reset pabrik.
                 </p>
+              </div>
+
+              {/* Form Profil Sekolah & Header Dokumen PDF */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-5">
+                <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                    <School className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                      Informasi Umum Sekolah &amp; Header Dokumen PDF
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Data ini otomatis digunakan pada Kop Surat, Header, dan Kolom Tanda Tangan seluruh Rapor PDF Siswa.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      Nama Resmi Sekolah / Institusi
+                    </label>
+                    <input
+                      type="text"
+                      value={schoolName}
+                      onChange={e => setSchoolName(e.target.value)}
+                      placeholder="Contoh: SMA NEGERI 1 UTAMA"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      Sub-Header / Keterangan Lembaga
+                    </label>
+                    <input
+                      type="text"
+                      value={schoolSubHeader}
+                      onChange={e => setSchoolSubHeader(e.target.value)}
+                      placeholder="Contoh: SISTEM ASESMEN & ANALISIS TRY OUT TERPADU"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      Alamat, Akreditasi, dan NPSN
+                    </label>
+                    <input
+                      type="text"
+                      value={schoolAddress}
+                      onChange={e => setSchoolAddress(e.target.value)}
+                      placeholder="Contoh: Jl. Pendidikan No. 45, Jakarta · Akreditasi A · NPSN: 20103450"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      Nama Kepala Sekolah (Beserta Gelar)
+                    </label>
+                    <input
+                      type="text"
+                      value={schoolPrincipalName}
+                      onChange={e => setSchoolPrincipalName(e.target.value)}
+                      placeholder="Contoh: Drs. Supriyadi, M.Pd."
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      NIP Kepala Sekolah
+                    </label>
+                    <input
+                      type="text"
+                      value={schoolPrincipalNip}
+                      onChange={e => setSchoolPrincipalNip(e.target.value)}
+                      placeholder="Contoh: 196803121994031002"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      Tahun Ajaran / Periode Semester
+                    </label>
+                    <input
+                      type="text"
+                      value={schoolAcademicYear}
+                      onChange={e => setSchoolAcademicYear(e.target.value)}
+                      placeholder="Contoh: 2025/2026 (Semester Genap)"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        dbService.updateSchoolProfile({
+                          name: schoolName,
+                          subHeader: schoolSubHeader,
+                          address: schoolAddress,
+                          principalName: schoolPrincipalName,
+                          principalNip: schoolPrincipalNip,
+                          academicYear: schoolAcademicYear,
+                        }, currentUser);
+                        triggerToast('Profil sekolah & informasi header PDF berhasil disimpan.');
+                      } catch (err: any) {
+                        triggerToast(err.message || 'Gagal menyimpan profil sekolah.', 'error');
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
+                  >
+                    Simpan Perubahan Informasi Sekolah
+                  </button>
+                </div>
               </div>
 
               <div className="bg-rose-50 dark:bg-rose-950/40 p-6 rounded-2xl border border-rose-200 dark:border-rose-900 space-y-4">

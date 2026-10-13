@@ -381,6 +381,7 @@ export const StudentPortalPage: React.FC = () => {
         academicPredicate,
         activeSubjectCards: activeTryoutSubjectCards,
         progressHistory,
+        schoolProfile: dbService.getSchoolProfile(),
       }
     );
   };

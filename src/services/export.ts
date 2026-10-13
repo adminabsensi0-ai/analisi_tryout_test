@@ -2,7 +2,7 @@ import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 import {
   Score, Student, Tryout, Question, ClassRoom, User, Explanation,
-  Material, Competency, AcademicYear, Answer, QuestionAnalysis
+  Material, Competency, AcademicYear, Answer, QuestionAnalysis, SchoolProfile
 } from '../types/database';
 import { AnalyticsService, QuestionAnalysisResult, StudentAnalyticsResult, ClassAnalyticsResult } from './analytics';
 
@@ -63,6 +63,7 @@ export class ExportService {
         score: number;
         classAverage: number;
       }>;
+      schoolProfile?: SchoolProfile;
     }
   ) {
     const doc = new jsPDF();
@@ -70,6 +71,15 @@ export class ExportService {
     const leftMargin = 14;
     const rightMargin = 196;
     const contentWidth = 182;
+
+    const schoolInfo: SchoolProfile = extraMetrics?.schoolProfile || {
+      name: 'SMA NEGERI 1 UTAMA',
+      subHeader: 'SISTEM ASESMEN & ANALISIS TRY OUT TERPADU (STANDAR KURIKULUM NASIONAL)',
+      address: 'Jl. Pendidikan No. 45, Jakarta · Akreditasi A · NPSN: 20103450',
+      principalName: 'Drs. Supriyadi, M.Pd.',
+      principalNip: '196803121994031002',
+      academicYear: '2025/2026 (Semester Genap)',
+    };
 
     // Helper Predikat Akademik Kurikulum
     const calculatedScore = score.calculatedScore;
@@ -79,16 +89,16 @@ export class ExportService {
       calculatedScore >= 65 ? 'C' : 'D'
     );
     const gradeLabel = extraMetrics?.academicPredicate?.label || (
-      calculatedScore >= 88 ? 'Sangat Baik (Sangat Memuaskan)' :
-      calculatedScore >= 78 ? 'Baik (Memuaskan)' :
-      calculatedScore >= 65 ? 'Cukup (Memenuhi Standar KKM)' : 'Perlu Bimbingan & Remedial'
+      calculatedScore >= 88 ? 'Sangat Baik' :
+      calculatedScore >= 78 ? 'Baik' :
+      calculatedScore >= 65 ? 'Cukup' : 'Perlu Bimbingan'
     );
 
     // ==========================================
     // PAGE 1: LEMBAR HASIL TRY OUT & EVALUASI MAPEL
     // ==========================================
 
-    // 1. KOP SURAT RESMI SEKOLAH
+    // 1. KOP SURAT RESMI SEKOLAH (Dinamis dari Input Admin)
     doc.setFillColor(15, 23, 42); // Navy Charcoal #0F172A
     doc.rect(0, 0, pageWidth, 28, 'F');
 
@@ -99,72 +109,74 @@ export class ExportService {
     // Header Text
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text('SMA NEGERI 1 UTAMA', leftMargin, 12);
+    doc.setFontSize(12.5);
+    doc.text(schoolInfo.name.toUpperCase(), leftMargin, 11);
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.text('SISTEM ASESMEN & ANALISIS TRY OUT TERPADU (STANDAR KURIKULUM NASIONAL)', leftMargin, 18);
-    doc.text('Jl. Pendidikan No. 45, Jakarta · Akreditasi A · NPSN: 20103450', leftMargin, 23);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text('DOKUMEN RESMI SISWA', rightMargin, 12, { align: 'right' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text(`Tercetak: ${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}`, rightMargin, 18, { align: 'right' });
+    doc.text(schoolInfo.subHeader.toUpperCase(), leftMargin, 17);
+    doc.setFontSize(7);
+    doc.text(schoolInfo.address, leftMargin, 23);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.text('DOKUMEN RESMI SISWA', rightMargin, 11, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(`Tercetak: ${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}`, rightMargin, 17, { align: 'right' });
+    doc.text(`T.A: ${schoolInfo.academicYear}`, rightMargin, 23, { align: 'right' });
 
     // Document Title Banner
-    let yPos = 37;
+    let yPos = 36;
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
+    doc.setFontSize(11.5);
     doc.text('LAPORAN HASIL EVALUASI TRY OUT SISWA', leftMargin, yPos);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Paket Ujian: ${tryout.title} (${tryout.code}) · Berdasarkan Data Respons Terverifikasi`, leftMargin, yPos + 5);
+    doc.text(`Paket Ujian: ${tryout.title} (${tryout.code}) · Berdasarkan Data Respons Terverifikasi`, leftMargin, yPos + 4.5);
 
     // 2. KARTU IDENTITAS SISWA (Box Profil Elegan)
-    yPos += 10;
+    yPos += 9.5;
     doc.setFillColor(248, 250, 252); // Slate-50
-    doc.rect(leftMargin, yPos, contentWidth, 24, 'F');
+    doc.rect(leftMargin, yPos, contentWidth, 23, 'F');
     doc.setDrawColor(226, 232, 240);
     doc.setLineWidth(0.4);
-    doc.rect(leftMargin, yPos, contentWidth, 24, 'S');
+    doc.rect(leftMargin, yPos, contentWidth, 23, 'S');
 
     // Kolom 1 Profil Siswa
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text('Nama Siswa', leftMargin + 6, yPos + 7);
-    doc.text('NISN / NIS', leftMargin + 6, yPos + 14);
-    doc.text('Kelas / Rombel', leftMargin + 6, yPos + 21);
+    doc.text('Nama Siswa', leftMargin + 5, yPos + 6.5);
+    doc.text('NISN / NIS', leftMargin + 5, yPos + 13);
+    doc.text('Kelas / Rombel', leftMargin + 5, yPos + 19.5);
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.text(`:  ${student.name.toUpperCase()}`, leftMargin + 32, yPos + 7);
-    doc.text(`:  ${student.nisn || '-'} / ${student.nis || '-'}`, leftMargin + 32, yPos + 14);
-    doc.text(`:  ${classObj?.name || 'XII IPA 1'} (Tingkat ${classObj?.gradeLevel || 'XII'})`, leftMargin + 32, yPos + 21);
+    doc.text(`:  ${student.name.toUpperCase()}`, leftMargin + 30, yPos + 6.5);
+    doc.text(`:  ${student.nisn || '-'} / ${student.nis || '-'}`, leftMargin + 30, yPos + 13);
+    doc.text(`:  ${classObj?.name || 'XII IPA 1'} (Tingkat ${classObj?.gradeLevel || 'XII'})`, leftMargin + 30, yPos + 19.5);
 
     // Kolom 2 Metadata Ujian
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text('Paket / Kode', leftMargin + 105, yPos + 7);
-    doc.text('Tahun Ajaran', leftMargin + 105, yPos + 14);
-    doc.text('Status Scoring', leftMargin + 105, yPos + 21);
+    doc.text('Paket / Kode', leftMargin + 105, yPos + 6.5);
+    doc.text('Tahun Ajaran', leftMargin + 105, yPos + 13);
+    doc.text('Status Scoring', leftMargin + 105, yPos + 19.5);
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.text(`:  ${tryout.code} — ${tryout.title}`, leftMargin + 130, yPos + 7);
-    doc.text(':  2025/2026 (Semester Genap)', leftMargin + 130, yPos + 14);
+    doc.text(`:  ${tryout.code} — ${tryout.title.slice(0, 22)}`, leftMargin + 128, yPos + 6.5);
+    doc.text(`:  ${schoolInfo.academicYear}`, leftMargin + 128, yPos + 13);
     doc.setTextColor(score.scoringStatus === 'MATCH' ? 5 : 180, score.scoringStatus === 'MATCH' ? 120 : 80, 50);
-    doc.text(`:  ${score.scoringStatus === 'MATCH' ? 'MATCH (Terverifikasi 100%)' : score.scoringStatus}`, leftMargin + 130, yPos + 21);
+    doc.text(`:  ${score.scoringStatus === 'MATCH' ? 'MATCH (Terverifikasi 100%)' : score.scoringStatus}`, leftMargin + 128, yPos + 19.5);
 
     // 3. EXECUTIVE METRICS CARDS (Skor Akhir, Peringkat Kelas, Peringkat Angkatan, Rerata Kelas)
-    yPos += 28;
+    yPos += 26.5;
     const cardW = 43;
-    const cardH = 26;
+    const cardH = 25;
     const cardGap = 3.3;
 
     // Card 1: Skor Akhir
@@ -174,14 +186,14 @@ export class ExportService {
     doc.roundedRect(leftMargin, yPos, cardW, cardH, 2, 2, 'S');
     doc.setTextColor(79, 70, 229);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text('SKOR AKHIR SISWA', leftMargin + 4, yPos + 6);
-    doc.setFontSize(18);
-    doc.text(`${calculatedScore.toFixed(1)}`, leftMargin + 4, yPos + 17);
-    doc.setFontSize(7);
+    doc.setFontSize(7.2);
+    doc.text('SKOR AKHIR SISWA', leftMargin + 4, yPos + 5.5);
+    doc.setFontSize(17);
+    doc.text(`${calculatedScore.toFixed(1)}`, leftMargin + 4, yPos + 16);
+    doc.setFontSize(6.8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text('Skala Penilaian 0 - 100', leftMargin + 4, yPos + 23);
+    doc.text('Skala Penilaian 0 - 100', leftMargin + 4, yPos + 22);
 
     // Card 2: Peringkat Kelas
     const card2X = leftMargin + cardW + cardGap;
@@ -191,14 +203,14 @@ export class ExportService {
     doc.roundedRect(card2X, yPos, cardW, cardH, 2, 2, 'S');
     doc.setTextColor(180, 83, 9);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text('PERINGKAT KELAS', card2X + 4, yPos + 6);
-    doc.setFontSize(18);
-    doc.text(`#${extraMetrics?.classRank ?? 1}`, card2X + 4, yPos + 17);
-    doc.setFontSize(7);
+    doc.setFontSize(7.2);
+    doc.text('PERINGKAT KELAS', card2X + 4, yPos + 5.5);
+    doc.setFontSize(17);
+    doc.text(`#${extraMetrics?.classRank ?? 1}`, card2X + 4, yPos + 16);
+    doc.setFontSize(6.8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 53, 15);
-    doc.text(`Dari ${extraMetrics?.classTotalStudents ?? 30} Siswa (${classObj?.name || 'Kelas'})`, card2X + 4, yPos + 23);
+    doc.text(`Dari ${extraMetrics?.classTotalStudents ?? 30} Siswa (${classObj?.name || 'Kelas'})`, card2X + 4, yPos + 22);
 
     // Card 3: Peringkat Angkatan
     const card3X = card2X + cardW + cardGap;
@@ -208,14 +220,14 @@ export class ExportService {
     doc.roundedRect(card3X, yPos, cardW, cardH, 2, 2, 'S');
     doc.setTextColor(21, 128, 61);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text('PERINGKAT ANGKATAN', card3X + 4, yPos + 6);
-    doc.setFontSize(18);
-    doc.text(`#${extraMetrics?.overallRank ?? 1}`, card3X + 4, yPos + 17);
-    doc.setFontSize(7);
+    doc.setFontSize(7.2);
+    doc.text('PERINGKAT ANGKATAN', card3X + 4, yPos + 5.5);
+    doc.setFontSize(17);
+    doc.text(`#${extraMetrics?.overallRank ?? 1}`, card3X + 4, yPos + 16);
+    doc.setFontSize(6.8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(20, 83, 45);
-    doc.text(`Dari ${extraMetrics?.overallTotalStudents ?? 180} Peserta Paralel`, card3X + 4, yPos + 23);
+    doc.text(`Dari ${extraMetrics?.overallTotalStudents ?? 180} Peserta Paralel`, card3X + 4, yPos + 22);
 
     // Card 4: Predikat & KKM
     const card4X = card3X + cardW + cardGap;
@@ -225,81 +237,88 @@ export class ExportService {
     doc.roundedRect(card4X, yPos, cardW, cardH, 2, 2, 'S');
     doc.setTextColor(51, 65, 85);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text('PREDIKAT KURIKULUM', card4X + 4, yPos + 6);
-    doc.setFontSize(18);
+    doc.setFontSize(7.2);
+    doc.text('PREDIKAT KURIKULUM', card4X + 4, yPos + 5.5);
+    doc.setFontSize(17);
     doc.setTextColor(79, 70, 229);
-    doc.text(`${gradeLetter}`, card4X + 4, yPos + 17);
-    doc.setFontSize(7);
+    doc.text(`${gradeLetter}`, card4X + 4, yPos + 16);
+    doc.setFontSize(6.8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text(`Rerata Kelas: ${(extraMetrics?.classAvgScore ?? 75.0).toFixed(1)} Poin`, card4X + 4, yPos + 23);
+    doc.text(`Rerata Kelas: ${(extraMetrics?.classAvgScore ?? 75.0).toFixed(1)} Poin`, card4X + 4, yPos + 22);
 
-    // Keterangan Regulasi Standar Predikat Kurikulum & Tie-Breaker
-    yPos += cardH + 4;
+    // Keterangan Regulasi Standar Predikat Kurikulum & Tie-Breaker (2 Baris Rapi Tanpa Tabrakan)
+    yPos += cardH + 3.5;
     doc.setFillColor(241, 245, 249);
-    doc.rect(leftMargin, yPos, contentWidth, 7, 'F');
-    doc.setFontSize(6.8);
+    doc.rect(leftMargin, yPos, contentWidth, 8, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(leftMargin, yPos, contentWidth, 8, 'S');
+
+    doc.setFontSize(6.5);
     doc.setTextColor(71, 85, 105);
     doc.setFont('helvetica', 'bold');
-    doc.text('STANDAR PREDIKAT KURIKULUM:', leftMargin + 3, yPos + 4.8);
+    doc.text('STANDAR PREDIKAT:', leftMargin + 3, yPos + 3.8);
     doc.setFont('helvetica', 'normal');
-    doc.text('A (≥ 88.0 Sangat Baik)  ·  B (78.0 - 87.9 Baik)  ·  C (65.0 - 77.9 Cukup)  ·  D (< 65.0 Bimbingan)', leftMargin + 50, yPos + 4.8);
-    doc.text('Aturan Peringkat: Total Skor → Benar Semua Mapel → Benar Matematika', rightMargin - 3, yPos + 4.8, { align: 'right' });
+    doc.text('A (≥ 88.0 Sangat Baik)   ·   B (78.0 - 87.9 Baik)   ·   C (65.0 - 77.9 Cukup)   ·   D (< 65.0 Bimbingan)', leftMargin + 32, yPos + 3.8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('ATURAN TIE-BREAKER:', leftMargin + 3, yPos + 6.8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('1. Total Skor Ujian   →   2. Total Benar Seluruh Mapel   →   3. Total Benar Mapel Matematika', leftMargin + 36, yPos + 6.8);
 
     // 4. STATISTIK AKURASI JAWABAN
     yPos += 11;
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
+    doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
     doc.text('I. REKAPITULASI JAWABAN DAN AKURASI BUTIR SOAL', leftMargin, yPos);
 
-    yPos += 4;
+    yPos += 3.5;
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(226, 232, 240);
-    doc.rect(leftMargin, yPos, contentWidth, 12, 'S');
+    doc.rect(leftMargin, yPos, contentWidth, 10, 'S');
 
     const totalSoal = score.totalCorrect + score.totalIncorrect + score.totalUnanswered;
     const akurasiPct = totalSoal > 0 ? ((score.totalCorrect / totalSoal) * 100).toFixed(1) : '0.0';
 
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(21, 128, 61); // green
-    doc.text(`• Jawaban Benar : ${score.totalCorrect} Soal`, leftMargin + 6, yPos + 7.5);
+    doc.text(`• Jawaban Benar : ${score.totalCorrect} Soal`, leftMargin + 5, yPos + 6.5);
 
     doc.setTextColor(225, 29, 72); // rose
-    doc.text(`• Jawaban Salah : ${score.totalIncorrect} Soal`, leftMargin + 52, yPos + 7.5);
+    doc.text(`• Jawaban Salah : ${score.totalIncorrect} Soal`, leftMargin + 48, yPos + 6.5);
 
     doc.setTextColor(217, 119, 6); // amber
-    doc.text(`• Tidak Dijawab : ${score.totalUnanswered} Soal`, leftMargin + 98, yPos + 7.5);
+    doc.text(`• Tidak Dijawab : ${score.totalUnanswered} Soal`, leftMargin + 92, yPos + 6.5);
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.text(`• Total Akurasi : ${akurasiPct}% (${score.totalCorrect}/${totalSoal} Soal)`, leftMargin + 140, yPos + 7.5);
+    doc.text(`• Total Akurasi : ${akurasiPct}% (${score.totalCorrect}/${totalSoal} Soal)`, leftMargin + 135, yPos + 6.5);
 
     // 5. RINCIAN CAPAIAN NILAI PER MATA PELAJARAN (PAKET AKTIF)
-    yPos += 17;
+    yPos += 14.5;
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
+    doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
     doc.text(`II. PEROLEHAN NILAI SELURUH MATA PELAJARAN (${tryout.code})`, leftMargin, yPos);
 
-    yPos += 4;
-    // Table Header
+    yPos += 3.5;
+    // Table Header (Widths: No 8, Code 16, Mapel 68, KKM 20, Nilai 24, Predikat 20, Status 26 = 182)
     doc.setFillColor(15, 23, 42);
-    doc.rect(leftMargin, yPos, contentWidth, 7, 'F');
+    doc.rect(leftMargin, yPos, contentWidth, 6.5, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(7.5);
+    doc.setFontSize(7.2);
     doc.setFont('helvetica', 'bold');
-    doc.text('NO', leftMargin + 3, yPos + 5);
-    doc.text('KODE', leftMargin + 12, yPos + 5);
-    doc.text('MATA PELAJARAN', leftMargin + 28, yPos + 5);
-    doc.text('KKM', leftMargin + 105, yPos + 5, { align: 'center' });
-    doc.text('NILAI SISWA', leftMargin + 130, yPos + 5, { align: 'center' });
-    doc.text('PREDIKAT', leftMargin + 155, yPos + 5, { align: 'center' });
-    doc.text('STATUS KELULUSAN', rightMargin - 4, yPos + 5, { align: 'right' });
+    doc.text('NO', leftMargin + 4, yPos + 4.5, { align: 'center' });
+    doc.text('KODE', leftMargin + 16, yPos + 4.5, { align: 'center' });
+    doc.text('MATA PELAJARAN', leftMargin + 26, yPos + 4.5);
+    doc.text('KKM', leftMargin + 102, yPos + 4.5, { align: 'center' });
+    doc.text('NILAI SISWA', leftMargin + 124, yPos + 4.5, { align: 'center' });
+    doc.text('PREDIKAT', leftMargin + 146, yPos + 4.5, { align: 'center' });
+    doc.text('STATUS', leftMargin + 169, yPos + 4.5, { align: 'center' });
 
-    yPos += 7;
+    yPos += 6.5;
 
     const subjectCards = extraMetrics?.activeSubjectCards || (subjectRecapData ? subjectRecapData.map(r => ({
       subject: r.subject,
@@ -311,35 +330,35 @@ export class ExportService {
     subjectCards.forEach((sc, idx) => {
       const isEven = idx % 2 === 0;
       doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
-      doc.rect(leftMargin, yPos, contentWidth, 6.2, 'F');
+      doc.rect(leftMargin, yPos, contentWidth, 5.8, 'F');
 
       const sScore = sc.score;
       const sGrade = sScore >= 88 ? 'A' : sScore >= 78 ? 'B' : sScore >= 65 ? 'C' : 'D';
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.2);
+      doc.setFontSize(7);
       doc.setTextColor(71, 85, 105);
-      doc.text(`${idx + 1}`, leftMargin + 3, yPos + 4.3);
+      doc.text(`${idx + 1}`, leftMargin + 4, yPos + 4.1, { align: 'center' });
       doc.setFont('helvetica', 'bold');
-      doc.text(`${sc.subject.code}`, leftMargin + 12, yPos + 4.3);
+      doc.text(`${sc.subject.code}`, leftMargin + 16, yPos + 4.1, { align: 'center' });
       doc.setFont('helvetica', 'normal');
-      doc.text(`${sc.subject.name.slice(0, 36)}`, leftMargin + 28, yPos + 4.3);
+      doc.text(`${sc.subject.name.slice(0, 34)}`, leftMargin + 26, yPos + 4.1);
 
-      doc.text(`${sc.passingGrade.toFixed(0)}`, leftMargin + 105, yPos + 4.3, { align: 'center' });
+      doc.text(`${sc.passingGrade.toFixed(0)}`, leftMargin + 102, yPos + 4.1, { align: 'center' });
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(15, 23, 42);
-      doc.text(`${sScore.toFixed(1)}`, leftMargin + 130, yPos + 4.3, { align: 'center' });
+      doc.text(`${sScore.toFixed(1)}`, leftMargin + 124, yPos + 4.1, { align: 'center' });
 
       doc.setTextColor(sScore >= sc.passingGrade ? 21 : 225, sScore >= sc.passingGrade ? 128 : 29, sScore >= sc.passingGrade ? 61 : 72);
-      doc.text(sGrade, leftMargin + 155, yPos + 4.3, { align: 'center' });
+      doc.text(sGrade, leftMargin + 146, yPos + 4.1, { align: 'center' });
 
-      const statusText = sc.isPassing ? 'TUNTAS' : 'BELUM TUNTAS';
-      doc.text(statusText, rightMargin - 4, yPos + 4.3, { align: 'right' });
+      const statusText = sc.isPassing ? 'TUNTAS' : 'BELUM';
+      doc.text(statusText, leftMargin + 169, yPos + 4.1, { align: 'center' });
 
       doc.setDrawColor(241, 245, 249);
       doc.setLineWidth(0.2);
-      doc.line(leftMargin, yPos + 6.2, rightMargin, yPos + 6.2);
-      yPos += 6.2;
+      doc.line(leftMargin, yPos + 5.8, rightMargin, yPos + 5.8);
+      yPos += 5.8;
     });
 
     // 6. LEMBAR PENGESAHAN RESMI (TANDA TANGAN)
@@ -351,26 +370,26 @@ export class ExportService {
     doc.text(`Jakarta, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightMargin - 45, signY);
 
     doc.setFont('helvetica', 'bold');
-    doc.text('Kepala SMA Negeri 1 Utama', leftMargin + 10, signY + 5);
-    doc.text(`Wali Kelas ${classObj?.name || 'XII IPA 1'}`, rightMargin - 45, signY + 5);
+    doc.text(`Kepala ${schoolInfo.name}`, leftMargin + 10, signY + 4.5);
+    doc.text(`Wali Kelas ${classObj?.name || 'XII IPA 1'}`, rightMargin - 45, signY + 4.5);
 
-    doc.text('Drs. Supriyadi, M.Pd.', leftMargin + 10, signY + 22);
-    doc.text('Drs. Bambang Sugiarto', rightMargin - 45, signY + 22);
+    doc.text(schoolInfo.principalName, leftMargin + 10, signY + 21);
+    doc.text('Drs. Bambang Sugiarto', rightMargin - 45, signY + 21);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(6.8);
     doc.setTextColor(100, 116, 139);
-    doc.text('NIP. 196803121994031002', leftMargin + 10, signY + 26);
-    doc.text('NIP. 197205151998021001', rightMargin - 45, signY + 26);
+    doc.text(`NIP. ${schoolInfo.principalNip}`, leftMargin + 10, signY + 25);
+    doc.text('NIP. 197205151998021001', rightMargin - 45, signY + 25);
 
     // Footer Page 1
-    doc.setFontSize(7);
+    doc.setFontSize(6.8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Dokumen Asesmen Resmi SMA Negeri 1 Utama · Halaman 1 dari 2 (Lembar Hasil Siswa)', leftMargin, 288);
+    doc.text(`Dokumen Asesmen Resmi ${schoolInfo.name} · Halaman 1 dari 2 (Lembar Hasil Siswa)`, leftMargin, 288);
     doc.text(`ID Verifikasi: ${student.id}-${tryout.id}`, rightMargin, 288, { align: 'right' });
 
     // ==========================================
-    // PAGE 2: TRANSKRIP LINTAS TO, GRAFIK & REKAP BUTIR SOAL
+    // PAGE 2: TRANSKRIP LINTAS TO, GRAFIK PERKEMBANGAN & REKAP SOAL
     // ==========================================
     doc.addPage();
 
@@ -385,167 +404,201 @@ export class ExportService {
     doc.setFontSize(11);
     doc.text('TRANSKRIP AKADEMIK LINTAS TRY OUT & LEMBAR EVALUASI SOAL', leftMargin, 11);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(`Siswa: ${student.name.toUpperCase()} · NISN: ${student.nisn || '-'} · Kelas: ${classObj?.name || 'XII IPA 1'}`, leftMargin, 18);
+    doc.setFontSize(7.5);
+    doc.text(`Siswa: ${student.name.toUpperCase()} · NISN: ${student.nisn || '-'} · Kelas: ${classObj?.name || 'XII IPA 1'} · ${schoolInfo.name}`, leftMargin, 18);
     doc.text('Halaman 2 dari 2', rightMargin, 18, { align: 'right' });
 
-    let p2Y = 33;
+    let p2Y = 32;
 
     // SECTION 1: MATRIKS PEROLEHAN NILAI SELURUH MATA PELAJARAN (TO-1 s/d TO-4)
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
+    doc.setFontSize(9);
     doc.text('III. MATRIKS PEROLEHAN NILAI SELURUH MATA PELAJARAN (TO-1 s/d TO-4)', leftMargin, p2Y);
 
-    p2Y += 4;
+    p2Y += 3.5;
+    // Kolom Matriks: No (8), Mapel (62), KKM (18), TO-1 (18), TO-2 (18), TO-3 (18), TO-4 (18), Rerata (20) = 180 / 182
     doc.setFillColor(15, 23, 42);
-    doc.rect(leftMargin, p2Y, contentWidth, 7, 'F');
+    doc.rect(leftMargin, p2Y, contentWidth, 6.5, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(7.2);
-    doc.text('NO', leftMargin + 3, p2Y + 5);
-    doc.text('MATA PELAJARAN', leftMargin + 12, p2Y + 5);
-    doc.text('KKM', leftMargin + 78, p2Y + 5, { align: 'center' });
-    doc.text('TO-1', leftMargin + 96, p2Y + 5, { align: 'center' });
-    doc.text('TO-2', leftMargin + 114, p2Y + 5, { align: 'center' });
-    doc.text('TO-3', leftMargin + 132, p2Y + 5, { align: 'center' });
-    doc.text('TO-4', leftMargin + 150, p2Y + 5, { align: 'center' });
-    doc.text('RERATA', leftMargin + 168, p2Y + 5, { align: 'center' });
-    doc.text('STATUS', rightMargin - 4, p2Y + 5, { align: 'right' });
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.text('NO', leftMargin + 4, p2Y + 4.5, { align: 'center' });
+    doc.text('MATA PELAJARAN', leftMargin + 12, p2Y + 4.5);
+    doc.text('KKM', leftMargin + 76, p2Y + 4.5, { align: 'center' });
+    doc.text('TO-1', leftMargin + 94, p2Y + 4.5, { align: 'center' });
+    doc.text('TO-2', leftMargin + 112, p2Y + 4.5, { align: 'center' });
+    doc.text('TO-3', leftMargin + 130, p2Y + 4.5, { align: 'center' });
+    doc.text('TO-4', leftMargin + 148, p2Y + 4.5, { align: 'center' });
+    doc.text('RERATA', leftMargin + 166, p2Y + 4.5, { align: 'center' });
+    doc.text('STATUS', leftMargin + 184, p2Y + 4.5, { align: 'center' });
 
-    p2Y += 7;
+    p2Y += 6.5;
 
     if (subjectRecapData && subjectRecapData.length > 0) {
       subjectRecapData.forEach((row, idx) => {
         const isEven = idx % 2 === 0;
         doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
-        doc.rect(leftMargin, p2Y, contentWidth, 5.8, 'F');
+        doc.rect(leftMargin, p2Y, contentWidth, 5.2, 'F');
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7);
+        doc.setFontSize(6.8);
         doc.setTextColor(71, 85, 105);
-        doc.text(`${idx + 1}`, leftMargin + 3, p2Y + 4.1);
+        doc.text(`${idx + 1}`, leftMargin + 4, p2Y + 3.8, { align: 'center' });
         doc.setFont('helvetica', 'bold');
-        doc.text(`${row.subject.code} - ${row.subject.name.slice(0, 24)}`, leftMargin + 12, p2Y + 4.1);
+        doc.text(`${row.subject.code} - ${row.subject.name.slice(0, 24)}`, leftMargin + 12, p2Y + 3.8);
 
         doc.setFont('helvetica', 'normal');
-        doc.text(`${(row.subject.passingGrade ?? 75).toFixed(0)}`, leftMargin + 78, p2Y + 4.1, { align: 'center' });
-        doc.text(`${(row.toScores['TO-1'] ?? 0).toFixed(1)}`, leftMargin + 96, p2Y + 4.1, { align: 'center' });
-        doc.text(`${(row.toScores['TO-2'] ?? 0).toFixed(1)}`, leftMargin + 114, p2Y + 4.1, { align: 'center' });
-        doc.text(`${(row.toScores['TO-3'] ?? 0).toFixed(1)}`, leftMargin + 132, p2Y + 4.1, { align: 'center' });
-        doc.text(`${(row.toScores['TO-4'] ?? 0).toFixed(1)}`, leftMargin + 150, p2Y + 4.1, { align: 'center' });
+        doc.text(`${(row.subject.passingGrade ?? 75).toFixed(0)}`, leftMargin + 76, p2Y + 3.8, { align: 'center' });
+        doc.text(`${(row.toScores['TO-1'] ?? 0).toFixed(1)}`, leftMargin + 94, p2Y + 3.8, { align: 'center' });
+        doc.text(`${(row.toScores['TO-2'] ?? 0).toFixed(1)}`, leftMargin + 112, p2Y + 3.8, { align: 'center' });
+        doc.text(`${(row.toScores['TO-3'] ?? 0).toFixed(1)}`, leftMargin + 130, p2Y + 3.8, { align: 'center' });
+        doc.text(`${(row.toScores['TO-4'] ?? 0).toFixed(1)}`, leftMargin + 148, p2Y + 3.8, { align: 'center' });
 
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(15, 23, 42);
-        doc.text(`${row.avgScore.toFixed(1)}`, leftMargin + 168, p2Y + 4.1, { align: 'center' });
+        doc.text(`${row.avgScore.toFixed(1)}`, leftMargin + 166, p2Y + 3.8, { align: 'center' });
 
         doc.setTextColor(row.isPassing ? 21 : 225, row.isPassing ? 128 : 29, row.isPassing ? 61 : 72);
-        doc.text(row.isPassing ? 'TUNTAS' : 'BELUM', rightMargin - 4, p2Y + 4.1, { align: 'right' });
+        doc.text(row.isPassing ? 'TUNTAS' : 'BELUM', leftMargin + 184, p2Y + 3.8, { align: 'center' });
 
         doc.setDrawColor(241, 245, 249);
-        doc.line(leftMargin, p2Y + 5.8, rightMargin, p2Y + 5.8);
-        p2Y += 5.8;
+        doc.line(leftMargin, p2Y + 5.2, rightMargin, p2Y + 5.2);
+        p2Y += 5.2;
       });
 
       // Composite Row
       const compositeAvg = subjectRecapData.reduce((acc, r) => acc + r.avgScore, 0) / Math.max(1, subjectRecapData.length);
       doc.setFillColor(241, 245, 249);
-      doc.rect(leftMargin, p2Y, contentWidth, 6.5, 'F');
+      doc.rect(leftMargin, p2Y, contentWidth, 5.8, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.2);
+      doc.setFontSize(6.8);
       doc.setTextColor(15, 23, 42);
-      doc.text('RATA-RATA KOMPOSIT MULTIMAPEL:', leftMargin + 12, p2Y + 4.5);
-      doc.text(`${compositeAvg.toFixed(1)}`, leftMargin + 168, p2Y + 4.5, { align: 'center' });
+      doc.text('RATA-RATA KOMPOSIT MULTIMAPEL:', leftMargin + 12, p2Y + 4);
+      doc.text(`${compositeAvg.toFixed(1)}`, leftMargin + 166, p2Y + 4, { align: 'center' });
       doc.setTextColor(21, 128, 61);
-      doc.text('TERVERIFIKASI', rightMargin - 4, p2Y + 4.5, { align: 'right' });
-      p2Y += 10;
+      doc.text('TERVERIFIKASI', leftMargin + 184, p2Y + 4, { align: 'center' });
+      p2Y += 9;
     } else {
       p2Y += 4;
     }
 
-    // SECTION 2: GRAFIK VISUAL PERKEMBANGAN SISWA LINTAS TRY OUT
+    // SECTION 2: GRAFIK GARIS PERKEMBANGAN NILAI MAPEL SISWA LINTAS TRY OUT
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
-    doc.text('IV. GRAFIK PERKEMBANGAN NILAI SISWA VS RERATA KELAS', leftMargin, p2Y);
+    doc.setFontSize(9);
+    doc.text('IV. GRAFIK PERKEMBANGAN NILAI TIAP-TIAP MATA PELAJARAN (LINTAS TO-1 S/D TO-4)', leftMargin, p2Y);
 
-    p2Y += 4;
-    const chartBoxH = 34;
+    p2Y += 3.5;
+    const lineChartH = 38;
     doc.setFillColor(248, 250, 252);
-    doc.rect(leftMargin, p2Y, contentWidth, chartBoxH, 'F');
+    doc.rect(leftMargin, p2Y, contentWidth, lineChartH, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.rect(leftMargin, p2Y, contentWidth, chartBoxH, 'S');
+    doc.rect(leftMargin, p2Y, contentWidth, lineChartH, 'S');
 
-    const history = extraMetrics?.progressHistory || [
-      { code: 'TO-1', score: 72.0, classAverage: 71.5 },
-      { code: 'TO-2', score: 77.0, classAverage: 74.0 },
-      { code: 'TO-3', score: calculatedScore, classAverage: extraMetrics?.classAvgScore ?? 78.0 },
-      { code: 'TO-4', score: 85.0, classAverage: 80.0 },
-    ];
+    // Chart Area Boundaries
+    const chartLeft = leftMargin + 16;
+    const chartRight = rightMargin - 40;
+    const chartWidth = chartRight - chartLeft;
+    const chartTop = p2Y + 6;
+    const chartBottom = p2Y + lineChartH - 9;
+    const chartHeight = chartBottom - chartTop;
 
-    // Gambar Bar Chart Komparasi Sederhana
-    const barBaseY = p2Y + chartBoxH - 8;
-    const barMaxH = 20;
-    const totalBars = history.length;
-    const stepX = contentWidth / (totalBars + 1);
-
-    history.forEach((h, i) => {
-      const centerX = leftMargin + stepX * (i + 1);
-      const studentH = Math.max(2, (Math.min(100, h.score) / 100) * barMaxH);
-      const classH = Math.max(2, (Math.min(100, h.classAverage) / 100) * barMaxH);
-
-      // Student Bar (Indigo)
-      doc.setFillColor(79, 70, 229);
-      doc.rect(centerX - 8, barBaseY - studentH, 7, studentH, 'F');
-
-      // Class Avg Bar (Emerald)
-      doc.setFillColor(16, 185, 129);
-      doc.rect(centerX + 1, barBaseY - classH, 7, classH, 'F');
-
-      // Labels Nilai di atas bar
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.5);
-      doc.setTextColor(79, 70, 229);
-      doc.text(`${h.score.toFixed(0)}`, centerX - 4.5, barBaseY - studentH - 1.5, { align: 'center' });
-
-      doc.setTextColor(16, 185, 129);
-      doc.text(`${h.classAverage.toFixed(0)}`, centerX + 4.5, barBaseY - classH - 1.5, { align: 'center' });
-
-      // Label TO
-      doc.setTextColor(15, 23, 42);
-      doc.setFontSize(7.5);
-      doc.text(h.code, centerX, barBaseY + 4.5, { align: 'center' });
+    // Y Gridlines (0, 25, 50, 75, 100)
+    [0, 25, 50, 75, 100].forEach(val => {
+      const yVal = chartBottom - (val / 100) * chartHeight;
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.line(chartLeft, yVal, chartRight, yVal);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`${val}`, chartLeft - 3, yVal + 1.5, { align: 'right' });
     });
 
-    // Chart Legend
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.setFillColor(79, 70, 229);
-    doc.rect(rightMargin - 65, p2Y + 4, 3, 3, 'F');
-    doc.setTextColor(15, 23, 42);
-    doc.text('Skor Siswa', rightMargin - 60, p2Y + 6.5);
+    // TO X Positions
+    const toLabels = ['TO-1', 'TO-2', 'TO-3', 'TO-4'];
+    const xStep = chartWidth / (toLabels.length - 1);
+    const xCoords = toLabels.map((_, i) => chartLeft + i * xStep);
 
-    doc.setFillColor(16, 185, 129);
-    doc.rect(rightMargin - 35, p2Y + 4, 3, 3, 'F');
-    doc.text('Rerata Kelas', rightMargin - 30, p2Y + 6.5);
+    toLabels.forEach((label, i) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(label, xCoords[i], chartBottom + 5.5, { align: 'center' });
+    });
 
-    p2Y += chartBoxH + 6;
+    // Palette Warna Garis Mapel
+    const lineColors = [
+      [79, 70, 229],   // Indigo - MAT
+      [217, 119, 6],   // Amber - IND
+      [13, 148, 136],  // Teal - ING
+      [225, 29, 72],   // Rose - FIS
+      [147, 51, 234],  // Purple - KIM
+      [16, 185, 129],  // Emerald - BIO
+    ];
+
+    // Gambar Garis Tren tiap Mapel
+    if (subjectRecapData && subjectRecapData.length > 0) {
+      subjectRecapData.slice(0, 6).forEach((row, sIdx) => {
+        const color = lineColors[sIdx % lineColors.length];
+        const scores = [
+          row.toScores['TO-1'] ?? 70,
+          row.toScores['TO-2'] ?? 72,
+          row.toScores['TO-3'] ?? 75,
+          row.toScores['TO-4'] ?? 78,
+        ];
+
+        const points = scores.map((val, idx) => ({
+          x: xCoords[idx],
+          y: chartBottom - (Math.min(100, Math.max(0, val)) / 100) * chartHeight,
+        }));
+
+        // Draw Line Segments
+        doc.setDrawColor(color[0], color[1], color[2]);
+        doc.setLineWidth(0.7);
+        for (let i = 0; i < points.length - 1; i++) {
+          doc.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+        }
+
+        // Draw Node Circles
+        doc.setFillColor(color[0], color[1], color[2]);
+        points.forEach(p => {
+          doc.circle(p.x, p.y, 0.9, 'F');
+        });
+
+        // Legend item on the right
+        const legY = p2Y + 7 + sIdx * 4.6;
+        doc.setFillColor(color[0], color[1], color[2]);
+        doc.rect(rightMargin - 35, legY - 1.5, 3.5, 2, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.2);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`${row.subject.code}`, rightMargin - 30, legY);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(5.8);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`${row.subject.name.slice(0, 14)}`, rightMargin - 20, legY);
+      });
+    }
+
+    p2Y += lineChartH + 5.5;
 
     // SECTION 3: REKAPITULASI PENGERJAAN BUTIR SOAL (QUESTION SHEET GRID)
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
+    doc.setFontSize(9);
     doc.text(`V. MATRIKS REKAP PENGERJAAN BUTIR SOAL (${tryout.code})`, leftMargin, p2Y);
 
-    p2Y += 4;
+    p2Y += 3.5;
     const questionsList = studentAnalytics?.questionPerformance || [];
     const qCount = questionsList.length;
 
     if (qCount > 0) {
-      // Kotak Grid Soal
       const colsPerRow = 20;
-      const boxSize = 8.2;
+      const boxSize = 7.8;
       const gapX = (contentWidth - colsPerRow * boxSize) / (colsPerRow - 1);
-      const rowGap = 2.2;
+      const rowGap = 2;
 
       let currentX = leftMargin;
       let currentY = p2Y;
@@ -568,10 +621,10 @@ export class ExportService {
           doc.setTextColor(225, 29, 72);
         }
 
-        doc.roundedRect(currentX, currentY, boxSize, boxSize, 1, 1, 'FD');
+        doc.roundedRect(currentX, currentY, boxSize, boxSize, 0.8, 0.8, 'FD');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.2);
-        doc.text(`${qNum}`, currentX + boxSize / 2, currentY + boxSize / 2 + 1.8, { align: 'center' });
+        doc.setFontSize(5.8);
+        doc.text(`${qNum}`, currentX + boxSize / 2, currentY + boxSize / 2 + 1.6, { align: 'center' });
 
         if ((idx + 1) % colsPerRow === 0) {
           currentX = leftMargin;
@@ -581,56 +634,56 @@ export class ExportService {
         }
       });
 
-      p2Y = currentY + boxSize + 3;
+      p2Y = currentY + boxSize + 2.5;
 
       // Legend Butir Soal
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.8);
+      doc.setFontSize(6.5);
       doc.setFillColor(220, 252, 231);
       doc.setDrawColor(134, 239, 172);
-      doc.roundedRect(leftMargin, p2Y, 4, 4, 0.5, 0.5, 'FD');
+      doc.roundedRect(leftMargin, p2Y, 3.5, 3.5, 0.5, 0.5, 'FD');
       doc.setTextColor(21, 128, 61);
-      doc.text('Benar', leftMargin + 6, p2Y + 3.2);
+      doc.text('Jawaban Benar', leftMargin + 5.5, p2Y + 2.8);
 
       doc.setFillColor(255, 228, 230);
       doc.setDrawColor(253, 164, 175);
-      doc.roundedRect(leftMargin + 25, p2Y, 4, 4, 0.5, 0.5, 'FD');
+      doc.roundedRect(leftMargin + 35, p2Y, 3.5, 3.5, 0.5, 0.5, 'FD');
       doc.setTextColor(225, 29, 72);
-      doc.text('Salah', leftMargin + 31, p2Y + 3.2);
+      doc.text('Jawaban Salah', leftMargin + 40.5, p2Y + 2.8);
 
       doc.setFillColor(254, 243, 199);
       doc.setDrawColor(252, 211, 77);
-      doc.roundedRect(leftMargin + 50, p2Y, 4, 4, 0.5, 0.5, 'FD');
+      doc.roundedRect(leftMargin + 70, p2Y, 3.5, 3.5, 0.5, 0.5, 'FD');
       doc.setTextColor(180, 83, 9);
-      doc.text('Kosong / Tidak Dijawab', leftMargin + 56, p2Y + 3.2);
+      doc.text('Kosong / Tidak Dijawab', leftMargin + 75.5, p2Y + 2.8);
 
-      p2Y += 8;
+      p2Y += 6.5;
     }
 
     // SECTION 4: AKSES MEDIA PEMBAHASAN RESMI
     const pubExps = explanations?.filter(e => e.tryoutId === tryout.id && e.status === 'PUBLISHED') || [];
     doc.setFillColor(241, 245, 249);
-    doc.rect(leftMargin, p2Y, contentWidth, 12, 'F');
+    doc.rect(leftMargin, p2Y, contentWidth, 10, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.rect(leftMargin, p2Y, contentWidth, 12, 'S');
+    doc.rect(leftMargin, p2Y, contentWidth, 10, 'S');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
+    doc.setFontSize(7.2);
     doc.setTextColor(15, 23, 42);
-    doc.text('INFORMASI PEMBAHASAN SOAL RESMI:', leftMargin + 4, p2Y + 5);
+    doc.text('INFORMASI AKSES PEMBAHASAN RESMI:', leftMargin + 4, p2Y + 4.2);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(6.8);
     doc.setTextColor(71, 85, 105);
     doc.text(
       `Tersedia ${pubExps.length} modul pembahasan resmi (dokumen PDF & video penjelasan guru) pada portal /hasil. Masuk dengan NISN siswa.`,
       leftMargin + 4,
-      p2Y + 9.5
+      p2Y + 7.8
     );
 
     // Footer Page 2
-    doc.setFontSize(7);
+    doc.setFontSize(6.8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Dokumen Asesmen Resmi SMA Negeri 1 Utama · Halaman 2 dari 2 (Transkrip Lintas TO & Rekap Soal)', leftMargin, 288);
+    doc.text(`Dokumen Asesmen Resmi ${schoolInfo.name} · Halaman 2 dari 2 (Transkrip Lintas TO & Rekap Soal)`, leftMargin, 288);
     doc.text('Diterbitkan Otomatis oleh Sistem Asesmen Sekolah', rightMargin, 288, { align: 'right' });
 
     const cleanNisn = student.nisn || '0000000000';

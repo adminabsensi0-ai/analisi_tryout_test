@@ -2,7 +2,7 @@ import {
   User, Teacher, Student, ClassRoom, StudentClass, AcademicYear, Subject,
   TeacherSubject, Material, Competency, Tryout, TryoutSubject, Question,
   TryoutQuestion, GoogleForm, Response, Answer, Score, QuestionAnalysis,
-  Explanation, Report, AuditLog, TryoutStatus, ScoringConfig, Role
+  Explanation, Report, AuditLog, TryoutStatus, ScoringConfig, Role, SchoolProfile
 } from '../types/database';
 import {
   INITIAL_ACADEMIC_YEARS, INITIAL_USERS, INITIAL_TEACHERS, INITIAL_CLASSES,
@@ -54,6 +54,7 @@ export interface DatabaseState {
   explanations: Explanation[];
   reports: Report[];
   auditLogs: AuditLog[];
+  schoolProfile?: SchoolProfile;
 }
 
 class DatabaseService {
@@ -217,6 +218,40 @@ class DatabaseService {
 
   public getState(): DatabaseState {
     return { ...this.state };
+  }
+
+  public getSchoolProfile(): SchoolProfile {
+    return this.state.schoolProfile || {
+      name: 'SMA NEGERI 1 UTAMA',
+      subHeader: 'SISTEM ASESMEN & ANALISIS TRY OUT TERPADU (STANDAR KURIKULUM NASIONAL)',
+      address: 'Jl. Pendidikan No. 45, Jakarta · Akreditasi A · NPSN: 20103450',
+      principalName: 'Drs. Supriyadi, M.Pd.',
+      principalNip: '196803121994031002',
+      academicYear: '2025/2026 (Semester Genap)',
+    };
+  }
+
+  public updateSchoolProfile(profile: Partial<SchoolProfile>, currentUser?: any): SchoolProfile {
+    if (currentUser) {
+      this.assertAdmin(currentUser, 'UPDATE_SCHOOL_PROFILE');
+    }
+    const current = this.getSchoolProfile();
+    const updated: SchoolProfile = {
+      ...current,
+      ...profile,
+    };
+    this.state.schoolProfile = updated;
+    this.persistState();
+    this.notifyListeners();
+    if (currentUser) {
+      this.logAudit(
+        currentUser,
+        'UPDATE_SCHOOL_PROFILE',
+        'SYSTEM',
+        `Admin memperbarui informasi sekolah: ${updated.name}`
+      );
+    }
+    return updated;
   }
 
   // SECURITY: Require Admin Authorization Helper
