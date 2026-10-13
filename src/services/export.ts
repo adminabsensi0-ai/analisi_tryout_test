@@ -251,27 +251,22 @@ export class ExportService {
     doc.setTextColor(100, 116, 139);
     doc.text(`Rerata Kelas: ${(extraMetrics?.classAvgScore ?? 75.0).toFixed(1)} Poin`, card4X + 4, yPos + 22);
 
-    // Keterangan Regulasi Standar Predikat Kurikulum & Tie-Breaker (2 Baris Rapi Tanpa Tabrakan)
+    // Keterangan Regulasi Standar Predikat Kurikulum (1 Baris Rapi)
     yPos += cardH + 3.5;
     doc.setFillColor(241, 245, 249);
-    doc.rect(leftMargin, yPos, contentWidth, 10, 'F');
+    doc.rect(leftMargin, yPos, contentWidth, 6, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.rect(leftMargin, yPos, contentWidth, 10, 'S');
+    doc.rect(leftMargin, yPos, contentWidth, 6, 'S');
 
     doc.setFontSize(6.5);
     doc.setTextColor(71, 85, 105);
     doc.setFont('helvetica', 'bold');
-    doc.text('STANDAR PREDIKAT:', leftMargin + 3, yPos + 4);
+    doc.text('STANDAR PREDIKAT:', leftMargin + 3, yPos + 3.8);
     doc.setFont('helvetica', 'normal');
-    doc.text('A (>= 88.0 Sangat Baik)  |  B (78.0 - 87.9 Baik)  |  C (65.0 - 77.9 Cukup)  |  D (< 65.0 Bimbingan)', leftMargin + 33, yPos + 4);
-
-    doc.setFont('helvetica', 'bold');
-    doc.text('ATURAN TIE-BREAKER:', leftMargin + 3, yPos + 8);
-    doc.setFont('helvetica', 'normal');
-    doc.text('1. Total Skor Ujian  >  2. Total Benar Seluruh Mapel  >  3. Total Benar Mapel Matematika', leftMargin + 37, yPos + 8);
+    doc.text('A (>= 88.0 Sangat Baik)  |  B (78.0 - 87.9 Baik)  |  C (65.0 - 77.9 Cukup)  |  D (< 65.0 Bimbingan)', leftMargin + 33, yPos + 3.8);
 
     // 4. STATISTIK AKURASI JAWABAN
-    yPos += 13;
+    yPos += 9;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
@@ -365,26 +360,134 @@ export class ExportService {
       yPos += 5.8;
     });
 
-    // 6. LEMBAR PENGESAHAN RESMI (TANDA TANGAN)
-    const signY = 248;
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.text('Mengetahui / Mengesahkan,', leftMargin + 10, signY);
-    doc.text(`Jakarta, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightMargin - 45, signY);
-
+    // 6. MATRIKS REKAP PENGERJAAN BUTIR SOAL PER MATA PELAJARAN (dipindah ke Hal. 1)
+    yPos += 7;
     doc.setFont('helvetica', 'bold');
-    doc.text(`Kepala ${schoolInfo.name}`, leftMargin + 10, signY + 4.5);
-    doc.text(`Wali Kelas ${classObj?.name || 'XII IPA 1'}`, rightMargin - 45, signY + 4.5);
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`III. MATRIKS REKAP PENGERJAAN BUTIR SOAL PER MATA PELAJARAN (${tryout.code})`, leftMargin, yPos);
 
-    doc.text(schoolInfo.principalName, leftMargin + 10, signY + 21);
-    doc.text('Drs. Bambang Sugiarto', rightMargin - 45, signY + 21);
+    yPos += 3.5;
+    const p1QuestionsList = studentAnalytics?.questionPerformance || [];
+    const p1QCount = p1QuestionsList.length;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.8);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`NIP. ${schoolInfo.principalNip}`, leftMargin + 10, signY + 25);
-    doc.text('NIP. 197205151998021001', rightMargin - 45, signY + 25);
+    if (p1QCount > 0) {
+      // Group questions by subject
+      const p1SubjectGroups = new Map<string, {
+        code: string;
+        name: string;
+        items: typeof p1QuestionsList;
+      }>();
+
+      p1QuestionsList.forEach((qp) => {
+        let subCode = 'MAPEL';
+        let subName = 'Mata Pelajaran';
+
+        if (subjectRecapData && subjectRecapData.length > 0) {
+          const matchedSub = subjectRecapData.find(
+            s => qp.uniqueCode.toUpperCase().startsWith(s.subject.code.toUpperCase()) ||
+                 s.subject.id === (qp as any).subjectId
+          );
+          if (matchedSub) {
+            subCode = matchedSub.subject.code;
+            subName = matchedSub.subject.name;
+          }
+        }
+
+        if (subCode === 'MAPEL' && qp.uniqueCode.includes('-')) {
+          subCode = qp.uniqueCode.split('-')[0].trim().toUpperCase();
+          subName = subCode;
+        }
+
+        if (!p1SubjectGroups.has(subCode)) {
+          p1SubjectGroups.set(subCode, { code: subCode, name: subName, items: [] });
+        }
+        p1SubjectGroups.get(subCode)!.items.push(qp);
+      });
+
+      const p1BoxSize = 6.8;
+      const p1BoxGap = 1.6;
+      let p1CurrentY = yPos;
+
+      Array.from(p1SubjectGroups.values()).forEach((grp) => {
+        const correctInGroup = grp.items.filter(q => q.isCorrect).length;
+        const totalInGroup = grp.items.length;
+
+        // Subject Header Tag
+        doc.setFillColor(241, 245, 249);
+        doc.roundedRect(leftMargin, p1CurrentY, 32, 5.2, 0.8, 0.8, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(79, 70, 229);
+        doc.text(`${grp.code}`, leftMargin + 2, p1CurrentY + 3.8);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(5.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`(${correctInGroup}/${totalInGroup} Benar)`, leftMargin + 13, p1CurrentY + 3.8);
+
+        // Boxes Row for this subject
+        let startBoxX = leftMargin + 34;
+        grp.items.forEach((qp, idx) => {
+          const qNum = qp.questionNumber || (idx + 1);
+          const isUnanswered = !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong';
+
+          if (startBoxX + p1BoxSize > rightMargin) {
+            p1CurrentY += p1BoxSize + p1BoxGap;
+            startBoxX = leftMargin + 34;
+          }
+
+          if (qp.isCorrect) {
+            doc.setFillColor(220, 252, 231);
+            doc.setDrawColor(134, 239, 172);
+            doc.setTextColor(21, 128, 61);
+          } else if (isUnanswered) {
+            doc.setFillColor(254, 243, 199);
+            doc.setDrawColor(252, 211, 77);
+            doc.setTextColor(180, 83, 9);
+          } else {
+            doc.setFillColor(255, 228, 230);
+            doc.setDrawColor(253, 164, 175);
+            doc.setTextColor(225, 29, 72);
+          }
+
+          doc.roundedRect(startBoxX, p1CurrentY, p1BoxSize, p1BoxSize, 0.6, 0.6, 'FD');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5.2);
+          doc.text(`${qNum}`, startBoxX + p1BoxSize / 2, p1CurrentY + p1BoxSize / 2 + 1.4, { align: 'center' });
+
+          startBoxX += p1BoxSize + p1BoxGap;
+        });
+
+        p1CurrentY += p1BoxSize + 2.5;
+      });
+
+      yPos = p1CurrentY + 1;
+
+      // Legend Butir Soal
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.2);
+      doc.setFillColor(220, 252, 231);
+      doc.setDrawColor(134, 239, 172);
+      doc.roundedRect(leftMargin, yPos, 3.2, 3.2, 0.5, 0.5, 'FD');
+      doc.setTextColor(21, 128, 61);
+      doc.text('Jawaban Benar', leftMargin + 4.8, yPos + 2.5);
+
+      doc.setFillColor(255, 228, 230);
+      doc.setDrawColor(253, 164, 175);
+      doc.roundedRect(leftMargin + 32, yPos, 3.2, 3.2, 0.5, 0.5, 'FD');
+      doc.setTextColor(225, 29, 72);
+      doc.text('Jawaban Salah', leftMargin + 36.8, yPos + 2.5);
+
+      doc.setFillColor(254, 243, 199);
+      doc.setDrawColor(252, 211, 77);
+      doc.roundedRect(leftMargin + 64, yPos, 3.2, 3.2, 0.5, 0.5, 'FD');
+      doc.setTextColor(180, 83, 9);
+      doc.text('Kosong / Tidak Dijawab', leftMargin + 68.8, yPos + 2.5);
+
+      doc.setTextColor(100, 116, 139);
+      doc.text('*Dikelompokkan per mata pelajaran.', rightMargin, yPos + 2.5, { align: 'right' });
+    }
 
     // Footer Page 1
     doc.setFontSize(6.8);
@@ -393,9 +496,10 @@ export class ExportService {
     doc.text('Dikembangkan oleh MIDStudio (2026)', rightMargin, 288, { align: 'right' });
 
     // ==========================================
-    // PAGE 2: TRANSKRIP LINTAS TO, GRAFIK PERKEMBANGAN & REKAP SOAL
+    // PAGE 2: TRANSKRIP LINTAS TO, GRAFIK PERKEMBANGAN & TANDA TANGAN
     // ==========================================
     doc.addPage();
+
 
     // Page 2 Header Banner
     doc.setFillColor(15, 23, 42);
@@ -514,7 +618,7 @@ export class ExportService {
     doc.text(`IV. GRAFIK PERKEMBANGAN NILAI TIAP-TIAP MATA PELAJARAN (LINTAS ${activeToKeys[0] || 'TO-1'} S/D ${activeToKeys[activeToKeys.length - 1] || 'TO-4'})`, leftMargin, p2Y);
 
     p2Y += 3.5;
-    const lineChartH = 38;
+    const lineChartH = 46;
     doc.setFillColor(248, 250, 252);
     doc.rect(leftMargin, p2Y, contentWidth, lineChartH, 'F');
     doc.setDrawColor(226, 232, 240);
@@ -567,7 +671,6 @@ export class ExportService {
     if (subjectRecapData && subjectRecapData.length > 0) {
       subjectRecapData.slice(0, 6).forEach((row, sIdx) => {
         const color = lineColors[sIdx % lineColors.length];
-        // Use dynamic keys instead of hardcoded 'TO-1' etc.
         const scores = activeToKeys.map(key => row.toScores[key] ?? 0);
 
         const points = scores.map((val, idx) => ({
@@ -603,18 +706,57 @@ export class ExportService {
       });
     }
 
+    // Gambar Garis Rata-Rata Try Out (Garis Putus-Putus Abu-Abu / Slate)
+    const pHistory = extraMetrics?.progressHistory || [];
+    if (pHistory.length > 0) {
+      const avgPoints = activeToKeys.map((key, idx) => {
+        const matchedH = pHistory.find(h => h.code === key);
+        const avgVal = matchedH?.classAverage ?? (extraMetrics?.classAvgScore ?? 75);
+        return {
+          x: xCoords[idx],
+          y: chartBottom - (Math.min(100, Math.max(0, avgVal)) / 100) * chartHeight,
+        };
+      });
+
+      // Draw dashed average line
+      doc.setDrawColor(100, 116, 139); // Slate-500
+      doc.setLineWidth(0.6);
+      doc.setLineDashPattern([2, 1.5], 0);
+      for (let i = 0; i < avgPoints.length - 1; i++) {
+        doc.line(avgPoints[i].x, avgPoints[i].y, avgPoints[i + 1].x, avgPoints[i + 1].y);
+      }
+      doc.setLineDashPattern([], 0); // Reset dash
+
+      // Nodes for average line
+      doc.setFillColor(100, 116, 139);
+      avgPoints.forEach(p => {
+        doc.circle(p.x, p.y, 0.8, 'F');
+      });
+
+      // Legend for average line
+      const legYAvg = p2Y + 7 + Math.min(6, subjectRecapData?.length || 0) * 4.6;
+      doc.setDrawColor(100, 116, 139);
+      doc.setLineWidth(0.6);
+      doc.setLineDashPattern([2, 1], 0);
+      doc.line(rightMargin - 35, legYAvg - 0.5, rightMargin - 31.5, legYAvg - 0.5);
+      doc.setLineDashPattern([], 0);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.8);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Rerata TO', rightMargin - 30, legYAvg);
+    }
+
     p2Y += lineChartH + 5.5;
 
     // SECTION 2B: GRAFIK BATANG PERBANDINGAN NILAI SISWA VS RATA-RATA KELAS
-    const pHistory = extraMetrics?.progressHistory || [];
     if (pHistory.length > 0) {
       doc.setTextColor(15, 23, 42);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
-      doc.text('IV-B. PERBANDINGAN NILAI SISWA VS RATA-RATA KELAS (PER TRY OUT)', leftMargin, p2Y);
+      doc.text('V. PERBANDINGAN NILAI SISWA VS RATA-RATA KELAS (PER TRY OUT)', leftMargin, p2Y);
       p2Y += 3.5;
 
-      const barChartH = 32;
+      const barChartH = 46;
       doc.setFillColor(248, 250, 252);
       doc.rect(leftMargin, p2Y, contentWidth, barChartH, 'F');
       doc.setDrawColor(226, 232, 240);
@@ -640,7 +782,7 @@ export class ExportService {
       });
 
       const barGroupWidth = bChartWidth / pHistory.length;
-      const barWidth = Math.min(barGroupWidth * 0.3, 12);
+      const barWidth = Math.min(barGroupWidth * 0.3, 14);
       const barGap = 2;
 
       pHistory.forEach((item, i) => {
@@ -661,7 +803,7 @@ export class ExportService {
         doc.rect(classBarX, bChartBottom - cBarH, barWidth, cBarH, 'F');
 
         // Value labels on top of bars
-        doc.setFontSize(5);
+        doc.setFontSize(5.5);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(79, 70, 229);
         doc.text(`${sVal.toFixed(0)}`, studentBarX + barWidth / 2, bChartBottom - sBarH - 1.2, { align: 'center' });
@@ -691,161 +833,46 @@ export class ExportService {
       p2Y += barChartH + 5.5;
     }
 
-    // SECTION 3: REKAPITULASI PENGERJAAN BUTIR SOAL (QUESTION SHEET GRID PER MAPEL)
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text(`V. MATRIKS REKAP PENGERJAAN BUTIR SOAL PER MATA PELAJARAN (${tryout.code})`, leftMargin, p2Y);
-
-    p2Y += 3.5;
-    const questionsList = studentAnalytics?.questionPerformance || [];
-    const qCount = questionsList.length;
-
-    if (qCount > 0) {
-      // Group questions by subject
-      const pdfSubjectGroups = new Map<string, {
-        code: string;
-        name: string;
-        items: typeof questionsList;
-      }>();
-
-      questionsList.forEach((qp) => {
-        // Find subject from subjectRecapData or uniqueCode prefix
-        let subCode = 'MAPEL';
-        let subName = 'Mata Pelajaran';
-
-        if (subjectRecapData && subjectRecapData.length > 0) {
-          const matchedSub = subjectRecapData.find(
-            s => qp.uniqueCode.toUpperCase().startsWith(s.subject.code.toUpperCase()) ||
-                 s.subject.id === (qp as any).subjectId
-          );
-          if (matchedSub) {
-            subCode = matchedSub.subject.code;
-            subName = matchedSub.subject.name;
-          }
-        }
-
-        // Fallback: extract code from uniqueCode (e.g. "MAT-01" -> "MAT")
-        if (subCode === 'MAPEL' && qp.uniqueCode.includes('-')) {
-          subCode = qp.uniqueCode.split('-')[0].trim().toUpperCase();
-          subName = subCode;
-        }
-
-        if (!pdfSubjectGroups.has(subCode)) {
-          pdfSubjectGroups.set(subCode, {
-            code: subCode,
-            name: subName,
-            items: [],
-          });
-        }
-        pdfSubjectGroups.get(subCode)!.items.push(qp);
-      });
-
-      const boxSize = 6.8;
-      const boxGap = 1.6;
-      let currentY = p2Y;
-
-      Array.from(pdfSubjectGroups.values()).forEach((grp) => {
-        const correctInGroup = grp.items.filter(q => q.isCorrect).length;
-        const totalInGroup = grp.items.length;
-
-        // Subject Header Tag
-        doc.setFillColor(241, 245, 249);
-        doc.roundedRect(leftMargin, currentY, 32, 5.2, 0.8, 0.8, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
-        doc.setTextColor(79, 70, 229);
-        doc.text(`${grp.code}`, leftMargin + 2, currentY + 3.8);
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(5.5);
-        doc.setTextColor(71, 85, 105);
-        doc.text(`(${correctInGroup}/${totalInGroup} Benar)`, leftMargin + 13, currentY + 3.8);
-
-        // Boxes Row for this subject
-        let startBoxX = leftMargin + 34;
-        grp.items.forEach((qp, idx) => {
-          const qNum = qp.questionNumber || (idx + 1);
-          const isUnanswered = !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong';
-
-          if (startBoxX + boxSize > rightMargin) {
-            currentY += boxSize + boxGap;
-            startBoxX = leftMargin + 34;
-          }
-
-          if (qp.isCorrect) {
-            doc.setFillColor(220, 252, 231); // emerald light
-            doc.setDrawColor(134, 239, 172);
-            doc.setTextColor(21, 128, 61);
-          } else if (isUnanswered) {
-            doc.setFillColor(254, 243, 199); // amber light
-            doc.setDrawColor(252, 211, 77);
-            doc.setTextColor(180, 83, 9);
-          } else {
-            doc.setFillColor(255, 228, 230); // rose light
-            doc.setDrawColor(253, 164, 175);
-            doc.setTextColor(225, 29, 72);
-          }
-
-          doc.roundedRect(startBoxX, currentY, boxSize, boxSize, 0.6, 0.6, 'FD');
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(5.2);
-          doc.text(`${qNum}`, startBoxX + boxSize / 2, currentY + boxSize / 2 + 1.4, { align: 'center' });
-
-          startBoxX += boxSize + boxGap;
-        });
-
-        currentY += boxSize + 2.5;
-      });
-
-      p2Y = currentY + 1;
-
-      // Legend Butir Soal
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.2);
-      doc.setFillColor(220, 252, 231);
-      doc.setDrawColor(134, 239, 172);
-      doc.roundedRect(leftMargin, p2Y, 3.2, 3.2, 0.5, 0.5, 'FD');
-      doc.setTextColor(21, 128, 61);
-      doc.text('Jawaban Benar', leftMargin + 4.8, p2Y + 2.5);
-
-      doc.setFillColor(255, 228, 230);
-      doc.setDrawColor(253, 164, 175);
-      doc.roundedRect(leftMargin + 32, p2Y, 3.2, 3.2, 0.5, 0.5, 'FD');
-      doc.setTextColor(225, 29, 72);
-      doc.text('Jawaban Salah', leftMargin + 36.8, p2Y + 2.5);
-
-      doc.setFillColor(254, 243, 199);
-      doc.setDrawColor(252, 211, 77);
-      doc.roundedRect(leftMargin + 64, p2Y, 3.2, 3.2, 0.5, 0.5, 'FD');
-      doc.setTextColor(180, 83, 9);
-      doc.text('Kosong / Tidak Dijawab', leftMargin + 68.8, p2Y + 2.5);
-
-      doc.setTextColor(100, 116, 139);
-      doc.text('*Nomor butir soal dikelompokkan berdasarkan mata pelajaran.', rightMargin, p2Y + 2.5, { align: 'right' });
-
-      p2Y += 5.5;
-    }
-
-    // SECTION 4: AKSES MEDIA PEMBAHASAN RESMI
+    // SECTION 3: AKSES MEDIA PEMBAHASAN RESMI (Ringkas 1 Baris)
     const pubExps = explanations?.filter(e => e.tryoutId === tryout.id && e.status === 'PUBLISHED') || [];
     doc.setFillColor(241, 245, 249);
-    doc.rect(leftMargin, p2Y, contentWidth, 10, 'F');
+    doc.rect(leftMargin, p2Y, contentWidth, 7, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.rect(leftMargin, p2Y, contentWidth, 10, 'S');
+    doc.rect(leftMargin, p2Y, contentWidth, 7, 'S');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.2);
-    doc.setTextColor(15, 23, 42);
-    doc.text('INFORMASI AKSES PEMBAHASAN RESMI:', leftMargin + 4, p2Y + 4.2);
-    doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.8);
+    doc.setTextColor(15, 23, 42);
+    doc.text('AKSES PEMBAHASAN RESMI:', leftMargin + 3, p2Y + 4.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
     doc.setTextColor(71, 85, 105);
     doc.text(
-      `Tersedia ${pubExps.length} modul pembahasan resmi (dokumen PDF & video penjelasan guru) pada portal /hasil. Masuk dengan NISN siswa.`,
-      leftMargin + 4,
-      p2Y + 7.8
+      `Tersedia ${pubExps.length} modul pembahasan resmi (PDF & video solusi guru) pada portal siswa /hasil menggunakan NISN.`,
+      leftMargin + 38,
+      p2Y + 4.5
     );
+
+    // SECTION 4: LEMBAR PENGESAHAN RESMI (TANDA TANGAN DI HALAMAN 2)
+    const signY = 248;
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text('Mengetahui / Mengesahkan,', leftMargin + 10, signY);
+    doc.text(`Jakarta, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightMargin - 45, signY);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Kepala ${schoolInfo.name}`, leftMargin + 10, signY + 4.5);
+    doc.text(`Wali Kelas ${classObj?.name || 'XII IPA 1'}`, rightMargin - 45, signY + 4.5);
+
+    doc.text(schoolInfo.principalName, leftMargin + 10, signY + 21);
+    doc.text('Drs. Bambang Sugiarto', rightMargin - 45, signY + 21);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`NIP. ${schoolInfo.principalNip}`, leftMargin + 10, signY + 25);
+    doc.text('NIP. 197205151998021001', rightMargin - 45, signY + 25);
 
     // Footer Page 2
     doc.setFontSize(6.8);
