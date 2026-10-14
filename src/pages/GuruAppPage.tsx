@@ -597,26 +597,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setTimeout(() => setIsLoading(false), 150);
   };
 
-  // Helper teacher profiles for switching
-  const sampleTeachers: { label: string; user: User }[] = [
-    {
-      label: 'Drs. Bambang Sugiarto (Guru Matematika IPA)',
-      user: { id: 'u-guru1', email: 'bambang@sekolah.sch.id', role: 'GURU', name: 'Drs. Bambang Sugiarto', createdAt: '2025-07-01T08:00:00Z' }
-    },
-    {
-      label: 'Ahmad Rifai, M.Pd (Guru Fisika)',
-      user: { id: 'u-guru3', email: 'rifai@sekolah.sch.id', role: 'GURU', name: 'Ahmad Rifai, M.Pd', createdAt: '2025-07-01T08:00:00Z' }
-    },
-    {
-      label: 'Dra. Siti Nurhaliza (Guru Bahasa Indonesia)',
-      user: { id: 'u-guru2', email: 'siti@sekolah.sch.id', role: 'GURU', name: 'Dra. Siti Nurhaliza', createdAt: '2025-07-01T08:00:00Z' }
-    },
-    {
-      label: 'Endang Rahayu, S.Pd (Guru Biologi)',
-      user: { id: 'u-guru4', email: 'endang@sekolah.sch.id', role: 'GURU', name: 'Endang Rahayu, S.Pd', createdAt: '2025-07-01T08:00:00Z' }
-    },
-  ];
-
   // Active items for view
   const activeTryout = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
   const activeSubject = subjects.find(s => s.id === selectedSubjectId);
@@ -1373,31 +1353,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
             <Calculator className={`w-4 h-4 ${activeTab === 'SCORING_ENGINE' ? 'text-white' : 'text-indigo-500 dark:text-indigo-400'}`} />
             <span>Aturan Penilaian &amp; Verifikasi</span>
           </button>
-
-          {/* Evaluator Persona Test Selector in Sidebar Footer */}
-          <div className="p-3 mt-4 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
-            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <Key className="w-3 h-3 text-teal-600 dark:text-teal-400" />
-              <span>Uji Profil Evaluator:</span>
-            </div>
-            <select
-              value={currentUser.id}
-              onChange={e => {
-                const found = sampleTeachers.find(t => t.user.id === e.target.value);
-                if (found) {
-                  setCurrentUser(found.user);
-                  triggerToast(`Beralih ke profil: ${found.user.name}`);
-                }
-              }}
-              className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg p-1 text-[11px] font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
-            >
-              {sampleTeachers.map(t => (
-                <option key={t.user.id} value={t.user.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
         </nav>
       </aside>
 

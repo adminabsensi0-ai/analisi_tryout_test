@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, ShieldAlert, AlertTriangle, ShieldCheck, UserCheck, Sparkles, HelpCircle } from 'lucide-react';
+import { Search, ShieldAlert, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 interface StudentVerificationGateProps {
   birthDateInput: string;
@@ -26,18 +26,6 @@ export const StudentVerificationGate: React.FC<StudentVerificationGateProps> = (
   loading,
   onVerify,
 }) => {
-  // Demo accounts helper for testers/evaluators
-  const demoAccounts = [
-    { name: 'Aditya Pratama (XII IPA 1)', nisn: '0061234561', birthDate: '2008-05-14' },
-    { name: 'Budi Santoso (XII IPA 1)', nisn: '0061234562', birthDate: '2008-08-22' },
-    { name: 'Citra Dewi (XII IPA 1)', nisn: '0061234563', birthDate: '2008-01-19' },
-  ];
-
-  const handleSelectDemo = (birthDate: string, nisn: string) => {
-    setBirthDateInput(birthDate);
-    setNisnInput(nisn);
-    onVerify(undefined, birthDate, nisn);
-  };
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4 animate-fade-in">
@@ -138,29 +126,6 @@ export const StudentVerificationGate: React.FC<StudentVerificationGateProps> = (
             </div>
           )}
 
-          {/* Safe Quick-Demo Helper */}
-          <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 mb-2.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Akses Cepat Mode Uji Coba / Demo:</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {demoAccounts.map(demo => (
-                <button
-                  key={demo.nisn}
-                  type="button"
-                  onClick={() => handleSelectDemo(demo.birthDate, demo.nisn)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950/60 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 text-xs rounded-xl font-medium border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <UserCheck className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>{demo.name}</span>
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">
-              Tombol cepat di atas hanya disediakan selama tahap demonstrasi untuk memudahkan pengujian.
-            </p>
-          </div>
         </div>
 
         {/* Security Assurance Footer */}
@@ -169,7 +134,7 @@ export const StudentVerificationGate: React.FC<StudentVerificationGateProps> = (
             <ShieldCheck className="w-4 h-4 text-emerald-500" />
             <span>Kerahasiaan Data Terlindungi — Student Isolation Active</span>
           </div>
-          <span className="font-mono">SMA Negeri 1 Utama</span>
+          <span className="font-mono font-semibold">WIKAN System</span>
         </div>
       </div>
     </div>

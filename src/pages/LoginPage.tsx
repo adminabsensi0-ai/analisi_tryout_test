@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  LogIn, Lock, Mail, ShieldAlert, GraduationCap, ArrowRight,
-  CheckCircle2, RefreshCw, Award, Search, Calendar, UserCheck, Sparkles,
+  LogIn, Lock, Mail, ShieldAlert, GraduationCap,
+  CheckCircle2, RefreshCw, Award, Search, Calendar, UserCheck,
   Eye, EyeOff
 } from 'lucide-react';
 import { authService } from '../services/auth';
@@ -49,34 +49,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
     }
   };
 
-  const handleQuickDemoLogin = async (targetEmail: string) => {
-    setError('');
-    setSuccessNotice('');
-    setLoading(true);
-    try {
-      const session = await authService.login(targetEmail, 'password123');
-      setSuccessNotice(`Demo login sebagai ${session.user.name} (${session.user.role}). Mengalihkan...`);
-      setTimeout(() => {
-        onLoginSuccess(session.user);
-      }, 350);
-    } catch (err: any) {
-      setError(err?.message || 'Gagal memproses demo login.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSimulateInvalidLogin = async () => {
-    setEmail('nonexistent@sekolah.sch.id');
-    setPassword('wrongpassword');
-    setError('');
-    setLoading(true);
-    setTimeout(() => {
-      setError('Pengguna dengan email tersebut tidak ditemukan atau kata sandi tidak sesuai.');
-      setLoading(false);
-    }, 300);
-  };
-
   const handleStudentLookup = (e: React.FormEvent) => {
     e.preventDefault();
     setStudentError('');
@@ -96,21 +68,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
       }
     } else {
       setStudentError('Kombinasi Tanggal Lahir dan NISN Siswa tidak ditemukan.');
-    }
-  };
-
-  const handleQuickStudentDemo = (demoDate: string, demoNisn: string) => {
-    setBirthDate(demoDate);
-    setNisn(demoNisn);
-    setStudentError('');
-    const verified = dbService.getStudentByBirthDateAndNisn(demoDate, demoNisn);
-    if (verified) {
-      sessionStorage.setItem('verified_student_id', verified.id);
-      if (onNavigate) {
-        onNavigate('/hasil');
-      } else {
-        window.location.href = '/hasil';
-      }
     }
   };
 
@@ -251,91 +208,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                   )}
                 </button>
               </form>
-
-              {/* Akses Cepat Evaluasi Sistem (Tanpa Menampilkan Kredensial Pribadi) */}
-              <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800">
-                <div className="flex items-center justify-between mb-2.5">
-                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
-                    Akses Cepat Pengujian
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleSimulateInvalidLogin}
-                    className="text-[10px] text-rose-600 dark:text-rose-400 hover:underline font-semibold"
-                  >
-                    Uji Invalid Login
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => handleQuickDemoLogin('admin@sekolah.com')}
-                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-950/80 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-left text-xs font-medium text-slate-900 dark:text-slate-100 flex items-center justify-between transition-all group cursor-pointer"
-                  >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                          Akses Administrator
-                        </span>
-                        <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-1.5 py-0.5 rounded font-mono font-bold">
-                          ADMIN
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Buka kontrol pusat sistem &rarr; Panel Admin
-                      </span>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => handleQuickDemoLogin('bambang@sekolah.sch.id')}
-                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-950/80 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-left text-xs font-medium text-slate-900 dark:text-slate-100 flex items-center justify-between transition-all group cursor-pointer"
-                  >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                          Akses Wali Kelas
-                        </span>
-                        <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">
-                          WALI KELAS
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Dashboard pembinaan &amp; rekap nilai kelas binaan
-                      </span>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => handleQuickDemoLogin('rifai@sekolah.sch.id')}
-                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-950/80 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-left text-xs font-medium text-slate-900 dark:text-slate-100 flex items-center justify-between transition-all group cursor-pointer"
-                  >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                          Akses Guru Pengampu
-                        </span>
-                        <span className="text-[10px] bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-1.5 py-0.5 rounded font-mono font-bold">
-                          GURU
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Bank soal, psikometri butir soal, &amp; pembahasan
-                      </span>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
-                  </button>
-                </div>
-              </div>
             </div>
           ) : (
             <div>
@@ -392,32 +264,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                   <span>Verifikasi &amp; Buka Hasil Siswa</span>
                 </button>
               </form>
-
-              {/* Quick Student Demo Button */}
-              <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2.5 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-amber-500 dark:text-amber-400" />
-                  Akses Cepat Siswa Demo (1-Klik)
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleQuickStudentDemo('2008-05-14', '0061234561')}
-                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-950/80 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/50 border border-slate-200 dark:border-slate-800 rounded-xl text-left text-xs font-medium text-slate-900 dark:text-slate-100 flex items-center justify-between transition-all group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <div>
-                      <span className="font-bold text-slate-900 dark:text-slate-100 block group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                        Aditya Pratama (Siswa)
-                      </span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Tgl Lahir: 14 Mei 2008 · NISN: 0061234561
-                      </span>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
-                </button>
-              </div>
             </div>
           )}
         </div>

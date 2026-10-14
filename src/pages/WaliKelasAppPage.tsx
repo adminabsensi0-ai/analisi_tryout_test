@@ -41,13 +41,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
   const [selectedStudentDetail, setSelectedStudentDetail] = useState<Student | null>(null);
 
   // Wali Kelas Notes State per student ID
-  const [waliNotes, setWaliNotes] = useState<Record<string, string>>({
-    's-1': 'Siswa sangat aktif dan menunjukkan peningkatan konsisten di TryOut.',
-    's-2': 'Pertahankan prestasi, fokus perbaikan pada pemahaman rumus kalkulus.',
-    's-3': 'Grafik stabil di atas KKM. Perlu pendampingan untuk soal HOTS Fisika.',
-    's-4': 'Menunjukkan komitmen belajar tinggi. Catatan kehadiran 100%.',
-    's-5': 'Disarankan mengikuti program bimbingan intensif persiapan SNBT.',
-  });
+  const [waliNotes, setWaliNotes] = useState<Record<string, string>>({});
 
   const teacherObj = dbService.getTeacherByUserId(currentUser);
   const allStudents = dbService.getStudents();
@@ -79,13 +73,6 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
     setTimeout(() => setSuccessToast(null), 3500);
   };
 
-  // Switch persona helper for evaluation
-  const allTeachers = dbService.getTeachers();
-  const sampleTeachers = [
-    { id: 'u-guru1', name: 'Drs. Bambang Sugiarto (Guru Matematika)', role: 'WALI_KELAS' as const },
-    { id: 'u-guru2', name: 'Dra. Siti Nurhaliza (Guru Bahasa Indonesia)', role: 'WALI_KELAS' as const },
-    { id: 'u-guru3', name: 'Ahmad Rifai, M.Pd (Guru Fisika)', role: 'GURU' as const },
-  ];
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
