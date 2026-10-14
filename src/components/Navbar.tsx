@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   GraduationCap, Sun, Moon, ShieldCheck, BookOpen, School, Menu, X,
   ChevronDown, Check, ArrowRightLeft, Sparkles
@@ -23,14 +23,22 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+  const [schoolProfile, setSchoolProfile] = useState(() => dbService.getSchoolProfile());
+
+  useEffect(() => {
+    return dbService.subscribe(() => {
+      setSchoolProfile(dbService.getSchoolProfile());
+    });
+  }, []);
 
   // Dynamic Theme Styling per Page Context
   const isPageAdmin = currentPath === '/admin';
   const isPageWaliKelas = currentPath === '/wali-kelas';
   const isPageGuru = currentPath === '/guru';
-  const isPageStudent = currentPath === '/hasil' || currentPath === '/' || currentPath === '/login';
+  const isPageStudent = currentPath === '/hasil';
+  const isPageLogin = currentPath === '/login' || currentPath === '/';
 
-  let brandBgClass = 'bg-indigo-600 text-white';
+  let brandBgClass = 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20';
   let badgeLabel = 'Portal Terpadu';
   let badgeColorClass = 'text-indigo-700 bg-indigo-50 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-950/80 dark:border-indigo-800';
 
@@ -50,6 +58,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     brandBgClass = 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20';
     badgeLabel = 'Portal Siswa';
     badgeColorClass = 'text-indigo-700 bg-indigo-50 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-950/80 dark:border-indigo-800';
+  } else if (isPageLogin) {
+    brandBgClass = 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20';
+    badgeLabel = 'Halaman Login';
+    badgeColorClass = 'text-slate-700 bg-slate-100 border-slate-300 dark:text-slate-300 dark:bg-slate-800/80 dark:border-slate-700';
   }
 
   const teacherObj = currentUser ? dbService.getTeacherByUserId(currentUser) : undefined;
@@ -112,9 +124,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <span
                 className="text-xs text-slate-500 dark:text-slate-400 block -mt-0.5 font-medium truncate max-w-[200px] sm:max-w-none"
-                title="Wadah Informasi Kemampuan dan Analisis Nilai"
+                title={schoolProfile.name}
               >
-                Wadah Informasi Kemampuan &amp; Analisis Nilai
+                {schoolProfile.name}
               </span>
             </div>
           </div>
