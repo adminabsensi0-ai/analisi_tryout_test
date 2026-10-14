@@ -1,6 +1,6 @@
 {
-  "name": "School Try Out & Assessment Analytics System",
-  "description": "Sistem Terpadu Pengelolaan Try Out, Analisis Butir Soal, Pemetaan Kompetensi, dan Portal Hasil Ujian Sekolah.",
+  "name": "WIKAN - Wadah Informasi Kemampuan dan Analisis Nilai",
+  "description": "WIKAN: Ubah Data Menjadi Tindakan Nyata. Wadah Informasi Kemampuan dan Analisis Nilai untuk Evaluasi Try Out dan Pemetaan Kompetensi Siswa.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

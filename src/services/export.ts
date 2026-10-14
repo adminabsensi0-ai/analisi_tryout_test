@@ -493,7 +493,7 @@ export class ExportService {
     doc.setFontSize(6.8);
     doc.setTextColor(148, 163, 184);
     doc.text(`Dokumen Resmi ${schoolInfo.name} | Hal. 1 dari 2`, leftMargin, 288);
-    doc.text('Dikembangkan oleh MIDStudio (2026)', rightMargin, 288, { align: 'right' });
+    doc.text('WIKAN — Wadah Informasi Kemampuan dan Analisis Nilai', rightMargin, 288, { align: 'right' });
 
     // ==========================================
     // PAGE 2: TRANSKRIP LINTAS TO, GRAFIK PERKEMBANGAN & TANDA TANGAN
@@ -878,7 +878,7 @@ export class ExportService {
     doc.setFontSize(6.8);
     doc.setTextColor(148, 163, 184);
     doc.text(`Dokumen Resmi ${schoolInfo.name} | Hal. 2 dari 2`, leftMargin, 288);
-    doc.text('Dikembangkan oleh MIDStudio (2026)', rightMargin, 288, { align: 'right' });
+    doc.text('WIKAN — "Ubah Data Menjadi Tindakan Nyata"', rightMargin, 288, { align: 'right' });
 
     const cleanNisn = student.nisn || '0000000000';
     const cleanCode = (tryout.code || 'TO3').replace(/[^a-zA-Z0-9_\-]/g, '_');

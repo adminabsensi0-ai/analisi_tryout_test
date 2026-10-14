@@ -126,9 +126,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
           <div className="w-12 h-12 bg-indigo-600 rounded-xl mx-auto flex items-center justify-center text-white mb-3 shadow-md shadow-indigo-600/20">
             <GraduationCap className="w-7 h-7" />
           </div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Portal Assessment Terpadu</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            SMA Negeri 1 Utama — Assessment Analytics Portal
+          <h2 className="text-2xl font-black tracking-wider text-slate-900 dark:text-white">
+            WIKAN
+          </h2>
+          <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mt-1">
+            Ubah Data Menjadi Tindakan Nyata
+          </p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            Wadah Informasi Kemampuan dan Analisis Nilai
           </p>
 
           {returnTo && (

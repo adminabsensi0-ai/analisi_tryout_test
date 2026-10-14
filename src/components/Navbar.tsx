@@ -104,14 +104,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white block">
-                  SMA NEGERI 1 UTAMA
+                  WIKAN
                 </span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border ${badgeColorClass}`}>
                   {badgeLabel}
                 </span>
               </div>
-              <span className="text-xs text-slate-500 dark:text-slate-400 block -mt-0.5 font-medium">
-                Assessment &amp; Analytics Platform
+              <span
+                className="text-xs text-slate-500 dark:text-slate-400 block -mt-0.5 font-medium truncate max-w-[200px] sm:max-w-none"
+                title="Wadah Informasi Kemampuan dan Analisis Nilai"
+              >
+                Wadah Informasi Kemampuan &amp; Analisis Nilai
               </span>
             </div>
           </div>
