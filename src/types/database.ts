@@ -68,7 +68,7 @@ export interface Student {
   id: string;
   userId?: string;
   nisn: string;
-  nis: string;
+  nis?: string;
   name: string;
   gender: 'L' | 'P';
   classId: string;

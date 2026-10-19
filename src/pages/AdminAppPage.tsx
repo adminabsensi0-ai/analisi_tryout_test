@@ -12,6 +12,7 @@ import {
   User, Teacher, Student, ClassRoom, AcademicYear, Subject,
   AuditLog, Role
 } from '../types/database';
+import * as XLSX from 'xlsx';
 
 interface AdminAppPageProps {
   currentUser: User;
@@ -78,6 +79,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     | 'TEACHER_CREATE'
     | 'TEACHER_EDIT'
     | 'STUDENT_CREATE'
+    | 'STUDENT_EDIT'
     | 'CLASS_CREATE'
     | 'SUBJECT_CREATE'
     | 'ACADEMIC_YEAR_CREATE'
@@ -87,6 +89,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
 
   // Form Fields State
   const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [formCode, setFormCode] = useState('');
   const [formNip, setFormNip] = useState('');
@@ -236,6 +239,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const closeModal = () => {
     setModalType(null);
     setEditingTeacherId(null);
+    setEditingStudentId(null);
     setFormName('');
     setFormCode('');
     setFormNip('');
@@ -362,8 +366,9 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   // -------------------------------------------------------------
   const handleOpenCreateStudent = () => {
     closeModal();
+    setEditingStudentId(null);
     setFormNisn(`006${Math.floor(1000000 + Math.random() * 9000000)}`);
-    setFormNis(`${Math.floor(1000 + Math.random() * 9000)}`);
+    setFormNis('');
     setFormName('');
     setFormGender('L');
     setFormBirthDate('2008-05-14');
@@ -374,6 +379,21 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setModalType('STUDENT_CREATE');
   };
 
+  const handleOpenEditStudent = (s: Student) => {
+    closeModal();
+    setEditingStudentId(s.id);
+    setFormNisn(s.nisn);
+    setFormNis(s.nis || '');
+    setFormName(s.name);
+    setFormGender(s.gender);
+    setFormBirthDate(s.birthDate || '2008-05-14');
+    setFormSelectedClassId(s.classId);
+    setFormTargetScore(s.targetScore || 80);
+    setFormEmail(s.email || '');
+    setFormPhone(s.phone || '');
+    setModalType('STUDENT_EDIT');
+  };
+
   const handleSaveStudent = (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -382,91 +402,174 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
         return;
       }
 
-      dbService.addStudent(
-        {
-          nisn: formNisn.trim(),
-          nis: formNis.trim() || formNisn.trim().slice(-4),
-          name: formName.trim(),
-          gender: formGender,
-          classId: formSelectedClassId,
-          birthDate: formBirthDate,
-          email: formEmail.trim() || `${formNisn.trim()}@siswa.sch.id`,
-          phone: formPhone.trim() || '08123456789',
-          targetScore: Number(formTargetScore) || 80
-        },
-        currentUser
-      );
+      const studentPayload = {
+        nisn: formNisn.trim(),
+        nis: formNis.trim(),
+        name: formName.trim(),
+        gender: formGender,
+        classId: formSelectedClassId,
+        birthDate: formBirthDate,
+        email: formEmail.trim() || `${formNisn.trim()}@siswa.sch.id`,
+        phone: formPhone.trim(),
+        targetScore: Number(formTargetScore) || 80
+      };
 
-      triggerToast(`Siswa '${formName}' berhasil ditambahkan.`);
+      if (modalType === 'STUDENT_EDIT' && editingStudentId) {
+        dbService.updateStudent(editingStudentId, studentPayload, currentUser);
+        triggerToast(`Data siswa '${formName}' berhasil diperbarui.`);
+      } else {
+        dbService.addStudent(studentPayload, currentUser);
+        triggerToast(`Siswa '${formName}' berhasil ditambahkan.`);
+      }
+
       closeModal();
       refreshData();
     } catch (err: any) {
-      triggerToast(err.message || 'Gagal menambahkan siswa.', 'error');
+      triggerToast(err.message || 'Gagal menyimpan data siswa.', 'error');
     }
   };
 
   // -------------------------------------------------------------
-  // BULK EXCEL / CSV STUDENT UPLOAD PIPELINE
+  // BULK EXCEL STUDENT UPLOAD PIPELINE (5 COLUMNS: NISN, Nama, JK, Tgl Lahir, Kelas)
   // -------------------------------------------------------------
-  const handleDownloadStudentTemplate = () => {
-    const csvContent =
-      "NISN,NIS,Nama Lengkap,Jenis Kelamin (L/P),Tanggal Lahir (YYYY-MM-DD),ID Kelas,Target Nilai,Email,No Telepon\n" +
-      `0061234590,1090,Ahmad Fauzi,L,2008-04-12,${classes[0]?.id || 'c-xii-ipa1'},85,ahmad.fauzi@siswa.sch.id,081299887766\n` +
-      `0061234591,1091,Siti Rahmawati,P,2008-08-20,${classes[0]?.id || 'c-xii-ipa1'},88,siti.rahmawati@siswa.sch.id,081299887767\n` +
-      `0061234592,1092,Deni Kurniawan,L,2008-01-15,${classes[1]?.id || 'c-xii-ipa2'},80,deni.kurniawan@siswa.sch.id,081299887768\n`;
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'Template_Import_Siswa_Sekolah.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    triggerToast('Template Excel/CSV berhasil diunduh. Silakan isi dan unggah kembali.');
+  const formatExcelDate = (val: any): string => {
+    if (!val) return '2008-05-14';
+    if (val instanceof Date) {
+      const y = val.getFullYear();
+      const m = String(val.getMonth() + 1).padStart(2, '0');
+      const d = String(val.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    const ddmmyyyy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+    if (ddmmyyyy) {
+      const [, d, m, y] = ddmmyyyy;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    const num = Number(val);
+    if (!isNaN(num) && num > 10000 && num < 60000) {
+      // Excel serial date format
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+      const jsDate = new Date(excelEpoch.getTime() + num * 86400000);
+      const y = jsDate.getUTCFullYear();
+      const m = String(jsDate.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(jsDate.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    return str || '2008-05-14';
   };
 
-  const parseAndValidateStudentCsv = (rawText: string) => {
-    setBulkCsvText(rawText);
-    const lines = rawText.split(/\r?\n/).filter(line => line.trim().length > 0);
-    if (lines.length <= 1) {
+  const handleDownloadStudentTemplate = () => {
+    const sampleData = [
+      {
+        'NISN': '0061234590',
+        'Nama Lengkap': 'Ahmad Fauzi',
+        'Jenis Kelamin (L/P)': 'L',
+        'Tanggal Lahir (YYYY-MM-DD)': '2008-04-12',
+        'Kelas': classes[0]?.name || 'XII IPA 1'
+      },
+      {
+        'NISN': '0061234591',
+        'Nama Lengkap': 'Siti Rahmawati',
+        'Jenis Kelamin (L/P)': 'P',
+        'Tanggal Lahir (YYYY-MM-DD)': '2008-08-20',
+        'Kelas': classes[0]?.name || 'XII IPA 1'
+      },
+      {
+        'NISN': '0061234592',
+        'Nama Lengkap': 'Deni Kurniawan',
+        'Jenis Kelamin (L/P)': 'L',
+        'Tanggal Lahir (YYYY-MM-DD)': '2008-01-15',
+        'Kelas': classes[1]?.name || classes[0]?.name || 'XII IPA 2'
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleData);
+    worksheet['!cols'] = [
+      { wch: 16 }, // NISN
+      { wch: 28 }, // Nama Lengkap
+      { wch: 22 }, // Jenis Kelamin (L/P)
+      { wch: 26 }, // Tanggal Lahir (YYYY-MM-DD)
+      { wch: 18 }  // Kelas
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Data Siswa');
+    XLSX.writeFile(workbook, 'Template_Import_Siswa.xlsx');
+    triggerToast('Template Excel (.xlsx) berhasil diunduh. Silakan isi 5 kolom data dan unggah kembali.');
+  };
+
+  const parseAndValidateRows = (rawRows: any[][]) => {
+    if (!rawRows || rawRows.length <= 1) {
       setBulkParsedPreview([]);
       return;
     }
 
     const existingNisns = new Set(students.map(s => s.nisn.trim()));
-    const existingNiss = new Set(students.map(s => (s.nis || '').trim()));
     const validClassIds = new Map(classes.map(c => [c.id, c.name]));
+
+    // Check header row for dynamic column mapping
+    const headerRow = (rawRows[0] || []).map((h: any) =>
+      String(h || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+    );
+
+    let nisnIdx = -1;
+    let nameIdx = -1;
+    let genderIdx = -1;
+    let birthDateIdx = -1;
+    let classIdx = -1;
+    let nisIdx = -1;
+
+    headerRow.forEach((col: string, idx: number) => {
+      if (col.includes('nisn')) nisnIdx = idx;
+      else if (col === 'nis') nisIdx = idx;
+      else if (col.includes('nama')) nameIdx = idx;
+      else if (col.includes('kelamin') || col === 'jk' || col === 'gender') genderIdx = idx;
+      else if (col.includes('lahir') || col.includes('birth') || col.includes('tgl')) birthDateIdx = idx;
+      else if (col.includes('kelas') || col.includes('class') || col.includes('rombel')) classIdx = idx;
+    });
+
+    // Standard column position fallbacks
+    if (nisnIdx === -1) nisnIdx = 0;
+    if (nameIdx === -1) nameIdx = headerRow.length >= 5 ? 1 : 1;
+    if (genderIdx === -1) genderIdx = headerRow.length >= 5 ? 2 : 2;
+    if (birthDateIdx === -1) birthDateIdx = headerRow.length >= 5 ? 3 : 3;
+    if (classIdx === -1) classIdx = headerRow.length >= 5 ? 4 : 4;
 
     const parsedRows: BulkStudentRow[] = [];
     const seenFileNisns = new Set<string>();
 
-    // Skip header row
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-      if (cols.length < 3) continue;
+    for (let i = 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      if (!row || row.every((c: any) => String(c || '').trim() === '')) continue;
 
-      const nisn = cols[0] || '';
-      const nis = cols[1] || nisn.slice(-4);
-      const name = cols[2] || '';
-      const gender = (cols[3] || 'L').toUpperCase() === 'P' ? 'P' : 'L';
-      const birthDate = cols[4] || '2008-05-14';
-      const rawClassId = cols[5] || classes[0]?.id || '';
-      const targetScore = Number(cols[6]) || 82.5;
-      const email = cols[7] || `${nisn}@siswa.sch.id`;
-      const phone = cols[8] || '081234567890';
+      const nisn = String(row[nisnIdx] || '').trim();
+      const name = String(row[nameIdx] || '').trim();
+      const rawGender = String(row[genderIdx] || 'L').trim().toUpperCase();
+      const gender: 'L' | 'P' = rawGender === 'P' || rawGender === 'PEREMPUAN' || rawGender === 'WANITA' ? 'P' : 'L';
+      const birthDate = formatExcelDate(row[birthDateIdx]);
+      const rawClass = String(row[classIdx] || '').trim();
+      const nis = nisIdx !== -1 && row[nisIdx] ? String(row[nisIdx]).trim() : '';
 
-      // Find matching class ID by ID or Name
+      // Match class by ID or Name
       let matchedClassId = '';
       let matchedClassName = 'Kelas Tidak Ditemukan';
-      if (validClassIds.has(rawClassId)) {
-        matchedClassId = rawClassId;
-        matchedClassName = validClassIds.get(rawClassId)!;
+      if (validClassIds.has(rawClass)) {
+        matchedClassId = rawClass;
+        matchedClassName = validClassIds.get(rawClass)!;
       } else {
-        const foundClassByName = classes.find(c => c.name.toLowerCase() === rawClassId.toLowerCase());
-        if (foundClassByName) {
-          matchedClassId = foundClassByName.id;
-          matchedClassName = foundClassByName.name;
+        const found = classes.find(c =>
+          c.name.trim().toLowerCase() === rawClass.toLowerCase() ||
+          c.name.trim().toLowerCase().replace(/[^a-z0-9]/g, '') === rawClass.toLowerCase().replace(/[^a-z0-9]/g, '') ||
+          c.id.toLowerCase() === rawClass.toLowerCase()
+        );
+        if (found) {
+          matchedClassId = found.id;
+          matchedClassName = found.name;
+        } else if (classes.length > 0 && !rawClass) {
+          matchedClassId = classes[0].id;
+          matchedClassName = classes[0].name;
         }
       }
 
@@ -481,7 +584,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
         errorReason = 'Nama Lengkap Kosong';
       } else if (!matchedClassId) {
         isValid = false;
-        errorReason = `Kelas '${rawClassId}' tidak valid`;
+        errorReason = `Kelas '${rawClass}' tidak ditemukan`;
       } else if (existingNisns.has(nisn)) {
         isValid = false;
         errorReason = 'NISN sudah ada di Database';
@@ -501,9 +604,9 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
         birthDate,
         classId: matchedClassId,
         className: matchedClassName,
-        targetScore,
-        email,
-        phone,
+        targetScore: 80,
+        email: `${nisn}@siswa.sch.id`,
+        phone: '',
         isValid,
         errorReason
       });
@@ -512,19 +615,48 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setBulkParsedPreview(parsedRows);
   };
 
+  const parseAndValidateStudentCsv = (rawText: string) => {
+    setBulkCsvText(rawText);
+    const lines = rawText.split(/\r?\n/).filter(line => line.trim().length > 0);
+    const rows = lines.map(line => {
+      const delimiter = line.includes('\t') ? '\t' : (line.includes(';') ? ';' : ',');
+      return line.split(delimiter).map(c => c.trim().replace(/^"|"$/g, ''));
+    });
+    parseAndValidateRows(rows);
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setBulkImportFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        parseAndValidateStudentCsv(content);
-      }
-    };
-    reader.readAsText(file);
+    const fileName = file.name.toLowerCase();
+
+    if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const buffer = event.target?.result as ArrayBuffer;
+          const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+          parseAndValidateRows(rawRows);
+        } catch (err: any) {
+          triggerToast('Gagal membaca file Excel. Pastikan file valid.', 'error');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        if (content) {
+          parseAndValidateStudentCsv(content);
+        }
+      };
+      reader.readAsText(file);
+    }
   };
 
   const handleExecuteBulkImport = () => {
@@ -540,7 +672,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
         dbService.addStudent(
           {
             nisn: row.nisn,
-            nis: row.nis,
+            nis: row.nis || '',
             name: row.name,
             gender: row.gender,
             classId: row.classId,
@@ -558,7 +690,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
         currentUser,
         'BULK_IMPORT_STUDENTS',
         'STUDENT',
-        `Berhasil mengimpor ${importedCount} data siswa massal via file Excel/CSV (${bulkImportFileName || 'Manual Upload'})`
+        `Berhasil mengimpor ${importedCount} data siswa massal via Excel (${bulkImportFileName || 'Manual Upload'})`
       );
 
       triggerToast(`Berhasil mengimpor ${importedCount} siswa baru secara massal!`);
@@ -948,7 +1080,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                       className="px-4 py-2.5 bg-indigo-700/80 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl border border-indigo-500/40 transition-colors shadow-sm cursor-pointer flex items-center gap-2"
                     >
                       <FileSpreadsheet className="w-4 h-4 text-amber-300" />
-                      <span>Import Siswa via Excel/CSV</span>
+                      <span>Import Siswa via Excel</span>
                     </button>
                   </div>
                 </div>
@@ -1256,7 +1388,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                     className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm cursor-pointer transition-colors"
                   >
                     <FileSpreadsheet className="w-4 h-4 text-amber-200" />
-                    <span>Import Bulk Excel / CSV</span>
+                    <span>Import Siswa via Excel</span>
                   </button>
 
                   <button
@@ -1378,7 +1510,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                                 />
                               </td>
                               <td className="px-4 py-3 font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                                {s.nisn} <span className="text-slate-400 font-normal">({s.nis})</span>
+                                {s.nisn} <span className="text-slate-400 font-normal">({s.nis || 'NIS belum diset'})</span>
                               </td>
                               <td className="px-4 py-3 font-bold text-slate-900 dark:text-slate-100">
                                 {s.name}
@@ -1390,14 +1522,24 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                                 {cls?.name || s.classId}
                               </td>
                               <td className="px-4 py-3 text-right">
-                                <button
-                                  onClick={() => {
-                                    setAdminDeleteConfirm({ id: s.id, title: s.name, type: 'SISWA' });
-                                  }}
-                                  className="text-rose-600 dark:text-rose-400 hover:underline font-semibold cursor-pointer"
-                                >
-                                  Hapus
-                                </button>
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={() => handleOpenEditStudent(s)}
+                                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-semibold cursor-pointer flex items-center gap-1"
+                                    title="Edit NIS & Data Siswa"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                    <span>Edit</span>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setAdminDeleteConfirm({ id: s.id, title: s.name, type: 'SISWA' });
+                                    }}
+                                    className="text-rose-600 dark:text-rose-400 hover:underline font-semibold cursor-pointer"
+                                  >
+                                    Hapus
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -2121,10 +2263,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                    Impor Data Siswa Massal via Excel / CSV
+                    Impor Data Siswa Massal via Excel (.xlsx)
                   </h3>
                   <span className="text-[11px] text-slate-500">
-                    Unduh template, lengkapi data, lalu unggah untuk impor otomatis.
+                    Unduh format Excel 5 kolom, lengkapi data, lalu unggah untuk impor langsung.
                   </span>
                 </div>
               </div>
@@ -2137,10 +2279,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
             <div className="p-4 bg-emerald-50/70 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200/80 dark:border-emerald-900/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
               <div>
                 <span className="font-bold text-emerald-900 dark:text-emerald-200 block mb-0.5">
-                  1. Unduh Format Template Excel/CSV
+                  1. Unduh Format Template Excel (.xlsx)
                 </span>
                 <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
-                  Gunakan format kolom baku (`NISN`, `NIS`, `Nama Lengkap`, `JK`, `Tanggal Lahir`, `ID Kelas`, `Target Nilai`).
+                  Hanya 5 kolom ringkas: <strong>NISN</strong>, <strong>Nama Lengkap</strong>, <strong>Jenis Kelamin (L/P)</strong>, <strong>Tanggal Lahir (YYYY-MM-DD)</strong>, dan <strong>Kelas</strong>. NIS lokal dapat dimasukkan oleh admin nanti.
                 </p>
               </div>
 
@@ -2150,25 +2292,25 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-xs shrink-0 cursor-pointer flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
-                <span>Unduh Template CSV</span>
+                <span>Unduh Template Excel (.xlsx)</span>
               </button>
             </div>
 
             {/* Step 2: Upload or Paste CSV */}
             <div className="space-y-2 text-xs">
               <label className="block font-bold text-slate-800 dark:text-slate-200">
-                2. Unggah File CSV / Excel atau Tempel Teks CSV
+                2. Unggah File Excel (.xlsx / .xls) atau CSV
               </label>
 
               <div className="flex items-center gap-3">
                 <label className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-950 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-500 rounded-2xl cursor-pointer text-center transition-colors">
                   <Upload className="w-5 h-5 text-slate-400 mx-auto mb-1" />
                   <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                    {bulkImportFileName ? `File Terpilih: ${bulkImportFileName}` : 'Klik untuk Pilih File CSV / Excel'}
+                    {bulkImportFileName ? `File Terpilih: ${bulkImportFileName}` : 'Klik untuk Pilih File Excel (.xlsx / .xls) atau CSV'}
                   </span>
                   <input
                     type="file"
-                    accept=".csv,.txt,.tsv"
+                    accept=".xlsx,.xls,.csv,.txt,.tsv"
                     onChange={handleFileUpload}
                     className="hidden"
                   />
@@ -2177,13 +2319,13 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
 
               <div>
                 <span className="text-[10px] text-slate-400 block mb-1">
-                  Atau Tempel Raw Teks CSV Langsung:
+                  Atau Tempel Raw Teks Excel/CSV Langsung (5 Kolom):
                 </span>
                 <textarea
                   rows={3}
                   value={bulkCsvText}
                   onChange={e => parseAndValidateStudentCsv(e.target.value)}
-                  placeholder={`NISN,NIS,Nama Lengkap,Jenis Kelamin (L/P),Tanggal Lahir (YYYY-MM-DD),ID Kelas,Target Nilai\n0061234599,1099,Budi Raharjo,L,2008-03-12,${classes[0]?.id || 'c-xii-ipa1'},85`}
+                  placeholder={`NISN,Nama Lengkap,Jenis Kelamin,Tanggal Lahir,Kelas\n0061234599,Budi Raharjo,L,2008-03-12,${classes[0]?.name || 'XII IPA 1'}`}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-mono text-[11px]"
                 ></textarea>
               </div>
@@ -2205,7 +2347,8 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                         <th className="p-2">#</th>
                         <th className="p-2">NISN</th>
                         <th className="p-2">Nama</th>
-                        <th className="p-2">JK</th>
+                        <th className="p-2 text-center">JK</th>
+                        <th className="p-2">Tgl Lahir</th>
                         <th className="p-2">Kelas</th>
                         <th className="p-2 text-center">Status Validasi</th>
                       </tr>
@@ -2216,7 +2359,8 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                           <td className="p-2 font-mono text-slate-400">{r.rowNumber}</td>
                           <td className="p-2 font-mono font-bold">{r.nisn || '-'}</td>
                           <td className="p-2 font-bold">{r.name || '-'}</td>
-                          <td className="p-2">{r.gender}</td>
+                          <td className="p-2 text-center">{r.gender}</td>
+                          <td className="p-2 font-mono">{r.birthDate}</td>
                           <td className="p-2">{r.className}</td>
                           <td className="p-2 text-center">
                             {r.isValid ? (
@@ -2324,14 +2468,14 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
       )}
 
       {/* =================================----------------------------- */}
-      {/* MODAL 4: CREATE SINGLE MANUAL STUDENT */}
+      {/* MODAL 4: CREATE / EDIT SINGLE STUDENT */}
       {/* =================================----------------------------- */}
-      {modalType === 'STUDENT_CREATE' && (
+      {(modalType === 'STUDENT_CREATE' || modalType === 'STUDENT_EDIT') && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Tambah Siswa Baru (Manual)
+                {modalType === 'STUDENT_EDIT' ? 'Edit Data Siswa & Nomor NIS' : 'Tambah Siswa Baru (Manual)'}
               </h3>
               <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-5 h-5" />
@@ -2341,7 +2485,9 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
             <form onSubmit={handleSaveStudent} className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">NISN Siswa</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    NISN Siswa <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="text"
                     value={formNisn}
@@ -2353,19 +2499,23 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">NIS Lokal</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    NIS Lokal Sekolah
+                  </label>
                   <input
                     type="text"
                     value={formNis}
                     onChange={e => setFormNis(e.target.value)}
-                    placeholder="1090"
+                    placeholder="Contoh: 1090"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Nama Lengkap Siswa</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Nama Lengkap Siswa <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="text"
                   value={formName}
@@ -2390,7 +2540,9 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Tanggal Lahir</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Tanggal Lahir <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="date"
                     value={formBirthDate}
@@ -2427,9 +2579,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold cursor-pointer flex items-center gap-1.5"
                 >
-                  Simpan Siswa
+                  <Check className="w-4 h-4" />
+                  <span>{modalType === 'STUDENT_EDIT' ? 'Simpan Perubahan' : 'Simpan Siswa'}</span>
                 </button>
               </div>
             </form>
