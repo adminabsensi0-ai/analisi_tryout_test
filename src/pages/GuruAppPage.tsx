@@ -305,7 +305,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [compSubjectId, setCompSubjectId] = useState('subj-mat');
   const [compCode, setCompCode] = useState('');
   const [compStatement, setCompStatement] = useState('');
-  const [compGrade, setCompGrade] = useState<'X' | 'XI' | 'XII'>('XII');
+  const [compGrade, setCompGrade] = useState<string>('');
 
   // Google Sheets Import Pipeline State (5 Stages: Input -> Mapping -> Validation/Preview -> Confirm -> Raw Responses & Scoring)
   const [importStage, setImportStage] = useState<'INPUT' | 'MAPPING' | 'PREVIEW' | 'CONFIRMED'>('INPUT');
@@ -866,7 +866,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setCompSubjectId(allowedSubjectIds[0] || 'subj-mat');
     setCompCode(`KD-3.${competencies.filter(c => c.subjectId === selectedSubjectId).length + 1}`);
     setCompStatement('');
-    setCompGrade('XII');
+    setCompGrade('');
     setShowCompetencyModal(true);
   };
 
@@ -2639,9 +2639,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-medium focus:ring-1 focus:ring-indigo-500"
                             >
                               <option value="ALL">Semua Tingkat</option>
-                              <option value="X">Kelas X</option>
-                              <option value="XI">Kelas XI</option>
-                              <option value="XII">Kelas XII</option>
+                              {Array.from(new Set(classes.map(c => c.gradeLevel))).sort((a, b) => {
+                                const n = (v: string) => parseInt(v, 10) || 0;
+                                return n(a) - n(b);
+                              }).map(grade => (
+                                <option key={grade} value={grade}>Tingkat {grade}</option>
+                              ))}
                             </select>
                           </div>
 

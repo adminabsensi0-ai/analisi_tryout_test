@@ -81,7 +81,14 @@ export interface Student {
 export interface ClassRoom {
   id: string;
   name: string;
-  gradeLevel: 'X' | 'XI' | 'XII';
+  /**
+   * Tingkatan kelas. Mendukung semua jenjang:
+   * - SD: '1', '2', '3', '4', '5', '6'
+   * - SMP: '7', '8', '9'
+   * - SMA/SMK: '10' (atau 'X'), '11' (atau 'XI'), '12' (atau 'XII')
+   * Disimpan sebagai string fleksibel.
+   */
+  gradeLevel: string;
   academicYearId: string;
   homeRoomTeacherId?: string;
 }
@@ -129,7 +136,7 @@ export interface Competency {
   subjectId: string;
   code: string; // e.g. "KD-3.1"
   statement: string;
-  gradeLevel: 'X' | 'XI' | 'XII';
+  gradeLevel: string; // Fleksibel: '1'-'6' (SD), '7'-'9' (SMP), '10'/'X' - '12'/'XII' (SMA)
 }
 
 export type AssessmentType = 'TRYOUT' | 'UH' | 'PTS' | 'PAS';

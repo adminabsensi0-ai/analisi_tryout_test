@@ -112,7 +112,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const [formSelectedClassId, setFormSelectedClassId] = useState('');
   const [formSelectedTeacherId, setFormSelectedTeacherId] = useState('');
   const [formSelectedYearId, setFormSelectedYearId] = useState('');
-  const [formGradeLevel, setFormGradeLevel] = useState<'X' | 'XI' | 'XII'>('XII');
+  const [formGradeLevel, setFormGradeLevel] = useState<string>('7');
   const [formSubjectCategory, setFormSubjectCategory] = useState<'WAJIB' | 'PEMINATAN' | 'VOKASI'>('PEMINATAN');
   const [formPassingGrade, setFormPassingGrade] = useState<number>(75.0);
   const [formSemester, setFormSemester] = useState<'ODD' | 'EVEN'>('EVEN');
@@ -752,9 +752,9 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const handleOpenCreateClass = () => {
     closeModal();
     setFormName('');
-    setFormGradeLevel('XII');
+    setFormGradeLevel('7');
     setFormSelectedYearId(academicYears.find(a => a.isActive)?.id || academicYears[0]?.id || '');
-    setFormSelectedTeacherId(teachers[0]?.id || '');
+    setFormSelectedTeacherId(''); // Wali kelas bersifat opsional
     setModalType('CLASS_CREATE');
   };
 
@@ -2623,20 +2623,37 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Tingkatan</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Tingkatan Kelas</label>
                   <select
                     value={formGradeLevel}
-                    onChange={e => setFormGradeLevel(e.target.value as any)}
+                    onChange={e => setFormGradeLevel(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
                   >
-                    <option value="X">Kelas X</option>
-                    <option value="XI">Kelas XI</option>
-                    <option value="XII">Kelas XII</option>
+                    <optgroup label="— SD —">
+                      <option value="1">Kelas 1 (SD)</option>
+                      <option value="2">Kelas 2 (SD)</option>
+                      <option value="3">Kelas 3 (SD)</option>
+                      <option value="4">Kelas 4 (SD)</option>
+                      <option value="5">Kelas 5 (SD)</option>
+                      <option value="6">Kelas 6 (SD)</option>
+                    </optgroup>
+                    <optgroup label="— SMP —">
+                      <option value="7">Kelas 7 (SMP)</option>
+                      <option value="8">Kelas 8 (SMP)</option>
+                      <option value="9">Kelas 9 (SMP)</option>
+                    </optgroup>
+                    <optgroup label="— SMA / SMK —">
+                      <option value="10">Kelas 10 / X (SMA)</option>
+                      <option value="11">Kelas 11 / XI (SMA)</option>
+                      <option value="12">Kelas 12 / XII (SMA)</option>
+                    </optgroup>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Wali Kelas awal</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Wali Kelas <span className="font-normal text-slate-400">(opsional)</span>
+                  </label>
                   <select
                     value={formSelectedTeacherId}
                     onChange={e => setFormSelectedTeacherId(e.target.value)}
@@ -2647,6 +2664,9 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
                   </select>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                    Bisa ditetapkan nanti via tombol Assign Wali Kelas.
+                  </p>
                 </div>
               </div>
 

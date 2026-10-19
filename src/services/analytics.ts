@@ -932,8 +932,11 @@ export class AnalyticsService {
       d.percentage = totalSubmissions > 0 ? Math.round((d.count / totalSubmissions) * 100) : 0;
     });
 
-    // Grade comparison (X, XI, XII)
-    const gradeLevels: Array<'X' | 'XI' | 'XII'> = ['X', 'XI', 'XII'];
+    // Grade comparison — dinamis berdasarkan grade yang benar-benar ada di data
+    const gradeLevels = Array.from(new Set(eligibleClasses.map(c => c.gradeLevel))).sort((a, b) => {
+      const n = (v: string) => parseInt(v, 10) || v.charCodeAt(0);
+      return n(a) - n(b);
+    });
     const gradeComparison = gradeLevels.map(gr => {
       const grClasses = eligibleClasses.filter(c => c.gradeLevel === gr);
       const grClassIds = new Set(grClasses.map(c => c.id));
