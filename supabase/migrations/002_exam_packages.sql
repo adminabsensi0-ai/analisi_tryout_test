@@ -1,9 +1,17 @@
 -- ============================================================
--- SUPABASE DATABASE MIGRATION: 002_exam_packages.sql
--- Fitur: Wadah / Paket Ujian (Exam Events & Package Management)
+-- SUPABASE MIGRATION: 002_exam_packages.sql
+-- Fitur: Wadah / Paket Ujian (Exam Events & Multi-Subject Management)
+-- ============================================================
+-- Cara Eksekusi di Supabase:
+-- 1. Buka dashboard https://app.supabase.com -> Pilih Project Anda
+-- 2. Masuk ke menu "SQL Editor" di bilah kiri
+-- 3. Klik "New Query", paste seluruh kode di bawah ini, lalu klik "Run"
 -- ============================================================
 
--- 1. EXAM PACKAGES (WADAH UTAMA)
+-- 1. EXTENSION UUID (JIKA BELUM ADA)
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- 2. TABEL WADAH / PAKET UJIAN UTAMA
 CREATE TABLE IF NOT EXISTS exam_packages (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code             VARCHAR(50) UNIQUE NOT NULL,
@@ -26,7 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_exam_packages_code ON exam_packages (code);
 CREATE INDEX IF NOT EXISTS idx_exam_packages_status ON exam_packages (status);
 CREATE INDEX IF NOT EXISTS idx_exam_packages_ay ON exam_packages (academic_year_id);
 
--- 2. EXAM PACKAGE SUBJECTS (SLOT MAPEL DI DALAM PAKET)
+-- 3. TABEL SLOT MAPEL DI DALAM WADAH / PAKET
 CREATE TABLE IF NOT EXISTS exam_package_subjects (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   package_id       UUID NOT NULL REFERENCES exam_packages(id) ON DELETE CASCADE,
@@ -47,7 +55,7 @@ CREATE TABLE IF NOT EXISTS exam_package_subjects (
 CREATE INDEX IF NOT EXISTS idx_exam_package_subjects_pkg ON exam_package_subjects (package_id);
 CREATE INDEX IF NOT EXISTS idx_exam_package_subjects_sub ON exam_package_subjects (subject_id);
 
--- 3. MIGRASI KOLOM PADA TRYOUTS LAMA (JIKA ADA)
+-- 4. MIGRASI KOLOM TAMBAHAN PADA TABEL TRYOUTS EKSISTING
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -64,3 +72,30 @@ BEGIN
     ALTER TABLE tryouts ADD COLUMN target_class_ids JSONB DEFAULT '[]'::jsonb;
   END IF;
 END $$;
+
+-- 5. ENABLE ROW LEVEL SECURITY (RLS)
+ALTER TABLE exam_packages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE exam_package_subjects ENABLE ROW LEVEL SECURITY;
+
+-- 6. RLS POLICIES (KEBIJAKAN HAK AKSES)
+DROP POLICY IF EXISTS "public_read_exam_packages" ON exam_packages;
+CREATE POLICY "public_read_exam_packages" ON exam_packages
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "public_read_exam_package_subjects" ON exam_package_subjects;
+CREATE POLICY "public_read_exam_package_subjects" ON exam_package_subjects
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "admin_manage_exam_packages" ON exam_packages;
+CREATE POLICY "admin_manage_exam_packages" ON exam_packages
+  FOR ALL USING (
+    auth.role() = 'service_role' OR
+    (SELECT role FROM users WHERE id = auth.uid()) = 'ADMIN'
+  );
+
+DROP POLICY IF EXISTS "admin_guru_manage_package_subjects" ON exam_package_subjects;
+CREATE POLICY "admin_guru_manage_package_subjects" ON exam_package_subjects
+  FOR ALL USING (
+    auth.role() = 'service_role' OR
+    (SELECT role FROM users WHERE id = auth.uid()) IN ('ADMIN', 'GURU')
+  );
