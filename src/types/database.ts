@@ -54,8 +54,8 @@ export interface Teacher {
   userId: string;
   nip: string;
   name: string;
-  email: string;
-  phone: string;
+  email?: string;
+  phone?: string;
   /** Password hanya ada di mockData untuk demo mode. Tidak pernah disimpan ke localStorage. */
   password?: string;
   subjectPermissions: string[]; // subjectIds

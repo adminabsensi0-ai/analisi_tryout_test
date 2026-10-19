@@ -194,8 +194,17 @@ class AuthService {
         t => t.nip.trim().toLowerCase() === emailOrNip
       );
       if (teacherMatch) {
-        const userMatch = state.users.find(u => u.id === teacherMatch.userId);
-        if (userMatch) email = userMatch.email.toLowerCase();
+        const userMatch = state.users.find(u =>
+          u.id === teacherMatch.userId ||
+          (teacherMatch.email && u.email.toLowerCase() === teacherMatch.email.toLowerCase())
+        );
+        if (userMatch) {
+          email = userMatch.email.toLowerCase();
+        } else if (teacherMatch.email) {
+          email = teacherMatch.email.toLowerCase();
+        } else {
+          email = `${teacherMatch.nip.trim()}@guru.sekolah.id`;
+        }
       }
     }
 
@@ -252,7 +261,7 @@ class AuthService {
       if (teacherMatch) {
         user = users.find(
           u => u.id === teacherMatch.userId ||
-               u.email.toLowerCase() === teacherMatch.email.toLowerCase()
+               (teacherMatch.email && u.email.toLowerCase() === teacherMatch.email.toLowerCase())
         );
       }
     }

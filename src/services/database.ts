@@ -387,7 +387,8 @@ class DatabaseService {
     return this.state.teachers.find(t =>
       (searchId && t.userId === searchId) ||
       (searchEmail && t.email && t.email.toLowerCase() === searchEmail.toLowerCase()) ||
-      (searchId && t.email && t.email.toLowerCase() === searchId.toLowerCase())
+      (searchId && t.email && t.email.toLowerCase() === searchId.toLowerCase()) ||
+      (searchId && t.nip && t.nip.trim().toLowerCase() === searchId.toLowerCase())
     );
   }
 
@@ -618,7 +619,13 @@ class DatabaseService {
       throw new Error(`Validasi Gagal: NIP '${teacher.nip}' sudah terdaftar dalam sistem.`);
     }
 
-    const newTeacher: Teacher = { ...teacher, id: `t-${Date.now()}` };
+    const finalEmail = teacher.email?.trim() || `${teacher.nip.trim()}@guru.sekolah.id`;
+    const newTeacher: Teacher = {
+      ...teacher,
+      email: finalEmail,
+      phone: teacher.phone?.trim() || '',
+      id: `t-${Date.now()}`
+    };
     if (passwordToSave) {
       newTeacher.password = passwordToSave;
     }
@@ -626,16 +633,19 @@ class DatabaseService {
 
     // Synchronize or create matching User object
     const finalRole: Role = roleToSave || (teacher.isWaliKelas ? 'WALI_KELAS' : 'GURU');
-    const existingUser = this.state.users.find(u => u.email.toLowerCase() === teacher.email.toLowerCase() || u.id === teacher.userId);
+    const existingUser = this.state.users.find(u =>
+      (finalEmail && u.email.toLowerCase() === finalEmail.toLowerCase()) ||
+      (teacher.userId && u.id === teacher.userId)
+    );
     if (existingUser) {
       existingUser.role = finalRole;
       existingUser.name = teacher.name;
-      existingUser.email = teacher.email;
+      existingUser.email = finalEmail;
       if (passwordToSave) existingUser.password = passwordToSave;
     } else {
       this.state.users.push({
         id: teacher.userId || `u-${Date.now()}`,
-        email: teacher.email.toLowerCase(),
+        email: finalEmail.toLowerCase(),
         role: finalRole,
         name: teacher.name,
         password: passwordToSave || 'password123',
@@ -678,8 +688,12 @@ class DatabaseService {
 
     // Synchronize user record
     const targetUserId = updatedTeacher.userId || existingTeacher.userId;
-    const targetEmail = updatedTeacher.email || existingTeacher.email;
-    const userObj = this.state.users.find(u => u.id === targetUserId || u.email.toLowerCase() === targetEmail.toLowerCase() || u.email.toLowerCase() === existingTeacher.email.toLowerCase());
+    const targetEmail = updatedTeacher.email || existingTeacher.email || `${updatedTeacher.nip.trim()}@guru.sekolah.id`;
+    const userObj = this.state.users.find(u =>
+      (targetUserId && u.id === targetUserId) ||
+      (targetEmail && u.email.toLowerCase() === targetEmail.toLowerCase()) ||
+      (existingTeacher.email && u.email.toLowerCase() === existingTeacher.email.toLowerCase())
+    );
 
     const finalRole: Role = roleToSave !== undefined ? roleToSave : (updatedTeacher.isWaliKelas ? 'WALI_KELAS' : 'GURU');
 

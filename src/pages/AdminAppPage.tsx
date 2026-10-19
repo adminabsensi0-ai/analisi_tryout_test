@@ -271,7 +271,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setFormNip(`198${Math.floor(1000000000 + Math.random() * 9000000000)}`);
     setFormName('');
     setFormEmail('');
-    setFormPhone('0812' + Math.floor(10000000 + Math.random() * 90000000));
+    setFormPhone('');
     setFormPassword('password123');
     setFormRole('GURU');
     setFormIsWaliKelas(false);
@@ -286,12 +286,12 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setEditingTeacherId(t.id);
     setFormNip(t.nip);
     setFormName(t.name);
-    setFormEmail(t.email);
-    setFormPhone(t.phone);
+    setFormEmail(t.email || '');
+    setFormPhone(t.phone || '');
 
     // Find user record for password & role
     const users = dbService.getState().users;
-    const matchedUser = users.find(u => u.email.toLowerCase() === t.email.toLowerCase() || u.id === t.userId);
+    const matchedUser = users.find(u => (t.email && u.email.toLowerCase() === t.email.toLowerCase()) || u.id === t.userId);
     setFormPassword(matchedUser?.password || t.password || 'password123');
     const matchedRole = matchedUser?.role || (t.isWaliKelas ? 'WALI_KELAS' : 'GURU');
     setFormRole(matchedRole);
@@ -305,8 +305,8 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const handleSaveTeacher = (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (!formName.trim() || !formEmail.trim() || !formNip.trim()) {
-        triggerToast('Harap lengkapi NIP, Nama Lengkap, dan Email staf.', 'error');
+      if (!formName.trim() || !formNip.trim()) {
+        triggerToast('Harap lengkapi NIP dan Nama Lengkap staf.', 'error');
         return;
       }
 
@@ -315,14 +315,15 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
       const passwordToSave = formPassword.trim() || 'password123';
 
       if (editingTeacherId) {
+        const existingTeacher = teachers.find(t => t.id === editingTeacherId);
         // Update Teacher and User synchronously
         dbService.updateTeacher(
           editingTeacherId,
           {
             nip: formNip.trim(),
             name: formName.trim(),
-            email: formEmail.trim(),
-            phone: formPhone.trim(),
+            email: existingTeacher?.email || `${formNip.trim()}@guru.sekolah.id`,
+            phone: existingTeacher?.phone || '',
             password: passwordToSave,
             subjectPermissions: formSubjectPermissions,
             classPermissions: formClassPermissions,
@@ -336,14 +337,14 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
 
         triggerToast(`Data staf/guru '${formName}' (${roleToSave}) berhasil diperbarui.`);
       } else {
-        // Create Teacher and User synchronously
+        // Create Teacher and User synchronously with auto-generated system email
         dbService.addTeacher(
           {
             userId: `u-${Date.now()}`,
             nip: formNip.trim(),
             name: formName.trim(),
-            email: formEmail.trim(),
-            phone: formPhone.trim(),
+            email: `${formNip.trim()}@guru.sekolah.id`,
+            phone: '',
             password: passwordToSave,
             subjectPermissions: formSubjectPermissions,
             classPermissions: formClassPermissions,
@@ -734,7 +735,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
 
         // Update user role to WALI_KELAS
         const users = dbService.getState().users;
-        const matchedUser = users.find(u => u.id === teacherObj.userId || u.email.toLowerCase() === teacherObj.email.toLowerCase());
+        const matchedUser = users.find(u => u.id === teacherObj.userId || (teacherObj.email && u.email.toLowerCase() === teacherObj.email.toLowerCase()));
         if (matchedUser && matchedUser.role !== 'ADMIN') {
           matchedUser.role = 'WALI_KELAS';
         }
@@ -855,10 +856,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     const matchesSearch =
       t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.nip.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.email.toLowerCase().includes(searchQuery.toLowerCase());
+      (t.email ? t.email.toLowerCase().includes(searchQuery.toLowerCase()) : false);
 
     const users = dbService.getState().users;
-    const userObj = users.find(u => u.id === t.userId || u.email.toLowerCase() === t.email.toLowerCase());
+    const userObj = users.find(u => u.id === t.userId || (t.email && u.email.toLowerCase() === t.email.toLowerCase()));
     const role = userObj?.role || (t.isWaliKelas ? 'WALI_KELAS' : 'GURU');
 
     if (roleFilter === 'GURU') return matchesSearch && role === 'GURU';
@@ -1306,7 +1307,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                       ) : (
                         paginatedTeachers.map(t => {
                           const users = dbService.getState().users;
-                          const userObj = users.find(u => u.id === t.userId || u.email.toLowerCase() === t.email.toLowerCase());
+                          const userObj = users.find(u => u.id === t.userId || (t.email && u.email.toLowerCase() === t.email.toLowerCase()));
                           const role = userObj?.role || (t.isWaliKelas ? 'WALI_KELAS' : 'GURU');
                           const homeRoomClass = classes.find(c => c.id === t.homeRoomClassId || c.homeRoomTeacherId === t.id);
 
@@ -1317,7 +1318,9 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                               </td>
                               <td className="px-4 py-3">
                                 <div className="font-bold text-slate-900 dark:text-slate-100">{t.name}</div>
-                                <div className="text-[10px] text-slate-500">{t.email} · {t.phone}</div>
+                                <div className="text-[10px] text-slate-400">
+                                  {t.subjectPermissions?.length ? `${t.subjectPermissions.length} Mapel Diampu` : 'Guru Pengampu'}
+                                </div>
                               </td>
                               <td className="px-4 py-3 text-center">
                                 <span
@@ -1657,7 +1660,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                                 {waliTeacher.name}
                               </div>
                               <div className="text-[10px] text-slate-500">
-                                NIP: {waliTeacher.nip} · {waliTeacher.phone}
+                                NIP: {waliTeacher.nip}
                               </div>
                             </div>
                           ) : (
@@ -2111,31 +2114,6 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Email Resmi (Login)</label>
-                  <input
-                    type="email"
-                    value={formEmail}
-                    onChange={e => setFormEmail(e.target.value)}
-                    placeholder="guru@sekolah.sch.id"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">No Telepon/WA</label>
-                  <input
-                    type="text"
-                    value={formPhone}
-                    onChange={e => setFormPhone(e.target.value)}
-                    placeholder="08123456789"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-mono"
-                  />
-                </div>
-              </div>
-
               {/* Password Input Field */}
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -2150,7 +2128,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                   required
                 />
                 <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                  Kata sandi ini digunakan guru/staf untuk autentikasi bersama Email atau NIP.
+                  Kata sandi ini digunakan guru/staf untuk autentikasi bersama NIP kedinasan.
                 </span>
               </div>
 

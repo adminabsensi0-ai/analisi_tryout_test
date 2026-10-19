@@ -44,7 +44,7 @@
   - `user_id` (UUID, FK `users.id` ON DELETE CASCADE, UNIQUE, NOT NULL)
   - `nip` (VARCHAR(50), UNIQUE, NOT NULL)
   - `name` (VARCHAR(255), NOT NULL)
-  - `email` (VARCHAR(255), NOT NULL)
+  - `email` (VARCHAR(255), NULLABLE) -- Auto-generated fallback "${nip}@guru.sekolah.id"
   - `phone` (VARCHAR(30), NULLABLE)
   - `subject_permissions` (JSONB, NOT NULL, Default `'[]'::jsonb`) -- Array of subject_ids
   - `created_at` (TIMESTAMPTZ, NOT NULL, Default `CURRENT_TIMESTAMP`)
