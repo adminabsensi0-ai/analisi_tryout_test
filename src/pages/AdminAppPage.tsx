@@ -5,7 +5,7 @@ import {
   AlertCircle, ShieldAlert, Search, Trash2, Edit3,
   Layers, ChevronLeft, ChevronRight, Check, AlertTriangle,
   FileSpreadsheet, Sparkles, Download, Upload, UserPlus,
-  Award, FileText, ArrowRight, FolderKanban
+  Award, FileText, ArrowRight, FolderKanban, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { dbService } from '../services/database';
 import {
@@ -108,6 +108,8 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const [formHomeRoomClassId, setFormHomeRoomClassId] = useState('');
   const [formSubjectPermissions, setFormSubjectPermissions] = useState<string[]>([]);
   const [formClassPermissions, setFormClassPermissions] = useState<string[]>([]);
+  const [isSubjectDropdownOpen, setIsSubjectDropdownOpen] = useState(false);
+  const [isClassDropdownOpen, setIsClassDropdownOpen] = useState(false);
   const [formTargetScore, setFormTargetScore] = useState(82.5);
   const [formSelectedClassId, setFormSelectedClassId] = useState('');
   const [formSelectedTeacherId, setFormSelectedTeacherId] = useState('');
@@ -256,6 +258,8 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setFormHomeRoomClassId('');
     setFormSubjectPermissions([]);
     setFormClassPermissions([]);
+    setIsSubjectDropdownOpen(false);
+    setIsClassDropdownOpen(false);
     setAssigningClass(null);
     setSelectedWaliTeacherId('');
     setBulkCsvText('');
@@ -2061,270 +2065,375 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
       {/* =================================----------------------------- */}
       {(modalType === 'TEACHER_CREATE' || modalType === 'TEACHER_EDIT') && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                {modalType === 'TEACHER_EDIT' ? 'Edit Data Staf / Guru' : 'Tambah Staf / Guru Baru'}
-              </h3>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full max-h-[90vh] shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-6 py-4 shrink-0 bg-white dark:bg-slate-900">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                    {modalType === 'TEACHER_EDIT' ? 'Edit Data Staf / Guru' : 'Tambah Staf / Guru Baru'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Lengkapi data akun dan penugasan mengajar guru
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeModal}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveTeacher} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">NIP Staf</label>
-                  <input
-                    type="text"
-                    value={formNip}
-                    onChange={e => setFormNip(e.target.value)}
-                    placeholder="19821104..."
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Peran Utama Akun</label>
-                  <select
-                    value={formRole}
-                    onChange={e => {
-                      const r = e.target.value as Role;
-                      setFormRole(r);
-                      if (r === 'WALI_KELAS') {
-                        setFormIsWaliKelas(true);
-                        if (!formHomeRoomClassId) setFormHomeRoomClassId(classes[0]?.id || '');
-                      } else if (r === 'GURU') {
-                        setFormIsWaliKelas(false);
-                      }
-                    }}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-semibold"
-                  >
-                    <option value="GURU">GURU PENGAMPU</option>
-                    <option value="WALI_KELAS">WALI KELAS</option>
-                    <option value="ADMIN">ADMINISTRATOR</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Nama Lengkap & Gelar</label>
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={e => setFormName(e.target.value)}
-                  placeholder="Drs. Supriyadi, M.Pd"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
-                  required
-                />
-              </div>
-
-              {/* Password Input Field */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Kata Sandi Akun Login
-                </label>
-                <input
-                  type="text"
-                  value={formPassword}
-                  onChange={e => setFormPassword(e.target.value)}
-                  placeholder="Contoh: password123"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-mono"
-                  required
-                />
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                  Kata sandi ini digunakan guru/staf untuk autentikasi bersama NIP kedinasan.
-                </span>
-              </div>
-
-              {/* Wali Kelas Toggle & Class Selection */}
-              <div className="p-3.5 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/80 space-y-2">
-                <div className="flex items-center justify-between">
+            {/* Modal Form */}
+            <form onSubmit={handleSaveTeacher} className="flex flex-col flex-1 overflow-hidden">
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 text-xs">
+                {/* ROW 1: NIP & Nama Lengkap */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <span className="font-bold text-indigo-900 dark:text-indigo-200 block">
-                      Status Wali Kelas
-                    </span>
-                    <span className="text-[10px] text-indigo-700 dark:text-indigo-300">
-                      Aktifkan jika guru bertindak sebagai Wali Kelas Rombel.
-                    </span>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      NIP Staf / NIK
+                    </label>
+                    <input
+                      type="text"
+                      value={formNip}
+                      onChange={e => setFormNip(e.target.value)}
+                      placeholder="19821104..."
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-mono"
+                      required
+                    />
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={formIsWaliKelas}
-                    onChange={e => {
-                      const isChecked = e.target.checked;
-                      setFormIsWaliKelas(isChecked);
-                      if (isChecked) {
-                        setFormRole('WALI_KELAS');
-                        if (!formHomeRoomClassId) setFormHomeRoomClassId(classes[0]?.id || '');
-                      } else if (formRole === 'WALI_KELAS') {
-                        setFormRole('GURU');
-                      }
-                    }}
-                    className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
-                  />
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Nama Lengkap & Gelar
+                    </label>
+                    <input
+                      type="text"
+                      value={formName}
+                      onChange={e => setFormName(e.target.value)}
+                      placeholder="Drs. Supriyadi, M.Pd"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-medium"
+                      required
+                    />
+                  </div>
                 </div>
 
-                {formIsWaliKelas && (
-                  <div className="pt-2 border-t border-indigo-200/60 dark:border-indigo-900/60">
-                    <label className="block font-bold text-indigo-950 dark:text-indigo-100 mb-1">
-                      Pilih Rombel Wali Kelas
+                {/* ROW 2: Peran Utama Akun & Kata Sandi */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Peran Utama Akun
                     </label>
                     <select
-                      value={formHomeRoomClassId}
-                      onChange={e => setFormHomeRoomClassId(e.target.value)}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-800 rounded-xl font-bold text-indigo-900 dark:text-indigo-200"
-                    >
-                      <option value="">-- Tanpa Rombel Wali Kelas --</option>
-                      {classes.map(c => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.gradeLevel})</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              {/* Mata Pelajaran yang Diampu (Subject Permissions Multi-Select) */}
-              <div className="p-3.5 bg-blue-50/70 dark:bg-blue-950/40 rounded-2xl border border-blue-200/80 dark:border-blue-900/80 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="font-bold text-blue-950 dark:text-blue-100 block">
-                      Mata Pelajaran yang Diampu
-                    </label>
-                    <span className="text-[10px] text-blue-700 dark:text-blue-300">
-                      Pilih satu atau lebih mata pelajaran yang diajarkan oleh guru ini.
-                    </span>
-                  </div>
-                  {subjects.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (formSubjectPermissions.length === subjects.length) {
-                          setFormSubjectPermissions([]);
-                        } else {
-                          setFormSubjectPermissions(subjects.map(s => s.id));
+                      value={formRole}
+                      onChange={e => {
+                        const r = e.target.value as Role;
+                        setFormRole(r);
+                        if (r === 'WALI_KELAS') {
+                          setFormIsWaliKelas(true);
+                          if (!formHomeRoomClassId) setFormHomeRoomClassId(classes[0]?.id || '');
+                        } else if (r === 'GURU') {
+                          setFormIsWaliKelas(false);
                         }
                       }}
-                      className="text-[10px] text-blue-700 dark:text-blue-300 font-mono font-bold hover:underline cursor-pointer shrink-0 ml-2"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-semibold"
                     >
-                      {formSubjectPermissions.length === subjects.length ? 'Batal Semua' : 'Pilih Semua Mapel'}
-                    </button>
+                      <option value="GURU">GURU PENGAMPU</option>
+                      <option value="WALI_KELAS">WALI KELAS</option>
+                      <option value="ADMIN">ADMINISTRATOR</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Kata Sandi Login
+                    </label>
+                    <input
+                      type="text"
+                      value={formPassword}
+                      onChange={e => setFormPassword(e.target.value)}
+                      placeholder="password123"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-mono"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* SECTION 1: Status Wali Kelas */}
+                <div className="p-3.5 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-indigo-900 dark:text-indigo-200 block">
+                        Status Wali Kelas
+                      </span>
+                      <span className="text-[10px] text-indigo-700 dark:text-indigo-300">
+                        Aktifkan jika guru bertindak sebagai Wali Kelas Rombel.
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={formIsWaliKelas}
+                      onChange={e => {
+                        const isChecked = e.target.checked;
+                        setFormIsWaliKelas(isChecked);
+                        if (isChecked) {
+                          setFormRole('WALI_KELAS');
+                          if (!formHomeRoomClassId) setFormHomeRoomClassId(classes[0]?.id || '');
+                        } else if (formRole === 'WALI_KELAS') {
+                          setFormRole('GURU');
+                        }
+                      }}
+                      className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {formIsWaliKelas && (
+                    <div className="pt-2 border-t border-indigo-200/60 dark:border-indigo-900/60">
+                      <label className="block font-bold text-indigo-950 dark:text-indigo-100 mb-1">
+                        Pilih Rombel Wali Kelas
+                      </label>
+                      <select
+                        value={formHomeRoomClassId}
+                        onChange={e => setFormHomeRoomClassId(e.target.value)}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-800 rounded-xl font-bold text-indigo-900 dark:text-indigo-200"
+                      >
+                        <option value="">-- Tanpa Rombel Wali Kelas --</option>
+                        {classes.map(c => (
+                          <option key={c.id} value={c.id}>{c.name} ({c.gradeLevel})</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
                 </div>
 
-                {subjects.length === 0 ? (
-                  <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-900 text-[11px] text-amber-800 dark:text-amber-300">
-                    Belum ada mata pelajaran terdaftar. Anda dapat menambahkan mata pelajaran terlebih dahulu di tab <strong>Mata Pelajaran</strong>.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 max-h-48 overflow-y-auto pr-1">
-                    {subjects.map(s => {
-                      const isChecked = formSubjectPermissions.includes(s.id);
-                      return (
-                        <label
-                          key={s.id}
-                          className={`flex items-center gap-2.5 p-2 rounded-xl border text-xs cursor-pointer transition-all ${
-                            isChecked
-                              ? 'bg-blue-100/80 dark:bg-blue-900/60 border-blue-300 dark:border-blue-700 text-blue-950 dark:text-blue-100 font-bold'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={e => {
-                              if (e.target.checked) {
-                                setFormSubjectPermissions([...formSubjectPermissions, s.id]);
-                              } else {
-                                setFormSubjectPermissions(formSubjectPermissions.filter(id => id !== s.id));
-                              }
-                            }}
-                            className="w-4 h-4 text-blue-600 rounded cursor-pointer shrink-0"
-                          />
-                          <div className="truncate flex-1">
-                            <span className="block truncate">{s.name}</span>
-                            <span className="text-[10px] text-slate-400 font-mono font-normal">
-                              Kode: {s.code} • {s.category}
-                            </span>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-                <p className="text-[10px] text-blue-700 dark:text-blue-300">
-                  Guru hanya dapat mengakses analisis butir soal, materi, dan input nilai untuk mata pelajaran yang dicentang.
-                </p>
-              </div>
-
-              {/* Kelas Yang Diajar (Class Permissions Multi-Select) */}
-              <div className="p-3.5 bg-teal-50/70 dark:bg-teal-950/40 rounded-2xl border border-teal-200/80 dark:border-teal-900/80 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-teal-950 dark:text-teal-100 block">
-                    Pilihan Kelas yang Diajar
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (formClassPermissions.length === classes.length) {
-                        setFormClassPermissions([]);
-                      } else {
-                        setFormClassPermissions(classes.map(c => c.id));
-                      }
-                    }}
-                    className="text-[10px] text-teal-700 dark:text-teal-300 font-mono font-bold hover:underline cursor-pointer"
+                {/* SECTION 2: Mata Pelajaran yang Diampu (Interactive Multi-Select Dropdown) */}
+                <div className="rounded-2xl border border-blue-200 dark:border-blue-900/80 bg-blue-50/50 dark:bg-blue-950/30 overflow-hidden transition-all">
+                  {/* Dropdown Trigger */}
+                  <div
+                    onClick={() => setIsSubjectDropdownOpen(prev => !prev)}
+                    className="p-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-blue-100/50 dark:hover:bg-blue-900/40 transition-colors"
                   >
-                    {formClassPermissions.length === classes.length ? 'Batal Semua' : 'Pilih Semua Kelas'}
-                  </button>
+                    <div className="space-y-1 pr-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-blue-950 dark:text-blue-100 text-xs">
+                          Mata Pelajaran yang Diampu
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+                          {formSubjectPermissions.length} / {subjects.length} Mapel
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate max-w-md">
+                        {formSubjectPermissions.length === 0 ? (
+                          <span className="text-slate-400 italic">Belum ada mata pelajaran dipilih (klik untuk memilih)</span>
+                        ) : (
+                          <span className="font-medium text-blue-700 dark:text-blue-300">
+                            {formSubjectPermissions
+                              .map(id => subjects.find(s => s.id === id)?.name || id)
+                              .join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-300 shrink-0">
+                      <span className="text-[10px] font-semibold">{isSubjectDropdownOpen ? 'Tutup' : 'Pilih'}</span>
+                      {isSubjectDropdownOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </div>
+                  </div>
+
+                  {/* Expandable Dropdown Content */}
+                  {isSubjectDropdownOpen && (
+                    <div className="p-3.5 border-t border-blue-200/80 dark:border-blue-900/80 bg-white/70 dark:bg-slate-900/70 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-slate-500">Centang mata pelajaran yang diajar guru:</span>
+                        {subjects.length > 0 && (
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setFormSubjectPermissions(subjects.map(s => s.id))}
+                              className="text-[10px] text-blue-600 font-bold hover:underline cursor-pointer"
+                            >
+                              Pilih Semua
+                            </button>
+                            <span className="text-slate-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setFormSubjectPermissions([])}
+                              className="text-[10px] text-slate-500 hover:text-slate-700 font-bold hover:underline cursor-pointer"
+                            >
+                              Batal Semua
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {subjects.length === 0 ? (
+                        <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-900 text-[11px] text-amber-800 dark:text-amber-300">
+                          Belum ada mata pelajaran terdaftar di sistem.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                          {subjects.map(s => {
+                            const isChecked = formSubjectPermissions.includes(s.id);
+                            return (
+                              <label
+                                key={s.id}
+                                className={`flex items-center gap-2.5 p-2 rounded-xl border text-xs cursor-pointer transition-all ${
+                                  isChecked
+                                    ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 text-blue-950 dark:text-blue-100 font-semibold'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={e => {
+                                    if (e.target.checked) {
+                                      setFormSubjectPermissions([...formSubjectPermissions, s.id]);
+                                    } else {
+                                      setFormSubjectPermissions(formSubjectPermissions.filter(id => id !== s.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-blue-600 rounded cursor-pointer shrink-0"
+                                />
+                                <div className="truncate flex-1">
+                                  <span className="block truncate">{s.name}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono font-normal">
+                                    {s.code} • {s.category}
+                                  </span>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
-                  {classes.map(c => {
-                    const isChecked = formClassPermissions.includes(c.id);
-                    return (
-                      <label
-                        key={c.id}
-                        className={`flex items-center gap-2 p-2 rounded-xl border text-xs cursor-pointer transition-all ${
-                          isChecked
-                            ? 'bg-teal-100/80 dark:bg-teal-900/60 border-teal-300 dark:border-teal-700 text-teal-900 dark:text-teal-100 font-bold'
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={e => {
-                            if (e.target.checked) {
-                              setFormClassPermissions([...formClassPermissions, c.id]);
-                            } else {
-                              setFormClassPermissions(formClassPermissions.filter(id => id !== c.id));
-                            }
-                          }}
-                          className="w-4 h-4 text-teal-600 rounded cursor-pointer"
-                        />
-                        <span className="truncate">{c.name}</span>
-                      </label>
-                    );
-                  })}
+
+                {/* SECTION 3: Pilihan Kelas yang Diajar (Interactive Multi-Select Dropdown) */}
+                <div className="rounded-2xl border border-teal-200 dark:border-teal-900/80 bg-teal-50/50 dark:bg-teal-950/30 overflow-hidden transition-all">
+                  {/* Dropdown Trigger */}
+                  <div
+                    onClick={() => setIsClassDropdownOpen(prev => !prev)}
+                    className="p-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-teal-100/50 dark:hover:bg-teal-900/40 transition-colors"
+                  >
+                    <div className="space-y-1 pr-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-teal-950 dark:text-teal-100 text-xs">
+                          Pilihan Kelas yang Diajar
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 dark:bg-teal-900 text-teal-700 dark:text-teal-300">
+                          {formClassPermissions.length === classes.length && classes.length > 0
+                            ? 'Semua Kelas'
+                            : `${formClassPermissions.length} / ${classes.length} Kelas`}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate max-w-md">
+                        {formClassPermissions.length === 0 ? (
+                          <span className="text-slate-400 italic">Belum ada kelas dipilih (klik untuk memilih)</span>
+                        ) : formClassPermissions.length === classes.length ? (
+                          <span className="font-medium text-teal-700 dark:text-teal-300">Semua kelas ({classes.length} rombel) dapat diakses</span>
+                        ) : (
+                          <span className="font-medium text-teal-700 dark:text-teal-300">
+                            {formClassPermissions
+                              .map(id => classes.find(c => c.id === id)?.name || id)
+                              .join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-teal-700 dark:text-teal-300 shrink-0">
+                      <span className="text-[10px] font-semibold">{isClassDropdownOpen ? 'Tutup' : 'Pilih'}</span>
+                      {isClassDropdownOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </div>
+                  </div>
+
+                  {/* Expandable Dropdown Content */}
+                  {isClassDropdownOpen && (
+                    <div className="p-3.5 border-t border-teal-200/80 dark:border-teal-900/80 bg-white/70 dark:bg-slate-900/70 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-slate-500">Pilih kelas yang diampu oleh guru:</span>
+                        {classes.length > 0 && (
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setFormClassPermissions(classes.map(c => c.id))}
+                              className="text-[10px] text-teal-600 font-bold hover:underline cursor-pointer"
+                            >
+                              Pilih Semua
+                            </button>
+                            <span className="text-slate-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setFormClassPermissions([])}
+                              className="text-[10px] text-slate-500 hover:text-slate-700 font-bold hover:underline cursor-pointer"
+                            >
+                              Batal Semua
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {classes.length === 0 ? (
+                        <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-900 text-[11px] text-amber-800 dark:text-amber-300">
+                          Belum ada rombel kelas terdaftar di sistem.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                          {classes.map(c => {
+                            const isChecked = formClassPermissions.includes(c.id);
+                            return (
+                              <label
+                                key={c.id}
+                                className={`flex items-center gap-2 p-2 rounded-xl border text-xs cursor-pointer transition-all ${
+                                  isChecked
+                                    ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-300 dark:border-teal-700 text-teal-900 dark:text-teal-100 font-semibold'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={e => {
+                                    if (e.target.checked) {
+                                      setFormClassPermissions([...formClassPermissions, c.id]);
+                                    } else {
+                                      setFormClassPermissions(formClassPermissions.filter(id => id !== c.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-teal-600 rounded cursor-pointer shrink-0"
+                                />
+                                <span className="truncate">{c.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <p className="text-[10px] text-teal-700 dark:text-teal-300">
-                  Data siswa dan nilai yang tampil di halaman guru hanya mencakup kelas yang dicentang di atas.
-                </p>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              {/* Sticky Bottom Actions Footer */}
+              <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2.5 shrink-0 bg-slate-50 dark:bg-slate-950/60">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold cursor-pointer"
+                  className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl font-semibold cursor-pointer transition-colors shadow-xs"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold cursor-pointer transition-colors shadow-sm flex items-center gap-1.5"
                 >
-                  Simpan Staf
+                  <Check className="w-4 h-4" />
+                  <span>Simpan Staf</span>
                 </button>
               </div>
             </form>
