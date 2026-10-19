@@ -5,13 +5,14 @@ import {
   AlertCircle, ShieldAlert, Search, Trash2, Edit3,
   Layers, ChevronLeft, ChevronRight, Check, AlertTriangle,
   FileSpreadsheet, Sparkles, Download, Upload, UserPlus,
-  Award, FileText, ArrowRight
+  Award, FileText, ArrowRight, FolderKanban
 } from 'lucide-react';
 import { dbService } from '../services/database';
 import {
   User, Teacher, Student, ClassRoom, AcademicYear, Subject,
-  AuditLog, Role
+  AuditLog, Role, ExamPackage
 } from '../types/database';
+import { ExamPackagesSection } from '../components/admin/ExamPackagesSection';
 import * as XLSX from 'xlsx';
 
 interface AdminAppPageProps {
@@ -21,6 +22,7 @@ interface AdminAppPageProps {
 
 type AdminTab =
   | 'DASHBOARD'
+  | 'PACKAGES'
   | 'USERS'
   | 'STUDENTS'
   | 'CLASSES'
@@ -72,6 +74,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [examPackages, setExamPackages] = useState<ExamPackage[]>(() => dbService.getExamPackages());
 
   // Modals State
   const [modalType, setModalType] = useState<
@@ -191,6 +194,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setAcademicYears(state.academicYears);
     setSubjects(state.subjects);
     setAuditLogs(state.auditLogs);
+    setExamPackages(dbService.getExamPackages());
   };
 
   useEffect(() => {
@@ -889,6 +893,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   // Navigation Items Sidebar
   const navItems: NavItem[] = [
     { key: 'DASHBOARD', label: 'Ringkasan Master Data', icon: Layers },
+    { key: 'PACKAGES', label: 'Paket Ujian (Wadah)', icon: FolderKanban, count: (examPackages || []).length },
     { key: 'USERS', label: 'Pengguna & Wali Kelas', icon: Users, count: teachers.length },
     { key: 'STUDENTS', label: 'Data Siswa', icon: UserCheck, count: students.length },
     { key: 'CLASSES', label: 'Kelas & Roster Sekolah', icon: School, count: classes.length },
@@ -1063,11 +1068,19 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
 
                   <div className="flex flex-wrap gap-2.5">
                     <button
-                      onClick={() => handleTabChange('USERS')}
+                      onClick={() => handleTabChange('PACKAGES')}
                       className="px-4 py-2.5 bg-white text-indigo-950 hover:bg-indigo-50 font-bold text-xs rounded-xl transition-colors shadow-sm cursor-pointer flex items-center gap-2"
                     >
-                      <Users className="w-4 h-4 text-indigo-600" />
-                      <span>Kelola Pengguna & Wali Kelas</span>
+                      <FolderKanban className="w-4 h-4 text-indigo-600" />
+                      <span>Kelola Paket Ujian (Wadah)</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleTabChange('USERS')}
+                      className="px-4 py-2.5 bg-indigo-700/80 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl border border-indigo-500/40 transition-colors shadow-sm cursor-pointer flex items-center gap-2"
+                    >
+                      <Users className="w-4 h-4 text-indigo-200" />
+                      <span>Kelola Pengguna</span>
                     </button>
 
                     <button
@@ -1204,6 +1217,18 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 </div>
               </div>
             </div>
+          )}
+
+          {/* TAB: PAKET UJIAN (WADAH) */}
+          {!isLoading && activeTab === 'PACKAGES' && (
+            <ExamPackagesSection
+              dbService={dbService}
+              classes={classes}
+              subjects={subjects}
+              academicYears={academicYears}
+              currentUser={currentUser}
+              onShowToast={(msg) => triggerToast(msg, 'success')}
+            />
           )}
 
           {/* TAB 2: USERS & WALI KELAS */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   School, Users, TrendingUp, Download, CheckCircle2, AlertTriangle,
   BookOpen, Search, ArrowRight, Award, FileSpreadsheet, Key, ChevronRight,
@@ -45,10 +45,6 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
   const teacherObj = dbService.getTeacherByUserId(currentUser);
   const allStudents = dbService.getStudents();
-  const allTryouts = dbService.getTryouts();
-  const allSubjects = dbService.getSubjects();
-  const allScores = dbService.getScores();
-
   // Get current assigned homeroom class or fallback to XII IPA 1
   const assignedClassId = teacherObj?.homeRoomClassId || 'c-xii-ipa1';
   const assignedClass: ClassRoom = dbService.getClasses().find(c => c.id === assignedClassId) || {
@@ -58,6 +54,32 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
     academicYearId: 'ay-2025-1',
     homeRoomTeacherId: teacherObj?.id || 't-2',
   };
+
+  // Scoped Tryouts: Hanya menampilkan tryouts yang menargetkan kelas binaan wali kelas
+  const allTryouts = useMemo(() => {
+    const rawTryouts = dbService.getTryouts();
+    return rawTryouts.filter(t => {
+      if (t.packageId) {
+        const pkg = dbService.getExamPackageById(t.packageId);
+        if (pkg) {
+          if (pkg.targetClassIds && pkg.targetClassIds.length > 0) {
+            return pkg.targetClassIds.includes(assignedClassId);
+          }
+          if (pkg.targetGrades && pkg.targetGrades.length > 0) {
+            return pkg.targetGrades.includes(assignedClass.gradeLevel);
+          }
+          return false;
+        }
+      }
+      if (t.targetClassIds && t.targetClassIds.length > 0) {
+        return t.targetClassIds.includes(assignedClassId);
+      }
+      return true;
+    });
+  }, [assignedClassId, assignedClass.gradeLevel]);
+
+  const allSubjects = dbService.getSubjects();
+  const allScores = dbService.getScores();
 
   // Filter students in homeroom class
   const classStudents = allStudents.filter(s => s.classId === assignedClassId || s.classId === 'c-xii-ipa1');

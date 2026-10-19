@@ -2,7 +2,8 @@ import {
   User, Teacher, Student, ClassRoom, StudentClass, AcademicYear, Subject,
   TeacherSubject, Material, Competency, Tryout, TryoutSubject, Question,
   TryoutQuestion, GoogleForm, Response, Answer, Score, QuestionAnalysis,
-  Explanation, Report, AuditLog, TryoutStatus, ScoringConfig, Role, SchoolProfile
+  Explanation, Report, AuditLog, TryoutStatus, ScoringConfig, Role, SchoolProfile,
+  ExamPackage, ExamPackageSubject
 } from '../types/database';
 import {
   INITIAL_ACADEMIC_YEARS, INITIAL_USERS, INITIAL_TEACHERS, INITIAL_CLASSES,
@@ -42,6 +43,7 @@ export interface DatabaseState {
   teacherSubjects: TeacherSubject[];
   materials: Material[];
   competencies: Competency[];
+  examPackages: ExamPackage[];
   tryouts: Tryout[];
   tryoutSubjects: TryoutSubject[];
   questions: Question[];
@@ -153,6 +155,60 @@ class DatabaseService {
         if (!parsed.responses || parsed.responses.length < INITIAL_RESPONSES.length) {
           parsed.responses = INITIAL_RESPONSES;
         }
+
+        // Ensure examPackages exists or create initial "Arsip Paket Ujian Awal"
+        if (!parsed.examPackages || !Array.isArray(parsed.examPackages) || parsed.examPackages.length === 0) {
+          const allClasses = parsed.classes || INITIAL_CLASSES;
+          const allTryouts = parsed.tryouts || INITIAL_TRYOUTS;
+          const allTryoutSubjects = parsed.tryoutSubjects || INITIAL_TRYOUT_SUBJECTS;
+          
+          const archiveSubjects: ExamPackageSubject[] = allTryoutSubjects.map((tsub: any, idx: number) => {
+            const parentTo = allTryouts.find((t: any) => t.id === tsub.tryoutId);
+            return {
+              id: `pkg-sub-${idx + 1}`,
+              packageId: 'pkt-arsip-awal',
+              subjectId: tsub.subjectId,
+              googleFormUrl: tsub.googleFormUrl || parentTo?.googleFormUrl || '',
+              googleSheetUrl: parentTo?.googleSheetUrl || '',
+              answerKey: parentTo?.answerKey || [],
+              totalQuestions: tsub.totalQuestions || 40,
+              durationMinutes: tsub.durationMinutes || 60,
+              passingGrade: tsub.passingGrade || 75,
+              syncStatus: 'SYNCED',
+              lastUpdatedBy: 'Sistem (Migrasi Otomatis)',
+              updatedAt: new Date().toISOString()
+            };
+          });
+
+          parsed.examPackages = [{
+            id: 'pkt-arsip-awal',
+            code: 'PKT-ARSIP',
+            title: 'Arsip Paket Ujian Awal',
+            assessmentType: 'TRYOUT',
+            academicYearId: parsed.academicYears?.[0]?.id || 'ay-2025-2',
+            targetGrades: ['X', 'XI', 'XII', '7', '8', '9'],
+            targetClassIds: allClasses.map((c: any) => c.id),
+            startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+            endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+            status: 'ACTIVE',
+            description: 'Paket Ujian otomatis untuk merangkum riwayat tryout dan analisis sebelumnya.',
+            subjects: archiveSubjects,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }];
+        }
+
+        // Ensure existing tryouts have targetClassIds and packageId
+        if (parsed.tryouts && Array.isArray(parsed.tryouts)) {
+          const classIds = (parsed.classes || INITIAL_CLASSES).map((c: any) => c.id);
+          parsed.tryouts.forEach((t: any) => {
+            if (!t.packageId) t.packageId = 'pkt-arsip-awal';
+            if (!t.targetClassIds || t.targetClassIds.length === 0) {
+              t.targetClassIds = classIds;
+            }
+          });
+        }
+
         return parsed;
       }
     } catch (err) {
@@ -170,7 +226,45 @@ class DatabaseService {
       teacherSubjects: INITIAL_TEACHER_SUBJECTS,
       materials: INITIAL_MATERIALS,
       competencies: INITIAL_COMPETENCIES,
-      tryouts: INITIAL_TRYOUTS,
+      examPackages: [
+        {
+          id: 'pkt-arsip-awal',
+          code: 'PKT-ARSIP',
+          title: 'Arsip Paket Ujian Awal',
+          assessmentType: 'TRYOUT',
+          academicYearId: INITIAL_ACADEMIC_YEARS[0]?.id || 'ay-2025-2',
+          targetGrades: ['X', 'XI', 'XII', '7', '8', '9'],
+          targetClassIds: INITIAL_CLASSES.map(c => c.id),
+          startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+          endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+          status: 'ACTIVE',
+          description: 'Paket Ujian otomatis untuk merangkum riwayat tryout dan analisis sebelumnya.',
+          subjects: INITIAL_TRYOUT_SUBJECTS.map((tsub, idx) => {
+            const parentTo = INITIAL_TRYOUTS.find(t => t.id === tsub.tryoutId);
+            return {
+              id: `pkg-sub-${idx + 1}`,
+              packageId: 'pkt-arsip-awal',
+              subjectId: tsub.subjectId,
+              googleFormUrl: tsub.googleFormUrl || parentTo?.googleFormUrl || '',
+              googleSheetUrl: parentTo?.googleSheetUrl || '',
+              answerKey: parentTo?.answerKey || [],
+              totalQuestions: tsub.totalQuestions || 40,
+              durationMinutes: tsub.durationMinutes || 60,
+              passingGrade: tsub.passingGrade || 75,
+              syncStatus: 'SYNCED',
+              lastUpdatedBy: 'Sistem (Migrasi Otomatis)',
+              updatedAt: new Date().toISOString()
+            };
+          }),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      tryouts: INITIAL_TRYOUTS.map(t => ({
+        ...t,
+        packageId: 'pkt-arsip-awal',
+        targetClassIds: INITIAL_CLASSES.map(c => c.id)
+      })),
       tryoutSubjects: INITIAL_TRYOUT_SUBJECTS,
       questions: INITIAL_QUESTIONS,
       tryoutQuestions: INITIAL_TRYOUT_QUESTIONS,
@@ -802,6 +896,177 @@ class DatabaseService {
     this.state.competencies = this.state.competencies.filter(x => !ids.includes(x.id));
     this.logAudit(currentUser, 'BULK_DELETE_COMPETENCY', 'COMPETENCY', `Menghapus massal ${ids.length} kompetensi dasar.`);
     this.persistState();
+  }
+
+  // ============================================================
+  // EXAM PACKAGES (PAKET UJIAN / WADAH) CRUD & ACCESS MANAGEMENT
+  // ============================================================
+  public getExamPackages(): ExamPackage[] {
+    return this.state.examPackages || [];
+  }
+
+  public getExamPackageById(id: string): ExamPackage | undefined {
+    return (this.state.examPackages || []).find(p => p.id === id);
+  }
+
+  public saveExamPackage(pkg: ExamPackage, currentUser?: any): ExamPackage {
+    if (currentUser) {
+      this.assertAdmin(currentUser, 'SAVE_EXAM_PACKAGE');
+    }
+    if (!this.state.examPackages) {
+      this.state.examPackages = [];
+    }
+    const existingIdx = this.state.examPackages.findIndex(p => p.id === pkg.id);
+    const now = new Date().toISOString();
+    const toSave: ExamPackage = {
+      ...pkg,
+      updatedAt: now,
+      createdAt: existingIdx >= 0 ? this.state.examPackages[existingIdx].createdAt || now : now,
+    };
+
+    if (existingIdx >= 0) {
+      this.state.examPackages[existingIdx] = toSave;
+      if (currentUser) {
+        this.logAudit(currentUser, 'UPDATE_EXAM_PACKAGE', 'TRYOUT', `Memperbarui Paket Ujian: ${toSave.title} (${toSave.code})`);
+      }
+    } else {
+      this.state.examPackages.unshift(toSave);
+      if (currentUser) {
+        this.logAudit(currentUser, 'CREATE_EXAM_PACKAGE', 'TRYOUT', `Membuat Paket Ujian baru: ${toSave.title} (${toSave.code})`);
+      }
+    }
+
+    this.persistState();
+    return toSave;
+  }
+
+  public deleteExamPackage(id: string, currentUser?: any): void {
+    if (currentUser) {
+      this.assertAdmin(currentUser, 'DELETE_EXAM_PACKAGE');
+    }
+    const pkg = this.getExamPackageById(id);
+    if (!pkg) return;
+    this.state.examPackages = (this.state.examPackages || []).filter(p => p.id !== id);
+    if (currentUser) {
+      this.logAudit(currentUser, 'DELETE_EXAM_PACKAGE', 'TRYOUT', `Menghapus Paket Ujian: ${pkg.title} (${pkg.code})`);
+    }
+    this.persistState();
+  }
+
+  public updateExamPackageStatus(id: string, status: TryoutStatus, currentUser?: any): void {
+    if (currentUser) {
+      this.assertAdmin(currentUser, 'UPDATE_EXAM_PACKAGE_STATUS');
+    }
+    const pkg = this.getExamPackageById(id);
+    if (!pkg) return;
+    pkg.status = status;
+    pkg.updatedAt = new Date().toISOString();
+    if (currentUser) {
+      this.logAudit(currentUser, 'UPDATE_EXAM_PACKAGE_STATUS', 'TRYOUT', `Mengubah status Paket Ujian ${pkg.title} menjadi '${status}'`);
+    }
+    this.persistState();
+  }
+
+  public updateExamPackageSubject(
+    packageId: string,
+    subjectId: string,
+    updates: Partial<ExamPackageSubject>,
+    currentUser?: any
+  ): ExamPackageSubject | undefined {
+    const pkg = this.getExamPackageById(packageId);
+    if (!pkg) throw new Error(`Paket Ujian dengan ID '${packageId}' tidak ditemukan.`);
+
+    let subItem = pkg.subjects.find(s => s.subjectId === subjectId);
+    const now = new Date().toISOString();
+    const updaterName = currentUser?.name || currentUser?.role || 'Admin/Guru';
+
+    if (subItem) {
+      Object.assign(subItem, {
+        ...updates,
+        lastUpdatedBy: updaterName,
+        updatedAt: now,
+      });
+    } else {
+      subItem = {
+        id: `pkg-sub-${Date.now()}`,
+        packageId,
+        subjectId,
+        totalQuestions: 40,
+        passingGrade: 75,
+        ...updates,
+        lastUpdatedBy: updaterName,
+        updatedAt: now,
+      };
+      pkg.subjects.push(subItem);
+    }
+
+    pkg.updatedAt = now;
+    if (currentUser) {
+      const subj = this.getSubjectById(subjectId);
+      this.logAudit(
+        currentUser,
+        'UPDATE_EXAM_PACKAGE_SUBJECT',
+        'TRYOUT',
+        `Memperbarui tautan/konfigurasi mapel ${subj?.name || subjectId} pada Paket ${pkg.title}`
+      );
+    }
+    this.persistState();
+    return subItem;
+  }
+
+  /**
+   * Filter Paket Ujian untuk Siswa:
+   * Siswa hanya melihat paket ujian yang mengikutsertakan kelas siswa tersebut.
+   */
+  public getExamPackagesForStudent(studentClassId: string, gradeLevel?: string): ExamPackage[] {
+    const all = this.getExamPackages();
+    return all.filter(pkg => {
+      // Pastikan paket aktif/komplit (tidak draft jika siswa yang melihat)
+      if (pkg.status === 'DRAFT') return false;
+
+      // Jika targetClassIds dispesifikasikan, periksa apakah kelas siswa ada di dalamnya
+      if (pkg.targetClassIds && pkg.targetClassIds.length > 0) {
+        return pkg.targetClassIds.includes(studentClassId);
+      }
+
+      // Fallback: periksa jenjang tingkat (gradeLevel) jika targetClassIds kosong
+      if (gradeLevel && pkg.targetGrades && pkg.targetGrades.length > 0) {
+        return pkg.targetGrades.includes(gradeLevel);
+      }
+
+      return false;
+    });
+  }
+
+  /**
+   * Filter Paket Ujian untuk Guru:
+   * Menampilkan paket ujian yang memiliki mapel yang diampu oleh guru tersebut.
+   */
+  public getExamPackagesForTeacher(currentUser: any): ExamPackage[] {
+    if (!currentUser) return [];
+    if (currentUser.role === 'ADMIN') return this.getExamPackages();
+
+    const allowedSubjects = this.getTeacherAllowedSubjectIds(currentUser);
+    const all = this.getExamPackages();
+
+    return all.filter(pkg => {
+      return pkg.subjects.some(sub => allowedSubjects.includes(sub.subjectId));
+    });
+  }
+
+  /**
+   * Filter Paket Ujian untuk Wali Kelas:
+   * Menampilkan paket ujian yang menargetkan kelas yang dibina oleh wali kelas.
+   */
+  public getExamPackagesForWaliKelas(homeRoomClassId: string): ExamPackage[] {
+    if (!homeRoomClassId) return [];
+    const all = this.getExamPackages();
+    return all.filter(pkg => {
+      if (pkg.targetClassIds && pkg.targetClassIds.length > 0) {
+        return pkg.targetClassIds.includes(homeRoomClassId);
+      }
+      return false;
+    });
   }
 
   // TRYOUTS CRUD & MANAGEMENT

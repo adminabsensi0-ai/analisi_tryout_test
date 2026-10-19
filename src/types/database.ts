@@ -147,6 +147,39 @@ export interface ScoringConfig {
   passingGrade?: number;
 }
 
+export interface ExamPackageSubject {
+  id: string;
+  packageId: string;
+  subjectId: string;
+  teacherId?: string;
+  googleFormUrl?: string;
+  googleSheetUrl?: string;
+  answerKey?: string[];
+  totalQuestions: number;
+  durationMinutes?: number;
+  passingGrade: number;
+  syncStatus?: 'PENDING' | 'SYNCED' | 'ERROR';
+  lastUpdatedBy?: string;
+  updatedAt?: string;
+}
+
+export interface ExamPackage {
+  id: string;
+  code: string;
+  title: string;
+  assessmentType: AssessmentType;
+  academicYearId: string;
+  targetGrades: string[]; // e.g. ['7', '8', '9'] or ['X', 'XI', 'XII']
+  targetClassIds: string[]; // e.g. ['cls-9a', 'cls-9b']
+  startDate: string;
+  endDate: string;
+  status: TryoutStatus;
+  description?: string;
+  subjects: ExamPackageSubject[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Tryout {
   id: string;
   code: string; // e.g. "TO-2026-01"
@@ -162,6 +195,8 @@ export interface Tryout {
   googleSheetUrl?: string;
   /** Kunci jawaban per nomor soal. Index 0 = Soal no.1. Nilai: 'A'|'B'|'C'|'D'|'E'|'' */
   answerKey?: string[];
+  packageId?: string;
+  targetClassIds?: string[];
 }
 
 export interface TryoutSubject {

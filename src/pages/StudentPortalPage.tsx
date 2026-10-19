@@ -44,7 +44,45 @@ export const StudentPortalPage: React.FC = () => {
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [lockoutTimer, setLockoutTimer] = useState(0);
 
-  const tryouts = dbService.getTryouts();
+  // Filter Tryouts strictly scoped to verified student's class
+  const tryouts = useMemo(() => {
+    const all = dbService.getTryouts();
+    if (!verifiedStudent) return all;
+
+    const studentClass = dbService.getClasses().find(c => c.id === verifiedStudent.classId);
+
+    return all.filter(t => {
+      // 1. If linked to an ExamPackage (wadah), verify target classes
+      if (t.packageId) {
+        const pkg = dbService.getExamPackageById(t.packageId);
+        if (pkg) {
+          if (pkg.targetClassIds && pkg.targetClassIds.length > 0) {
+            return pkg.targetClassIds.includes(verifiedStudent.classId);
+          }
+          if (studentClass && pkg.targetGrades && pkg.targetGrades.length > 0) {
+            return pkg.targetGrades.includes(studentClass.gradeLevel);
+          }
+          return false;
+        }
+      }
+
+      // 2. Direct targetClassIds on tryout
+      if (t.targetClassIds && t.targetClassIds.length > 0) {
+        return t.targetClassIds.includes(verifiedStudent.classId);
+      }
+
+      // 3. Fallback for legacy data without packageId
+      return true;
+    });
+  }, [verifiedStudent]);
+
+  // Ensure selectedTryoutId is valid within filtered tryouts
+  useEffect(() => {
+    if (tryouts.length > 0 && !tryouts.some(t => t.id === selectedTryoutId)) {
+      setSelectedTryoutId(tryouts[0].id);
+    }
+  }, [tryouts, selectedTryoutId]);
+
   const activeTryout = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
   const allSubjects = dbService.getSubjects();
   const allQuestions = dbService.getQuestions();
@@ -568,8 +606,23 @@ export const StudentPortalPage: React.FC = () => {
               </button>
             </div>
 
+            {/* INFO JIKA KELAS SISWA TIDAK TERMASUK DALAM PAKET UJIAN APAPUN */}
+            {tryouts.length === 0 && (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Belum Ada Paket Ujian untuk Kelas {studentClassName}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                  Akun Anda terdaftar di kelas <strong>{studentClassName}</strong>. Saat ini belum ada paket ujian atau try out yang ditargetkan untuk kelas Anda. Hasil ujian jenjang/kelas lain tidak ditampilkan demi privasi dan keteraturan data.
+                </p>
+              </div>
+            )}
+
             {/* TAB 1: RAPOR & SKOR TRY OUT TERPILIH */}
-            {portalTab === 'REPORT' && activeScore && (
+            {portalTab === 'REPORT' && activeScore && tryouts.length > 0 && (
               <div className="space-y-6 animate-fade-in">
                 {/* Tryout Selector Bar */}
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">

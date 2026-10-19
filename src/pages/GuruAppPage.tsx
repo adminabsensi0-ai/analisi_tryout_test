@@ -146,6 +146,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [newToTitle, setNewToTitle] = useState('');
   const [newToGFormUrl, setNewToGFormUrl] = useState('');
   const [newToGSheetUrl, setNewToGSheetUrl] = useState('');
+  const [newToPackageId, setNewToPackageId] = useState('');
   // Answer key state for the tryout modal
   const [newToQuestionCount, setNewToQuestionCount] = useState(40);
   const [newToAnswerKey, setNewToAnswerKey] = useState<string[]>(Array(40).fill(''));
@@ -183,12 +184,14 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     }
     const nextIdx = tryouts.length + 1;
     const createdCode = newToCode.trim() || `TO-2026-0${nextIdx}`;
+    const selectedPkg = newToPackageId ? dbService.getExamPackageById(newToPackageId) : undefined;
+
     const newToObj: Tryout = {
       id: `to-${Date.now()}`,
       code: createdCode,
       title: newToTitle.trim(),
       assessmentType: 'TRYOUT',
-      academicYearId: 'ay-2025-2',
+      academicYearId: selectedPkg?.academicYearId || 'ay-2025-2',
       startDate: new Date().toISOString(),
       endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'ACTIVE',
@@ -203,22 +206,49 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       },
       googleFormUrl: newToGFormUrl.trim() || 'https://forms.google.com/sample',
       googleSheetUrl: newToGSheetUrl.trim() || 'https://docs.google.com/spreadsheets/d/sample/edit',
-      description: `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.`,
+      description: `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.${
+        selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''
+      }`,
       answerKey: newToAnswerKey,
+      packageId: selectedPkg?.id,
+      targetClassIds: selectedPkg?.targetClassIds,
     };
 
     dbService.saveTryout(newToObj);
+
+    // Jika dimasukkan ke wadah tertentu, sinkronkan juga link sheet ke dalam paket tersebut
+    if (selectedPkg && newToGSheetUrl.trim()) {
+      const allowedSubs = dbService.getTeacherAllowedSubjectIds(currentUser);
+      if (allowedSubs.length > 0) {
+        dbService.updateExamPackageSubject(
+          selectedPkg.id,
+          allowedSubs[0],
+          {
+            googleSheetUrl: newToGSheetUrl.trim(),
+            googleFormUrl: newToGFormUrl.trim(),
+            syncStatus: 'SYNCED',
+          },
+          currentUser
+        );
+      }
+    }
+
     setTryouts(dbService.getTryouts());
     setShowTryoutModal(false);
     setNewToCode('');
     setNewToTitle('');
     setNewToGFormUrl('');
     setNewToGSheetUrl('');
+    setNewToPackageId('');
     setNewToAnswerKey(Array(40).fill(''));
     setNewToQuestionCount(40);
     setAnswerKeyUploadErrors([]);
     setAnswerKeyUploadSuccess(false);
-    triggerToast(`Paket TryOut '${newToObj.title}' berhasil ditambahkan! Kunci jawaban ${newToAnswerKey.filter(a => a !== '').length}/${newToQuestionCount} soal tersimpan.`);
+    triggerToast(
+      `Paket TryOut '${newToObj.title}' berhasil ditambahkan${
+        selectedPkg ? ` ke dalam wadah '${selectedPkg.title}'` : ''
+      }! Kunci jawaban ${newToAnswerKey.filter(a => a !== '').length}/${newToQuestionCount} soal tersimpan.`
+    );
   };
 
 
@@ -7646,6 +7676,27 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   placeholder="Contoh: Try Out 5 — Evaluasi Pasca Mid Semester"
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                  Wadah / Paket Ujian Induk <span className="font-normal text-slate-400">(Sangat Disarankan agar Rapi)</span>
+                </label>
+                <select
+                  value={newToPackageId}
+                  onChange={e => setNewToPackageId(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500"
+                >
+                  <option value="">-- Pilih Wadah / Paket Ujian --</option>
+                  {dbService.getExamPackages().map(pkg => (
+                    <option key={pkg.id} value={pkg.id}>
+                      {pkg.code} — {pkg.title}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Memasukkan soal ke wadah memastikan link spreadsheet terkelompok dan hasil analisis hanya dapat diakses oleh kelas target wadah tersebut.
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
