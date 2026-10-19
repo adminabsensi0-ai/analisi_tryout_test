@@ -276,7 +276,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setFormRole('GURU');
     setFormIsWaliKelas(false);
     setFormHomeRoomClassId('');
-    setFormSubjectPermissions([subjects[0]?.id || 'subj-mat']);
+    setFormSubjectPermissions(subjects[0]?.id ? [subjects[0].id] : []);
     setFormClassPermissions(classes.map(c => c.id));
     setModalType('TEACHER_CREATE');
   };
@@ -1278,7 +1278,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                       }`}
                     >
-                      {role === 'ALL' ? 'Semua' : role === 'WALI_KELAS' ? 'Wali Kelas' : role}
+                      {role === 'ALL' ? 'Semua' : role === 'WALI_KELAS' ? 'Wali Kelas' : role === 'GURU' ? 'Guru Pengampu' : 'Administrator'}
                     </button>
                   ))}
                 </div>
@@ -1319,7 +1319,13 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                               <td className="px-4 py-3">
                                 <div className="font-bold text-slate-900 dark:text-slate-100">{t.name}</div>
                                 <div className="text-[10px] text-slate-400">
-                                  {t.subjectPermissions?.length ? `${t.subjectPermissions.length} Mapel Diampu` : 'Guru Pengampu'}
+                                  {t.subjectPermissions?.length ? (
+                                    <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                      Mapel: {t.subjectPermissions.map(id => subjects.find(s => s.id === id)?.name || id).join(', ')}
+                                    </span>
+                                  ) : (
+                                    'Guru Pengampu'
+                                  )}
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center">
@@ -2095,7 +2101,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                     }}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-semibold"
                   >
-                    <option value="GURU">GURU PENGAMPUI</option>
+                    <option value="GURU">GURU PENGAMPU</option>
                     <option value="WALI_KELAS">WALI KELAS</option>
                     <option value="ADMIN">ADMINISTRATOR</option>
                   </select>
@@ -2177,6 +2183,79 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                     </select>
                   </div>
                 )}
+              </div>
+
+              {/* Mata Pelajaran yang Diampu (Subject Permissions Multi-Select) */}
+              <div className="p-3.5 bg-blue-50/70 dark:bg-blue-950/40 rounded-2xl border border-blue-200/80 dark:border-blue-900/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="font-bold text-blue-950 dark:text-blue-100 block">
+                      Mata Pelajaran yang Diampu
+                    </label>
+                    <span className="text-[10px] text-blue-700 dark:text-blue-300">
+                      Pilih satu atau lebih mata pelajaran yang diajarkan oleh guru ini.
+                    </span>
+                  </div>
+                  {subjects.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (formSubjectPermissions.length === subjects.length) {
+                          setFormSubjectPermissions([]);
+                        } else {
+                          setFormSubjectPermissions(subjects.map(s => s.id));
+                        }
+                      }}
+                      className="text-[10px] text-blue-700 dark:text-blue-300 font-mono font-bold hover:underline cursor-pointer shrink-0 ml-2"
+                    >
+                      {formSubjectPermissions.length === subjects.length ? 'Batal Semua' : 'Pilih Semua Mapel'}
+                    </button>
+                  )}
+                </div>
+
+                {subjects.length === 0 ? (
+                  <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-900 text-[11px] text-amber-800 dark:text-amber-300">
+                    Belum ada mata pelajaran terdaftar. Anda dapat menambahkan mata pelajaran terlebih dahulu di tab <strong>Mata Pelajaran</strong>.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 max-h-48 overflow-y-auto pr-1">
+                    {subjects.map(s => {
+                      const isChecked = formSubjectPermissions.includes(s.id);
+                      return (
+                        <label
+                          key={s.id}
+                          className={`flex items-center gap-2.5 p-2 rounded-xl border text-xs cursor-pointer transition-all ${
+                            isChecked
+                              ? 'bg-blue-100/80 dark:bg-blue-900/60 border-blue-300 dark:border-blue-700 text-blue-950 dark:text-blue-100 font-bold'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={e => {
+                              if (e.target.checked) {
+                                setFormSubjectPermissions([...formSubjectPermissions, s.id]);
+                              } else {
+                                setFormSubjectPermissions(formSubjectPermissions.filter(id => id !== s.id));
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded cursor-pointer shrink-0"
+                          />
+                          <div className="truncate flex-1">
+                            <span className="block truncate">{s.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono font-normal">
+                              Kode: {s.code} • {s.category}
+                            </span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-[10px] text-blue-700 dark:text-blue-300">
+                  Guru hanya dapat mengakses analisis butir soal, materi, dan input nilai untuk mata pelajaran yang dicentang.
+                </p>
               </div>
 
               {/* Kelas Yang Diajar (Class Permissions Multi-Select) */}
