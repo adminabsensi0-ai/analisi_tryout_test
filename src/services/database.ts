@@ -60,13 +60,16 @@ export interface DatabaseState {
   schoolProfile?: SchoolProfile;
 }
 
-class DatabaseService {
+export class DatabaseService {
   private state: DatabaseState;
   private listeners: (() => void)[] = [];
 
   // Supabase cloud sync state
   private supabaseSyncEnabled = false;
   private supabaseInitDone = false;
+  private realtimeChannel: unknown = null;
+  private syncInterval: ReturnType<typeof setInterval> | null = null;
+  private syncSubscribersCount = 0;
 
   // Fast In-Memory Performance Indexes for O(1) Lookups
   private responsesByTryoutStudent = new Map<string, Response>();
@@ -79,46 +82,41 @@ class DatabaseService {
   constructor() {
     this.state = this.loadFromStorage();
     this.rebuildIndexes();
+    this.setupLocalStorageListener();
     // Trigger async Supabase init after synchronous construction
     this.initSupabaseSync();
   }
 
+  private setupLocalStorageListener(): void {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (event: StorageEvent) => {
+        if (event.key === STORAGE_KEY && event.newValue) {
+          try {
+            this.state = JSON.parse(event.newValue);
+            this.rebuildIndexes();
+            this.notifyListeners();
+          } catch (e) {
+            console.warn('[DB] Storage event sync failed:', e);
+          }
+        }
+      });
+    }
+  }
+
   /**
    * Async: Initialize Supabase sync.
-   * - If Supabase is available AND local storage is empty → load from cloud
-   * - If Supabase is available AND local storage has data → enable background sync
+   * Selalu tarik state terbaru dari cloud saat startup jika Supabase tersedia.
    */
   private async initSupabaseSync(): Promise<void> {
     if (!sdb.isAvailable()) return;
 
     this.supabaseSyncEnabled = true;
 
-    // Check if local data is essentially empty (fresh device)
-    const hasLocalData =
-      this.state.teachers.length > 2 || // more than the 2 seed admin teachers
-      this.state.students.length > 0 ||
-      this.state.classes.length > 0 ||
-      this.state.subjects.length > 0 ||
-      this.state.academicYears.filter(ay => !ay.yearLabel.includes('2025')).length > 0;
-
-    if (!hasLocalData) {
-      console.info('[DB] Local state is empty — attempting to load from Supabase cloud...');
-      try {
-        const cloudState = await sdb.fetchCoreState();
-        if (cloudState && (
-          cloudState.teachers.length > 0 ||
-          cloudState.students.length > 0 ||
-          cloudState.classes.length > 0 ||
-          cloudState.subjects.length > 0
-        )) {
-          // Merge cloud data into local state without overwriting existing seed data
-          this.mergeCloudState(cloudState);
-          this.persistState();
-          console.info('[DB] Successfully loaded data from Supabase cloud.');
-        }
-      } catch (err) {
-        console.warn('[DB] Supabase init load failed, using local data:', err);
-      }
+    try {
+      console.info('[DB] Supabase aktif — menarik data terbaru dari cloud...');
+      await this.pullFromCloud();
+    } catch (err) {
+      console.warn('[DB] Supabase init sync failed, menggunakan data lokal:', err);
     }
 
     this.supabaseInitDone = true;
@@ -134,6 +132,8 @@ class DatabaseService {
     classes: ClassRoom[];
     academicYears: AcademicYear[];
     subjects: Subject[];
+    examPackages?: ExamPackage[];
+    tryouts?: Tryout[];
   }): boolean {
     let changed = false;
 
@@ -214,6 +214,42 @@ class DatabaseService {
       }
     });
 
+    // Merge exam packages (by code)
+    if (cloud.examPackages && Array.isArray(cloud.examPackages)) {
+      if (!this.state.examPackages) this.state.examPackages = [];
+      cloud.examPackages.forEach(cloudPkg => {
+        const idx = this.state.examPackages.findIndex(p => p.code.toLowerCase() === cloudPkg.code.toLowerCase());
+        if (idx === -1) {
+          this.state.examPackages.push(cloudPkg);
+          changed = true;
+        } else {
+          const local = this.state.examPackages[idx];
+          if (local.title !== cloudPkg.title || local.status !== cloudPkg.status || local.updatedAt !== cloudPkg.updatedAt) {
+            this.state.examPackages[idx] = { ...local, ...cloudPkg, id: local.id };
+            changed = true;
+          }
+        }
+      });
+    }
+
+    // Merge tryouts (by code)
+    if (cloud.tryouts && Array.isArray(cloud.tryouts)) {
+      if (!this.state.tryouts) this.state.tryouts = [];
+      cloud.tryouts.forEach(cloudTo => {
+        const idx = this.state.tryouts.findIndex(t => t.code.toLowerCase() === cloudTo.code.toLowerCase());
+        if (idx === -1) {
+          this.state.tryouts.push(cloudTo);
+          changed = true;
+        } else {
+          const local = this.state.tryouts[idx];
+          if (local.title !== cloudTo.title || local.status !== cloudTo.status) {
+            this.state.tryouts[idx] = { ...local, ...cloudTo, id: local.id };
+            changed = true;
+          }
+        }
+      });
+    }
+
     return changed;
   }
 
@@ -229,6 +265,8 @@ class DatabaseService {
       classes: this.state.classes,
       academicYears: this.state.academicYears,
       subjects: this.state.subjects,
+      examPackages: this.state.examPackages,
+      tryouts: this.state.tryouts,
     });
     const ok = result.failed === 0;
     const message = ok
@@ -249,8 +287,9 @@ class DatabaseService {
       const hadChanges = this.mergeCloudState(cloudState);
       if (hadChanges) {
         this.persistState();
+        this.rebuildIndexes();
         this.notifyListeners();
-        console.info('[DB] Cloud pull: data diperbarui dari Supabase.');
+        console.info('[DB] Cloud pull: data berhasil diperbarui dari Supabase.');
       }
     } catch (err) {
       console.warn('[DB] pullFromCloud error:', err);
@@ -265,20 +304,37 @@ class DatabaseService {
   public startRealtimeSync(): () => void {
     if (!sdb.isAvailable()) return () => {};
 
-    // Subscribe Realtime Supabase untuk tabel inti
-    const channel = sdb.subscribeToChanges(() => {
-      this.pullFromCloud();
-    });
+    this.syncSubscribersCount++;
 
-    // Polling fallback setiap 30 detik
-    const interval = setInterval(() => {
+    // Jika subscription sudah berjalan, reuse yang sudah ada
+    if (!this.realtimeChannel && !this.syncInterval) {
+      // 1. Lakukan pull awal agar data langsung sinkron
       this.pullFromCloud();
-    }, 30_000);
+
+      // 2. Subscribe Realtime Supabase untuk tabel inti
+      this.realtimeChannel = sdb.subscribeToChanges(() => {
+        this.pullFromCloud();
+      });
+
+      // 3. Polling fallback setiap 20 detik
+      this.syncInterval = setInterval(() => {
+        this.pullFromCloud();
+      }, 20_000);
+    }
 
     // Return cleanup function
     return () => {
-      clearInterval(interval);
-      sdb.unsubscribe(channel);
+      this.syncSubscribersCount = Math.max(0, this.syncSubscribersCount - 1);
+      if (this.syncSubscribersCount === 0) {
+        if (this.syncInterval) {
+          clearInterval(this.syncInterval);
+          this.syncInterval = null;
+        }
+        if (this.realtimeChannel) {
+          sdb.unsubscribe(this.realtimeChannel);
+          this.realtimeChannel = null;
+        }
+      }
     };
   }
 
@@ -1043,6 +1099,9 @@ class DatabaseService {
 
   // SUBJECTS CRUD
   public getSubjects(): Subject[] { return this.state.subjects; }
+  public getSubjectById(id: string): Subject | undefined {
+    return this.state.subjects.find(s => s.id === id);
+  }
   public addSubject(subj: Omit<Subject, 'id'>, currentUser: any): Subject {
     this.assertAdmin(currentUser, 'CREATE_SUBJECT');
     if (this.state.subjects.some(s => s.code.toLowerCase() === subj.code.trim().toLowerCase())) {
@@ -1232,6 +1291,7 @@ class DatabaseService {
     }
 
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncExamPackage(toSave).catch(() => {});
     return toSave;
   }
 
@@ -1246,6 +1306,7 @@ class DatabaseService {
       this.logAudit(currentUser, 'DELETE_EXAM_PACKAGE', 'TRYOUT', `Menghapus Paket Ujian: ${pkg.title} (${pkg.code})`);
     }
     this.persistState();
+    if (this.supabaseSyncEnabled && pkg?.code) sdb.removeExamPackageByCode(pkg.code).catch(() => {});
   }
 
   public updateExamPackageStatus(id: string, status: TryoutStatus, currentUser?: any): void {
@@ -1260,6 +1321,7 @@ class DatabaseService {
       this.logAudit(currentUser, 'UPDATE_EXAM_PACKAGE_STATUS', 'TRYOUT', `Mengubah status Paket Ujian ${pkg.title} menjadi '${status}'`);
     }
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncExamPackage(pkg).catch(() => {});
   }
 
   public updateExamPackageSubject(
@@ -1306,6 +1368,7 @@ class DatabaseService {
       );
     }
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncExamPackage(pkg).catch(() => {});
     return subItem;
   }
 
@@ -1374,6 +1437,7 @@ class DatabaseService {
       this.state.tryouts.push(to);
     }
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncTryout(to).catch(() => {});
     return to;
   }
   public getTryoutById(id: string): Tryout | undefined {
@@ -1388,6 +1452,7 @@ class DatabaseService {
     this.state.tryouts.push(newTo);
     this.logAudit(currentUser, 'CREATE_TRYOUT', 'TRYOUT', `Membuat Try Out baru: ${newTo.title} (${newTo.code})`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncTryout(newTo).catch(() => {});
     return newTo;
   }
   public updateTryout(id: string, updates: Partial<Tryout>, currentUser: any) {
@@ -1395,12 +1460,16 @@ class DatabaseService {
     this.state.tryouts = this.state.tryouts.map(t => t.id === id ? { ...t, ...updates } : t);
     this.logAudit(currentUser, 'UPDATE_TRYOUT', 'TRYOUT', `Memperbarui data Try Out ID: ${id}`);
     this.persistState();
+    const updated = this.state.tryouts.find(t => t.id === id);
+    if (this.supabaseSyncEnabled && updated) sdb.syncTryout(updated).catch(() => {});
   }
   public updateTryoutStatus(id: string, status: TryoutStatus, currentUser: any) {
     this.assertAdmin(currentUser, 'UPDATE_TRYOUT_STATUS');
     this.state.tryouts = this.state.tryouts.map(t => t.id === id ? { ...t, status } : t);
     this.logAudit(currentUser, 'UPDATE_TRYOUT_STATUS', 'TRYOUT', `Mengubah status Try Out ID ${id} menjadi '${status}'`);
     this.persistState();
+    const updated = this.state.tryouts.find(t => t.id === id);
+    if (this.supabaseSyncEnabled && updated) sdb.syncTryout(updated).catch(() => {});
   }
   public updateTryoutScoringConfig(id: string, scoringConfig: ScoringConfig, currentUser: any) {
     this.assertAdminOrTeacher(currentUser, 'UPDATE_SCORING_CONFIG');
@@ -1412,6 +1481,8 @@ class DatabaseService {
       `Memperbarui konfigurasi scoring Try Out ID: ${id} (Tipe: ${scoringConfig.scoringType}, Maks: ${scoringConfig.maxScore}, Benar: ${scoringConfig.correctScore}, Salah: ${scoringConfig.wrongScore})`
     );
     this.persistState();
+    const updated = this.state.tryouts.find(t => t.id === id);
+    if (this.supabaseSyncEnabled && updated) sdb.syncTryout(updated).catch(() => {});
   }
   public deleteTryout(id: string, currentUser: any) {
     this.assertAdmin(currentUser, 'DELETE_TRYOUT');
@@ -1419,6 +1490,7 @@ class DatabaseService {
     this.state.tryouts = this.state.tryouts.filter(t => t.id !== id);
     this.logAudit(currentUser, 'DELETE_TRYOUT', 'TRYOUT', `Menghapus Try Out: ${to?.title || id}`);
     this.persistState();
+    if (this.supabaseSyncEnabled && to?.code) sdb.removeTryoutByCode(to.code).catch(() => {});
   }
 
   // QUESTIONS CRUD

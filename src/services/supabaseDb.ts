@@ -11,7 +11,7 @@
  */
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
-  User, Teacher, Student, ClassRoom, AcademicYear, Subject
+  User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout
 } from '../types/database';
 
 // ============================================================
@@ -171,6 +171,77 @@ function fromSupabaseSubject(row: Record<string, unknown>): Subject {
   };
 }
 
+function toSupabaseExamPackage(pkg: ExamPackage, supabaseAcademicYearId?: string): Record<string, unknown> {
+  return {
+    code: pkg.code,
+    title: pkg.title,
+    assessment_type: pkg.assessmentType || 'TRYOUT',
+    academic_year_id: supabaseAcademicYearId || pkg.academicYearId,
+    target_grades: pkg.targetGrades || [],
+    target_class_ids: pkg.targetClassIds || [],
+    start_date: pkg.startDate || new Date().toISOString(),
+    end_date: pkg.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    status: pkg.status || 'ACTIVE',
+    description: pkg.description || null,
+  };
+}
+
+function fromSupabaseExamPackage(row: Record<string, unknown>, subjects: ExamPackageSubject[] = []): ExamPackage {
+  return {
+    id: String(row.id),
+    code: String(row.code),
+    title: String(row.title),
+    assessmentType: (row.assessment_type as ExamPackage['assessmentType']) || 'TRYOUT',
+    academicYearId: String(row.academic_year_id),
+    targetGrades: Array.isArray(row.target_grades) ? (row.target_grades as string[]) : [],
+    targetClassIds: Array.isArray(row.target_class_ids) ? (row.target_class_ids as string[]) : [],
+    startDate: String(row.start_date || new Date().toISOString()),
+    endDate: String(row.end_date || new Date().toISOString()),
+    status: (row.status as ExamPackage['status']) || 'ACTIVE',
+    description: row.description ? String(row.description) : undefined,
+    subjects: subjects,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+    updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+  };
+}
+
+function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<string, unknown> {
+  return {
+    code: to.code,
+    title: to.title,
+    assessment_type: to.assessmentType || 'TRYOUT',
+    academic_year_id: supabaseAcademicYearId || to.academicYearId,
+    start_date: to.startDate || new Date().toISOString(),
+    end_date: to.endDate || new Date().toISOString(),
+    scoring_config: to.scoringConfig || {},
+    status: to.status || 'DRAFT',
+    description: to.description || null,
+    google_form_url: to.googleFormUrl || null,
+    google_sheet_url: to.googleSheetUrl || null,
+    package_id: to.packageId || null,
+    target_class_ids: to.targetClassIds || [],
+  };
+}
+
+function fromSupabaseTryout(row: Record<string, unknown>): Tryout {
+  return {
+    id: String(row.id),
+    code: String(row.code),
+    title: String(row.title),
+    assessmentType: (row.assessment_type as Tryout['assessmentType']) || 'TRYOUT',
+    academicYearId: String(row.academic_year_id),
+    startDate: String(row.start_date || new Date().toISOString()),
+    endDate: String(row.end_date || new Date().toISOString()),
+    scoringConfig: (row.scoring_config as any) || { scoringType: 'ROUND_DOWN', maxScore: 100, correctScore: 1, wrongScore: 0, emptyScore: 0 },
+    status: (row.status as Tryout['status']) || 'ACTIVE',
+    description: row.description ? String(row.description) : undefined,
+    googleFormUrl: row.google_form_url ? String(row.google_form_url) : undefined,
+    googleSheetUrl: row.google_sheet_url ? String(row.google_sheet_url) : undefined,
+    packageId: row.package_id ? String(row.package_id) : undefined,
+    targetClassIds: Array.isArray(row.target_class_ids) ? (row.target_class_ids as string[]) : [],
+  };
+}
+
 // ============================================================
 // CORE SYNC SERVICE
 // ============================================================
@@ -182,6 +253,8 @@ export interface SupabaseCoreState {
   classes: ClassRoom[];
   academicYears: AcademicYear[];
   subjects: Subject[];
+  examPackages?: ExamPackage[];
+  tryouts?: Tryout[];
 }
 
 class SupabaseDbService {
@@ -198,20 +271,23 @@ class SupabaseDbService {
 
   // ----------------------------------------------------------
   // FETCH: Load all core state from Supabase
-  // Used on fresh devices (no localStorage data)
+  // Used on fresh devices and background cloud sync
   // ----------------------------------------------------------
   public async fetchCoreState(): Promise<SupabaseCoreState | null> {
     if (!this.isAvailable() || !supabase) return null;
 
     try {
       // Fetch semua data secara paralel
-      const [ayRes, classRes, subjectRes, userRes, teacherRes, studentRes] = await Promise.all([
+      const [ayRes, classRes, subjectRes, userRes, teacherRes, studentRes, pkgRes, pkgSubRes, toRes] = await Promise.all([
         supabase.from('academic_years').select('*'),
         supabase.from('classes').select('*'),
         supabase.from('subjects').select('*'),
         supabase.from('users').select('*'),
         supabase.from('teachers').select('*'),
         supabase.from('students').select('*'),
+        supabase.from('exam_packages').select('*'),
+        supabase.from('exam_package_subjects').select('*'),
+        supabase.from('tryouts').select('*'),
       ]);
 
       if (ayRes.error) throw new Error('academic_years: ' + ayRes.error.message);
@@ -246,9 +322,42 @@ class SupabaseDbService {
         (row: Record<string, unknown>) => fromSupabaseStudent(row, supabaseClassIdToLocalId)
       );
 
-      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes`);
+      // Exam packages & Tryouts
+      const examPackagesData = pkgRes?.data || [];
+      const examPackageSubjectsData = pkgSubRes?.data || [];
+      const tryoutsData = toRes?.data || [];
 
-      return { users, teachers, students, classes, academicYears, subjects };
+      const subjectsByPkg = new Map<string, ExamPackageSubject[]>();
+      examPackageSubjectsData.forEach((row: any) => {
+        const pkgId = String(row.package_id);
+        const list = subjectsByPkg.get(pkgId) || [];
+        list.push({
+          id: String(row.id),
+          packageId: pkgId,
+          subjectId: String(row.subject_id),
+          teacherId: row.teacher_id ? String(row.teacher_id) : undefined,
+          googleFormUrl: row.google_form_url ? String(row.google_form_url) : undefined,
+          googleSheetUrl: row.google_sheet_url ? String(row.google_sheet_url) : undefined,
+          answerKey: Array.isArray(row.answer_key) ? row.answer_key : [],
+          totalQuestions: Number(row.total_questions) || 40,
+          durationMinutes: Number(row.duration_minutes) || 60,
+          passingGrade: Number(row.passing_grade) || 75,
+          syncStatus: row.sync_status || 'SYNCED',
+          lastUpdatedBy: row.last_updated_by ? String(row.last_updated_by) : undefined,
+          updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+        });
+        subjectsByPkg.set(pkgId, list);
+      });
+
+      const examPackages: ExamPackage[] = examPackagesData.map((row: any) =>
+        fromSupabaseExamPackage(row, subjectsByPkg.get(String(row.id)) || [])
+      );
+
+      const tryouts: Tryout[] = tryoutsData.map((row: any) => fromSupabaseTryout(row));
+
+      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes, ${examPackages.length} packages, ${tryouts.length} tryouts`);
+
+      return { users, teachers, students, classes, academicYears, subjects, examPackages, tryouts };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('fetchCoreState failed: ' + msg, 'warn');
@@ -345,10 +454,20 @@ class SupabaseDbService {
     if (!this.isAvailable() || !supabase) return;
     try {
       const ayId = supabaseAcademicYearId || cls.academicYearId;
-      const { error } = await supabase
+      const { data: existing } = await supabase
         .from('classes')
-        .upsert(toSupabaseClass(cls, ayId), { onConflict: 'id' });
-      if (error) this.log('syncClass error: ' + error.message, 'warn');
+        .select('id')
+        .eq('name', cls.name)
+        .maybeSingle();
+
+      const payload = toSupabaseClass(cls, ayId);
+      if (existing?.id) {
+        const { error } = await supabase.from('classes').update(payload).eq('id', existing.id);
+        if (error) this.log('syncClass update error: ' + error.message, 'warn');
+      } else {
+        const { error } = await supabase.from('classes').insert(payload);
+        if (error) this.log('syncClass insert error: ' + error.message, 'warn');
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('syncClass exception: ' + msg, 'warn');
@@ -378,6 +497,103 @@ class SupabaseDbService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('syncSubject exception: ' + msg, 'warn');
+    }
+  }
+
+  public async syncExamPackage(pkg: ExamPackage, supabaseAcademicYearId?: string): Promise<void> {
+    if (!this.isAvailable() || !supabase) return;
+    try {
+      const ayId = supabaseAcademicYearId || pkg.academicYearId;
+      const { data: existing } = await supabase
+        .from('exam_packages')
+        .select('id')
+        .eq('code', pkg.code)
+        .maybeSingle();
+
+      const payload = toSupabaseExamPackage(pkg, ayId);
+      let pkgId: string | null = null;
+
+      if (existing?.id) {
+        pkgId = String(existing.id);
+        const { error } = await supabase.from('exam_packages').update(payload).eq('id', pkgId);
+        if (error) this.log('syncExamPackage update error: ' + error.message, 'warn');
+      } else {
+        const { data: inserted, error } = await supabase.from('exam_packages').insert(payload).select('id').single();
+        if (error) {
+          this.log('syncExamPackage insert error: ' + error.message, 'warn');
+        } else if (inserted) {
+          pkgId = String((inserted as any).id);
+        }
+      }
+
+      // Sync slot mapel exam_package_subjects jika pkgId tersedia
+      if (pkgId && Array.isArray(pkg.subjects) && pkg.subjects.length > 0) {
+        for (const sub of pkg.subjects) {
+          const subPayload = {
+            package_id: pkgId,
+            subject_id: sub.subjectId,
+            teacher_id: sub.teacherId || null,
+            google_form_url: sub.googleFormUrl || null,
+            google_sheet_url: sub.googleSheetUrl || null,
+            answer_key: sub.answerKey || [],
+            total_questions: sub.totalQuestions || 40,
+            duration_minutes: sub.durationMinutes || 60,
+            passing_grade: sub.passingGrade || 75,
+            sync_status: sub.syncStatus || 'SYNCED',
+            last_updated_by: sub.lastUpdatedBy || null,
+          };
+          await supabase.from('exam_package_subjects').upsert(subPayload, { onConflict: 'package_id,subject_id' });
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('syncExamPackage exception: ' + msg, 'warn');
+    }
+  }
+
+  public async removeExamPackageByCode(code: string): Promise<void> {
+    if (!this.isAvailable() || !supabase) return;
+    try {
+      const { error } = await supabase.from('exam_packages').delete().eq('code', code.trim());
+      if (error) this.log('removeExamPackageByCode error: ' + error.message, 'warn');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('removeExamPackageByCode exception: ' + msg, 'warn');
+    }
+  }
+
+  public async syncTryout(to: Tryout, supabaseAcademicYearId?: string): Promise<void> {
+    if (!this.isAvailable() || !supabase) return;
+    try {
+      const ayId = supabaseAcademicYearId || to.academicYearId;
+      const { data: existing } = await supabase
+        .from('tryouts')
+        .select('id')
+        .eq('code', to.code)
+        .maybeSingle();
+
+      const payload = toSupabaseTryout(to, ayId);
+      if (existing?.id) {
+        const { error } = await supabase.from('tryouts').update(payload).eq('id', existing.id);
+        if (error) this.log('syncTryout update error: ' + error.message, 'warn');
+      } else {
+        const { error } = await supabase.from('tryouts').insert(payload);
+        if (error) this.log('syncTryout insert error: ' + error.message, 'warn');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('syncTryout exception: ' + msg, 'warn');
+    }
+  }
+
+  public async removeTryoutByCode(code: string): Promise<void> {
+    if (!this.isAvailable() || !supabase) return;
+    try {
+      const { error } = await supabase.from('tryouts').delete().eq('code', code.trim());
+      if (error) this.log('removeTryoutByCode error: ' + error.message, 'warn');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('removeTryoutByCode exception: ' + msg, 'warn');
     }
   }
 
@@ -439,7 +655,10 @@ class SupabaseDbService {
   public subscribeToChanges(onchange: () => void): unknown {
     if (!this.isAvailable() || !supabase) return null;
 
-    const TABLES = ['teachers', 'students', 'classes', 'subjects', 'academic_years', 'users'];
+    const TABLES = [
+      'teachers', 'students', 'classes', 'subjects', 'academic_years', 'users',
+      'exam_packages', 'exam_package_subjects', 'tryouts', 'scores'
+    ];
     const channel = (supabase as any).channel('db-realtime-sync');
 
     TABLES.forEach((table: string) => {
@@ -481,6 +700,8 @@ class SupabaseDbService {
     classes: ClassRoom[];
     academicYears: AcademicYear[];
     subjects: Subject[];
+    examPackages?: ExamPackage[];
+    tryouts?: Tryout[];
   }): Promise<{ success: number; failed: number; errors: string[] }> {
     if (!this.isAvailable() || !supabase) {
       return { success: 0, failed: 0, errors: ['Supabase tidak terkonfigurasi.'] };
@@ -524,6 +745,20 @@ class SupabaseDbService {
     // 5. Students
     for (const s of state.students) {
       await attempt(`Student ${s.nisn}`, () => this.syncStudent(s, s.classId));
+    }
+
+    // 6. Exam Packages (jika ada)
+    if (state.examPackages && state.examPackages.length > 0) {
+      for (const pkg of state.examPackages) {
+        await attempt(`ExamPackage ${pkg.code}`, () => this.syncExamPackage(pkg));
+      }
+    }
+
+    // 7. Tryouts (jika ada)
+    if (state.tryouts && state.tryouts.length > 0) {
+      for (const to of state.tryouts) {
+        await attempt(`Tryout ${to.code}`, () => this.syncTryout(to));
+      }
     }
 
     console.info(`[SupabaseDB] Export done: ${success} synced, ${failed} failed`);

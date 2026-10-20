@@ -29,9 +29,13 @@ function AppContent() {
       setCurrentUser(user);
     });
 
+    // Mulai Realtime Sync Supabase global (aktif di semua halaman / device)
+    const stopRealtimeSync = dbService.startRealtimeSync();
+
     return () => {
       window.removeEventListener('popstate', handlePopState);
       unsubscribe();
+      stopRealtimeSync();
     };
   }, []);
 
