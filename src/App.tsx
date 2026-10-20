@@ -115,9 +115,12 @@ function AppContent() {
 
   const urlParams = new URLSearchParams(window.location.search);
   const returnToQuery = urlParams.get('returnTo') || undefined;
+  const isDashboardRoute = activeRoute === '/admin' || activeRoute === '/guru' || activeRoute === '/wali-kelas';
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-200">
+    <div className={`flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-200 ${
+      isDashboardRoute ? 'h-screen overflow-hidden' : 'min-h-screen'
+    }`}>
       <Navbar
         currentUser={currentUser}
         currentPath={activeRoute}
@@ -127,14 +130,14 @@ function AppContent() {
 
       {/* Mode indicator banner — tampil hanya di development */}
       {!isSupabaseConfigured() && (
-        <div className="bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-800 px-4 py-2 text-center">
+        <div className="bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-800 px-4 py-2 text-center shrink-0">
           <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
             ⚠️ Mode Demo (localStorage) — Konfigurasi VITE_SUPABASE_URL di .env.local untuk beralih ke database produksi
           </p>
         </div>
       )}
 
-      <main className="flex-grow">
+      <main className={isDashboardRoute ? "flex-1 overflow-hidden flex flex-col min-h-0" : "flex-grow"}>
         {activeRoute === '/login' && (
           <ErrorBoundary>
             <LoginPage onLoginSuccess={handleLoginSuccess} onNavigate={navigateTo} returnTo={returnToQuery} />
@@ -190,7 +193,7 @@ function AppContent() {
         )}
       </main>
 
-      <Footer />
+      {!isDashboardRoute && <Footer />}
 
       {/* Toast notification system — render sekali di root */}
       <ToastContainer />

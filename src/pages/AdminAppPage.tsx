@@ -937,7 +937,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const activeYear = academicYears.find(a => a.isActive) || academicYears[0];
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Toast Feedback */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
@@ -959,7 +959,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
       )}
 
       {/* Main Admin Workspace Container */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex h-full overflow-hidden min-h-0">
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
           <div
@@ -968,9 +968,9 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
           />
         )}
 
-        {/* Sidebar Navigation */}
+        {/* Sidebar Navigation - Always Stretches to Bottom */}
         <aside
-          className={`fixed lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] inset-y-0 left-0 z-30 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between overflow-hidden transition-transform duration-300 ease-in-out ${
+          className={`fixed lg:static lg:h-full inset-y-0 left-0 z-30 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between overflow-hidden transition-transform duration-300 ease-in-out shrink-0 ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }`}
         >
@@ -2159,6 +2159,15 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 >
                   Reset Seluruh Database Sekolah
                 </button>
+              </div>
+
+              {/* Footer Copyright Mini di dalam Panel Konten */}
+              <div className="pt-6 pb-2 border-t border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 dark:text-slate-500 gap-2">
+                <span>{schoolName || 'Sistem Asesmen Sekolah'} · Panel Administrasi</span>
+                <span className="flex items-center gap-1.5 font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Cloud Database Aktif
+                </span>
               </div>
             </div>
           )}
