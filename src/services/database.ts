@@ -207,17 +207,22 @@ export class DatabaseService {
         }
 
         // 2. Sinkronisasi Dua Arah Otomatis:
-        // Jika di perangkat ini ada kelas atau murid yang BELUM ada di cloud,
-        // otomatis dorong (push) ke cloud agar tidak tertinggal di lokal!
+        // Jika di perangkat ini ada kelas, murid, atau penugasan Wali Kelas yang belum tersinkron di cloud,
+        // otomatis dorong (push) ke cloud agar seluruh device mendapatkan data yang sama!
         const unsyncedClasses = this.state.classes.filter(
           c => !cloudState.classes.some(cc => cc.name.toLowerCase() === c.name.toLowerCase())
         );
         const unsyncedStudents = this.state.students.filter(
           s => !cloudState.students.some(cs => cs.nisn === s.nisn)
         );
+        const hasUnsyncedWaliKelas = this.state.classes.some(
+          c => c.homeRoomTeacherId && !cloudState.classes.some(cc => cc.name.toLowerCase() === c.name.toLowerCase() && cc.homeRoomTeacherId)
+        ) || this.state.teachers.some(
+          t => t.isWaliKelas && t.homeRoomClassId && !cloudState.teachers.some(ct => ct.nip === t.nip && ct.homeRoomClassId)
+        );
 
-        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0) {
-          console.info(`[DB] Terdeteksi ${unsyncedClasses.length} kelas dan ${unsyncedStudents.length} siswa belum ada di cloud. Menyinkronkan ke cloud...`);
+        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0 || hasUnsyncedWaliKelas) {
+          console.info(`[DB] Terdeteksi data (kelas/siswa/wali kelas) belum tersinkron di cloud. Otomatis menyinkronkan ke Supabase...`);
           await this.exportToSupabase();
         }
       } else {
@@ -297,18 +302,28 @@ export class DatabaseService {
         changed = true;
       } else {
         const local = this.state.classes[idx];
-        if (local.id !== cloudCls.id) {
-          const oldId = local.id;
-          this.state.classes[idx] = { ...local, ...cloudCls };
-          this.state.students.forEach(st => {
-            if (st.classId === oldId) st.classId = cloudCls.id;
-          });
+        const oldId = local.id;
+        const idDiff = local.id !== cloudCls.id;
+        const teacherDiff = local.homeRoomTeacherId !== cloudCls.homeRoomTeacherId && cloudCls.homeRoomTeacherId !== undefined;
+        const gradeDiff = local.gradeLevel !== cloudCls.gradeLevel;
+
+        if (idDiff || teacherDiff || gradeDiff) {
+          this.state.classes[idx] = {
+            ...local,
+            ...cloudCls,
+            homeRoomTeacherId: cloudCls.homeRoomTeacherId !== undefined ? cloudCls.homeRoomTeacherId : local.homeRoomTeacherId,
+          };
+          if (idDiff) {
+            this.state.students.forEach(st => {
+              if (st.classId === oldId) st.classId = cloudCls.id;
+            });
+          }
           changed = true;
         }
       }
     });
 
-    // Merge teachers (by nip) — update name/email/permissions if changed
+    // Merge teachers (by nip) — update name/email/permissions/wali kelas if changed
     cloud.teachers.forEach(cloudTeacher => {
       const idx = this.state.teachers.findIndex(t => t.nip === cloudTeacher.nip);
       if (idx === -1) {
@@ -318,8 +333,48 @@ export class DatabaseService {
         const local = this.state.teachers[idx];
         const remoteSubs = JSON.stringify(cloudTeacher.subjectPermissions || []);
         const localSubs = JSON.stringify(local.subjectPermissions || []);
-        if (local.name !== cloudTeacher.name || local.email !== cloudTeacher.email || localSubs !== remoteSubs) {
-          this.state.teachers[idx] = { ...local, ...cloudTeacher, id: local.id, userId: local.userId };
+        const remoteClasses = JSON.stringify(cloudTeacher.classPermissions || []);
+        const localClasses = JSON.stringify(local.classPermissions || []);
+        const waliDiff =
+          local.isWaliKelas !== cloudTeacher.isWaliKelas ||
+          (cloudTeacher.homeRoomClassId && local.homeRoomClassId !== cloudTeacher.homeRoomClassId);
+
+        if (
+          local.name !== cloudTeacher.name ||
+          local.email !== cloudTeacher.email ||
+          localSubs !== remoteSubs ||
+          localClasses !== remoteClasses ||
+          waliDiff
+        ) {
+          this.state.teachers[idx] = {
+            ...local,
+            ...cloudTeacher,
+            id: local.id,
+            userId: local.userId,
+            isWaliKelas: cloudTeacher.isWaliKelas !== undefined ? cloudTeacher.isWaliKelas : local.isWaliKelas,
+            homeRoomClassId: cloudTeacher.homeRoomClassId || local.homeRoomClassId,
+          };
+          changed = true;
+        }
+      }
+    });
+
+    // Cross-link homeroom consistency between classes and teachers
+    this.state.teachers.forEach(t => {
+      if (t.isWaliKelas && t.homeRoomClassId) {
+        const cls = this.state.classes.find(c => c.id === t.homeRoomClassId || c.name.toLowerCase() === t.homeRoomClassId?.toLowerCase());
+        if (cls && cls.homeRoomTeacherId !== t.id) {
+          cls.homeRoomTeacherId = t.id;
+          changed = true;
+        }
+      }
+    });
+    this.state.classes.forEach(c => {
+      if (c.homeRoomTeacherId) {
+        const t = this.state.teachers.find(tch => tch.id === c.homeRoomTeacherId || tch.nip === c.homeRoomTeacherId);
+        if (t && (!t.isWaliKelas || t.homeRoomClassId !== c.id)) {
+          t.isWaliKelas = true;
+          t.homeRoomClassId = c.id;
           changed = true;
         }
       }
@@ -1217,6 +1272,10 @@ export class DatabaseService {
         (targetEmail && u.email.toLowerCase() === targetEmail.toLowerCase())
       );
       sdb.syncTeacher(updatedTeacher, updatedU).catch(() => {});
+      if (updatedTeacher.homeRoomClassId) {
+        const affectedClass = this.state.classes.find(c => c.id === updatedTeacher.homeRoomClassId);
+        if (affectedClass) sdb.syncClass(affectedClass).catch(() => {});
+      }
     }
   }
   public deleteTeacher(id: string, currentUser: any) {
@@ -1284,7 +1343,13 @@ export class DatabaseService {
     this.rebuildIndexes();
     this.notifyListeners();
     const updatedClass = this.state.classes.find(c => c.id === id);
-    if (this.supabaseSyncEnabled && updatedClass) sdb.syncClass(updatedClass).catch(() => {});
+    if (this.supabaseSyncEnabled && updatedClass) {
+      sdb.syncClass(updatedClass).catch(() => {});
+      if (updatedClass.homeRoomTeacherId) {
+        const affectedTeacher = this.state.teachers.find(t => t.id === updatedClass.homeRoomTeacherId);
+        if (affectedTeacher) sdb.syncTeacher(affectedTeacher).catch(() => {});
+      }
+    }
   }
   public deleteClass(id: string, currentUser: any) {
     this.assertAdmin(currentUser, 'DELETE_CLASS');

@@ -39,8 +39,12 @@ function fromSupabaseUser(row: Record<string, unknown>): User {
   };
 }
 
-function toSupabaseTeacher(t: Teacher, supabaseUserId: string): Record<string, unknown> {
-  return {
+function toSupabaseTeacher(
+  t: Teacher,
+  supabaseUserId: string,
+  supabaseClassId?: string | null
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
     user_id: supabaseUserId,
     nip: t.nip.trim(),
     name: t.name,
@@ -49,9 +53,16 @@ function toSupabaseTeacher(t: Teacher, supabaseUserId: string): Record<string, u
     subject_permissions: t.subjectPermissions || [],
     class_permissions: t.classPermissions || [],
     is_wali_kelas: t.isWaliKelas || false,
+    home_room_class_id: supabaseClassId !== undefined
+      ? supabaseClassId
+      : (t.homeRoomClassId && isValidUuid(t.homeRoomClassId) ? t.homeRoomClassId : null),
     // password_hint: plain password for demo-mode fallback login (optional)
     password_hint: t.password || null,
   };
+  if (isValidUuid(t.id)) {
+    payload.id = t.id;
+  }
+  return payload;
 }
 
 function fromSupabaseTeacher(
@@ -117,11 +128,18 @@ function fromSupabaseStudent(
   };
 }
 
-function toSupabaseClass(c: ClassRoom, supabaseAcademicYearId: string): Record<string, unknown> {
+function toSupabaseClass(
+  c: ClassRoom,
+  supabaseAcademicYearId: string,
+  supabaseTeacherId?: string | null
+): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     name: c.name.trim(),
     grade_level: c.gradeLevel || 'X',
     academic_year_id: supabaseAcademicYearId,
+    home_room_teacher_id: supabaseTeacherId !== undefined
+      ? supabaseTeacherId
+      : (c.homeRoomTeacherId && isValidUuid(c.homeRoomTeacherId) ? c.homeRoomTeacherId : null),
   };
   if (isValidUuid(c.id)) {
     payload.id = c.id;
@@ -294,6 +312,7 @@ export interface SupabaseCoreState {
 class SupabaseDbService {
   private cachedAcademicYearId: string | null = null;
   private classIdMap = new Map<string, string>();
+  private teacherIdMap = new Map<string, string>();
 
   private log(msg: string, level: 'info' | 'warn' | 'error' = 'info') {
     const prefix = '[SupabaseDB]';
@@ -388,6 +407,58 @@ class SupabaseDbService {
     return null;
   }
 
+  /**
+   * Mengembalikan UUID guru dari Supabase berdasarkan ID lokal atau NIP.
+   */
+  public async resolveTeacherId(localTeacherId: string, nipFallback?: string): Promise<string | null> {
+    if (isValidUuid(localTeacherId)) {
+      this.teacherIdMap.set(localTeacherId, localTeacherId);
+      return localTeacherId;
+    }
+    if (this.teacherIdMap.has(localTeacherId)) {
+      return this.teacherIdMap.get(localTeacherId)!;
+    }
+    if (nipFallback && this.teacherIdMap.has(nipFallback.trim())) {
+      return this.teacherIdMap.get(nipFallback.trim())!;
+    }
+    if (!supabase) return null;
+
+    try {
+      // 1. Cari berdasarkan ID
+      const { data: byId } = await supabase
+        .from('teachers')
+        .select('id, nip')
+        .eq('id', localTeacherId)
+        .maybeSingle();
+
+      if (byId?.id) {
+        const uid = String(byId.id);
+        this.teacherIdMap.set(localTeacherId, uid);
+        if (byId.nip) this.teacherIdMap.set(String(byId.nip).trim(), uid);
+        return uid;
+      }
+
+      // 2. Cari berdasarkan NIP
+      const targetNip = (nipFallback || localTeacherId).trim();
+      const { data: byNip } = await supabase
+        .from('teachers')
+        .select('id, nip')
+        .eq('nip', targetNip)
+        .maybeSingle();
+
+      if (byNip?.id) {
+        const uid = String(byNip.id);
+        this.teacherIdMap.set(localTeacherId, uid);
+        this.teacherIdMap.set(targetNip, uid);
+        return uid;
+      }
+    } catch (e) {
+      this.log('resolveTeacherId error: ' + e, 'warn');
+    }
+
+    return null;
+  }
+
   // ----------------------------------------------------------
   // FETCH: Load all core state from Supabase
   // Used on fresh devices and background cloud sync
@@ -447,6 +518,29 @@ class SupabaseDbService {
       const teachers: Teacher[] = (teacherRes.data || []).map(
         (row: Record<string, unknown>) => fromSupabaseTeacher(row, supabaseUserIdToLocalId)
       );
+      teachers.forEach(t => {
+        this.teacherIdMap.set(t.id, t.id);
+        if (t.nip) this.teacherIdMap.set(t.nip.trim(), t.id);
+      });
+
+      // Cross-link homeroom consistency between classes & teachers
+      teachers.forEach(t => {
+        if (t.isWaliKelas && t.homeRoomClassId) {
+          const cls = classes.find(c => c.id === t.homeRoomClassId);
+          if (cls && !cls.homeRoomTeacherId) {
+            cls.homeRoomTeacherId = t.id;
+          }
+        }
+      });
+      classes.forEach(c => {
+        if (c.homeRoomTeacherId) {
+          const t = teachers.find(tch => tch.id === c.homeRoomTeacherId);
+          if (t) {
+            t.isWaliKelas = true;
+            if (!t.homeRoomClassId) t.homeRoomClassId = c.id;
+          }
+        }
+      });
 
       const students: Student[] = (studentRes.data || []).map(
         (row: Record<string, unknown>) => fromSupabaseStudent(row, supabaseClassIdToLocalId)
@@ -517,8 +611,8 @@ class SupabaseDbService {
     }
   }
 
-  public async syncTeacher(teacher: Teacher, user?: User): Promise<void> {
-    if (!this.isAvailable() || !supabase) return;
+  public async syncTeacher(teacher: Teacher, user?: User): Promise<string | null> {
+    if (!this.isAvailable() || !supabase) return null;
     try {
       // 1. Upsert user record first
       let supabaseUserId: string | null = null;
@@ -545,17 +639,52 @@ class SupabaseDbService {
 
       if (!supabaseUserId) {
         this.log('syncTeacher: cannot find or create user for ' + targetEmail, 'warn');
-        return;
+        return null;
       }
 
-      // 2. Upsert teacher record
-      const { error } = await supabase
+      // 2. Resolve homeroom class UUID if set
+      let homeRoomClassUuid: string | null = null;
+      if (teacher.isWaliKelas && teacher.homeRoomClassId) {
+        homeRoomClassUuid = await this.resolveClassId(teacher.homeRoomClassId);
+      }
+
+      // 3. Upsert teacher record
+      const payload = toSupabaseTeacher(teacher, supabaseUserId, homeRoomClassUuid);
+      const { data: tData, error } = await supabase
         .from('teachers')
-        .upsert(toSupabaseTeacher(teacher, supabaseUserId), { onConflict: 'nip' });
-      if (error) this.log('syncTeacher error: ' + error.message, 'warn');
+        .upsert(payload, { onConflict: 'nip' })
+        .select('id')
+        .single();
+
+      if (error) {
+        this.log('syncTeacher error: ' + error.message, 'warn');
+        return null;
+      }
+
+      const teacherUuid = tData ? String((tData as any).id) : (isValidUuid(teacher.id) ? teacher.id : null);
+      if (teacherUuid) {
+        this.teacherIdMap.set(teacher.id, teacherUuid);
+        this.teacherIdMap.set(teacher.nip.trim(), teacherUuid);
+
+        // 4. Update bidirectional link in classes table
+        if (teacher.isWaliKelas && homeRoomClassUuid) {
+          await supabase
+            .from('classes')
+            .update({ home_room_teacher_id: teacherUuid })
+            .eq('id', homeRoomClassUuid);
+        } else if (!teacher.isWaliKelas) {
+          await supabase
+            .from('classes')
+            .update({ home_room_teacher_id: null })
+            .eq('home_room_teacher_id', teacherUuid);
+        }
+      }
+
+      return teacherUuid;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('syncTeacher exception: ' + msg, 'warn');
+      return null;
     }
   }
 
@@ -605,7 +734,12 @@ class SupabaseDbService {
         .eq('name', cls.name.trim())
         .maybeSingle();
 
-      const payload = toSupabaseClass(cls, ayId);
+      let homeRoomTeacherUuid: string | null = null;
+      if (cls.homeRoomTeacherId) {
+        homeRoomTeacherUuid = await this.resolveTeacherId(cls.homeRoomTeacherId);
+      }
+
+      const payload = toSupabaseClass(cls, ayId, homeRoomTeacherUuid);
       let classUuid: string | null = null;
 
       if (existing?.id) {
@@ -629,6 +763,14 @@ class SupabaseDbService {
       if (classUuid) {
         this.classIdMap.set(cls.id, classUuid);
         this.classIdMap.set(cls.name.trim().toLowerCase(), classUuid);
+
+        // Bidirectional update on teacher if set
+        if (homeRoomTeacherUuid) {
+          await supabase
+            .from('teachers')
+            .update({ is_wali_kelas: true, home_room_class_id: classUuid })
+            .eq('id', homeRoomTeacherUuid);
+        }
       }
       return classUuid;
     } catch (err: unknown) {
@@ -1004,6 +1146,18 @@ class SupabaseDbService {
     for (const t of state.teachers) {
       const user = state.users.find(u => u.id === t.userId || u.email.toLowerCase() === (t.email || '').toLowerCase());
       await attempt(`Teacher ${t.nip}`, () => this.syncTeacher(t, user));
+    }
+
+    // 4b. Re-link homeroom between classes and teachers in Supabase
+    for (const c of state.classes) {
+      if (c.homeRoomTeacherId) {
+        const classUuid = localClassMap.get(c.id) || localClassMap.get(c.name.trim().toLowerCase());
+        const teacherUuid = await this.resolveTeacherId(c.homeRoomTeacherId);
+        if (classUuid && teacherUuid) {
+          await supabase.from('classes').update({ home_room_teacher_id: teacherUuid }).eq('id', classUuid);
+          await supabase.from('teachers').update({ is_wali_kelas: true, home_room_class_id: classUuid }).eq('id', teacherUuid);
+        }
+      }
     }
 
     // 5. Students — resolve class UUID and upsert

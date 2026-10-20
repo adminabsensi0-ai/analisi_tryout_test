@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users, UserCheck, School, Calendar, BookOpen, Settings, ShieldCheck,
   Plus, History, RefreshCw, Menu, X, CheckCircle2,
@@ -751,6 +751,12 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     if (!assigningClass || !selectedWaliTeacherId) return;
 
     try {
+      // Lepas status wali kelas dari guru lain yang sebelumnya mengampu kelas ini (jika ada)
+      const prevWali = teachers.find(t => t.homeRoomClassId === assigningClass.id && t.id !== selectedWaliTeacherId);
+      if (prevWali) {
+        dbService.updateTeacher(prevWali.id, { isWaliKelas: false, homeRoomClassId: undefined }, currentUser);
+      }
+
       // Set class homeroom teacher
       dbService.updateClass(assigningClass.id, { homeRoomTeacherId: selectedWaliTeacherId }, currentUser);
 
@@ -899,15 +905,28 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     return matchesSearch;
   });
 
-  const filteredStudents = students.filter(s => {
-    const matchesSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.nisn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.nis && s.nis.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredStudents = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    const targetClass = classes.find(c => c.id === classFilter);
 
-    const matchesClass = classFilter === 'ALL' || s.classId === classFilter;
-    return matchesSearch && matchesClass;
-  });
+    return students.filter(s => {
+      const matchesSearch =
+        !q ||
+        s.name.toLowerCase().includes(q) ||
+        s.nisn.toLowerCase().includes(q) ||
+        (s.nis && s.nis.toLowerCase().includes(q));
+
+      const matchesClass =
+        classFilter === 'ALL' ||
+        s.classId === classFilter ||
+        (targetClass && (
+          s.classId === targetClass.name ||
+          s.classId?.toLowerCase() === targetClass.name.toLowerCase()
+        ));
+
+      return matchesSearch && matchesClass;
+    });
+  }, [students, searchQuery, classFilter, classes]);
 
   // Pagination Helper
   const totalCount =
@@ -917,9 +936,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
       ? filteredStudents.length
       : 0;
 
-  const totalPages = Math.ceil(totalCount / pageSize) || 1;
-  const paginatedTeachers = filteredTeachers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const paginatedStudents = filteredStudents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedTeachers = filteredTeachers.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize);
+  const paginatedStudents = filteredStudents.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize);
 
   // Navigation Items Sidebar
   const navItems: NavItem[] = [
@@ -1291,7 +1311,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
+                    onChange={e => {
+                      setSearchQuery(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     placeholder="Cari NIP, nama, atau email..."
                     className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -1301,7 +1324,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                   {(['ALL', 'GURU', 'WALI_KELAS', 'ADMIN'] as const).map(role => (
                     <button
                       key={role}
-                      onClick={() => setRoleFilter(role)}
+                      onClick={() => {
+                        setRoleFilter(role);
+                        setCurrentPage(1);
+                      }}
                       className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer text-xs ${
                         roleFilter === role
                           ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs'
@@ -1487,7 +1513,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
+                    onChange={e => {
+                      setSearchQuery(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     placeholder="Cari NISN, NIS, atau Nama Siswa..."
                     className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -1497,7 +1526,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                   <span className="text-xs font-semibold text-slate-500">Filter Kelas:</span>
                   <select
                     value={classFilter}
-                    onChange={e => setClassFilter(e.target.value)}
+                    onChange={e => {
+                      setClassFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="ALL">Semua Kelas</option>
@@ -1570,7 +1602,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                         </tr>
                       ) : (
                         paginatedStudents.map(s => {
-                          const cls = classes.find(c => c.id === s.classId);
+                          const cls = classes.find(c => c.id === s.classId || c.name.toLowerCase() === s.classId?.toLowerCase());
                           const isChecked = selectedStudentIds.includes(s.id);
                           return (
                             <tr key={s.id} className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/50 ${isChecked ? 'bg-indigo-50/50 dark:bg-indigo-950/20' : ''}`}>
