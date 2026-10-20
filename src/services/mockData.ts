@@ -6,7 +6,7 @@ import {
 } from '../types/database';
 
 export const INITIAL_ACADEMIC_YEARS: AcademicYear[] = [
-  { id: 'ay-2025-2', yearLabel: '2025/2026', semester: 'EVEN', isActive: true },
+  { id: '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1', yearLabel: '2025/2026', semester: 'EVEN', isActive: true },
 ];
 
 export const INITIAL_USERS: User[] = [

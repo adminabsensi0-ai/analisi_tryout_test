@@ -800,7 +800,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
         {
           name: formName.trim(),
           gradeLevel: formGradeLevel,
-          academicYearId: formSelectedYearId || academicYears[0]?.id || 'ay-2025-2',
+          academicYearId: formSelectedYearId || academicYears[0]?.id || '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1',
           homeRoomTeacherId: formSelectedTeacherId || undefined
         },
         currentUser

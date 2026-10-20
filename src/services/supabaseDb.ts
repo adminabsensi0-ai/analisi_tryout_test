@@ -10,6 +10,7 @@
  * - Natural key upsert: gunakan email/nip/nisn untuk menghindari duplikat
  */
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { isValidUuid } from '../utils/idUtils';
 import {
   User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout, SchoolProfile
 } from '../types/database';
@@ -79,17 +80,21 @@ function fromSupabaseTeacher(
 }
 
 function toSupabaseStudent(s: Student, supabaseClassId: string): Record<string, unknown> {
-  return {
-    nisn: s.nisn,
-    nis: s.nis || s.nisn,
-    name: s.name,
-    gender: s.gender,
+  const payload: Record<string, unknown> = {
+    nisn: s.nisn.trim(),
+    nis: s.nis ? s.nis.trim() : s.nisn.trim(),
+    name: s.name.trim(),
+    gender: s.gender || 'L',
     class_id: supabaseClassId,
     email: s.email || null,
     phone: s.phone || null,
     birth_date: s.birthDate || null,
     target_score: s.targetScore || 80,
   };
+  if (isValidUuid(s.id)) {
+    payload.id = s.id;
+  }
+  return payload;
 }
 
 function fromSupabaseStudent(
@@ -113,11 +118,15 @@ function fromSupabaseStudent(
 }
 
 function toSupabaseClass(c: ClassRoom, supabaseAcademicYearId: string): Record<string, unknown> {
-  return {
-    name: c.name,
-    grade_level: c.gradeLevel,
+  const payload: Record<string, unknown> = {
+    name: c.name.trim(),
+    grade_level: c.gradeLevel || 'X',
     academic_year_id: supabaseAcademicYearId,
   };
+  if (isValidUuid(c.id)) {
+    payload.id = c.id;
+  }
+  return payload;
 }
 
 function fromSupabaseClass(
@@ -283,6 +292,9 @@ export interface SupabaseCoreState {
 }
 
 class SupabaseDbService {
+  private cachedAcademicYearId: string | null = null;
+  private classIdMap = new Map<string, string>();
+
   private log(msg: string, level: 'info' | 'warn' | 'error' = 'info') {
     const prefix = '[SupabaseDB]';
     if (level === 'error') console.error(prefix, msg);
@@ -292,6 +304,88 @@ class SupabaseDbService {
 
   public isAvailable(): boolean {
     return isSupabaseConfigured() && !!supabase;
+  }
+
+  /**
+   * Mengembalikan UUID tahun ajaran aktif dari Supabase.
+   */
+  public async resolveAcademicYearId(localAyId?: string): Promise<string> {
+    if (localAyId && isValidUuid(localAyId)) {
+      this.cachedAcademicYearId = localAyId;
+      return localAyId;
+    }
+    if (this.cachedAcademicYearId) return this.cachedAcademicYearId;
+    if (!supabase) return '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1';
+
+    try {
+      const { data } = await supabase
+        .from('academic_years')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      if (data?.id) {
+        this.cachedAcademicYearId = String(data.id);
+        return this.cachedAcademicYearId;
+      }
+    } catch (e) {
+      this.log('Gagal query academic year UUID: ' + e, 'warn');
+    }
+
+    return '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1';
+  }
+
+  /**
+   * Mengembalikan UUID kelas dari Supabase berdasarkan ID lokal atau nama kelas.
+   */
+  public async resolveClassId(localClassId: string, className?: string): Promise<string | null> {
+    if (isValidUuid(localClassId)) {
+      this.classIdMap.set(localClassId, localClassId);
+      return localClassId;
+    }
+    if (this.classIdMap.has(localClassId)) {
+      return this.classIdMap.get(localClassId)!;
+    }
+    if (className && this.classIdMap.has(className.toLowerCase())) {
+      return this.classIdMap.get(className.toLowerCase())!;
+    }
+
+    if (!supabase) return null;
+
+    try {
+      if (className) {
+        const { data: byName } = await supabase
+          .from('classes')
+          .select('id')
+          .ilike('name', className.trim())
+          .maybeSingle();
+
+        if (byName?.id) {
+          const uid = String(byName.id);
+          this.classIdMap.set(localClassId, uid);
+          this.classIdMap.set(className.toLowerCase(), uid);
+          return uid;
+        }
+      }
+
+      // Cari dari seluruh kelas di Supabase
+      const { data: allCls } = await supabase.from('classes').select('id, name');
+      if (allCls && allCls.length > 0) {
+        allCls.forEach(c => {
+          this.classIdMap.set(String(c.name).toLowerCase(), String(c.id));
+        });
+        if (className && this.classIdMap.has(className.toLowerCase())) {
+          const uid = this.classIdMap.get(className.toLowerCase())!;
+          this.classIdMap.set(localClassId, uid);
+          return uid;
+        }
+      }
+    } catch (e) {
+      this.log('resolveClassId error: ' + e, 'warn');
+    }
+
+    return null;
   }
 
   // ----------------------------------------------------------
@@ -326,13 +420,23 @@ class SupabaseDbService {
       // Build mapping: Supabase UUID → local data
       const academicYears: AcademicYear[] = (ayRes.data || []).map(fromSupabaseAcademicYear);
       const supabaseAyIdToLocalId = new Map<string, string>();
-      academicYears.forEach(ay => supabaseAyIdToLocalId.set(ay.id, ay.id));
+      academicYears.forEach(ay => {
+        supabaseAyIdToLocalId.set(ay.id, ay.id);
+        if (ay.isActive) this.cachedAcademicYearId = ay.id;
+      });
+      if (!this.cachedAcademicYearId && academicYears.length > 0) {
+        this.cachedAcademicYearId = academicYears[0].id;
+      }
 
       const classes: ClassRoom[] = (classRes.data || []).map(
         (row: Record<string, unknown>) => fromSupabaseClass(row, supabaseAyIdToLocalId)
       );
       const supabaseClassIdToLocalId = new Map<string, string>();
-      classes.forEach(c => supabaseClassIdToLocalId.set(c.id, c.id));
+      classes.forEach(c => {
+        supabaseClassIdToLocalId.set(c.id, c.id);
+        this.classIdMap.set(c.id, c.id);
+        this.classIdMap.set(c.name.trim().toLowerCase(), c.id);
+      });
 
       const subjects: Subject[] = (subjectRes.data || []).map(fromSupabaseSubject);
 
@@ -455,62 +559,103 @@ class SupabaseDbService {
     }
   }
 
-  public async syncStudent(student: Student, supabaseClassId?: string): Promise<void> {
-    if (!this.isAvailable() || !supabase) return;
+  public async syncStudent(
+    student: Student,
+    supabaseClassId?: string,
+    classNameFallback?: string
+  ): Promise<string | null> {
+    if (!this.isAvailable() || !supabase) return null;
     try {
-      // Resolve class ID in Supabase
       let classId = supabaseClassId;
-      if (!classId) {
-        // Try to find class by local ID in Supabase (the UUID should match if synced)
-        classId = student.classId; // Use as-is (may be UUID already)
+      if (!classId || !isValidUuid(classId)) {
+        classId = await this.resolveClassId(student.classId, classNameFallback) || undefined;
       }
 
-      if (!classId) {
-        this.log('syncStudent: no class ID for student ' + student.nisn, 'warn');
-        return;
+      if (!classId || !isValidUuid(classId)) {
+        this.log('syncStudent: no valid UUID class ID found for student ' + student.nisn, 'warn');
+        return null;
       }
 
-      const { error } = await supabase
+      const payload = toSupabaseStudent(student, classId);
+      const { data: res, error } = await supabase
         .from('students')
-        .upsert(toSupabaseStudent(student, classId), { onConflict: 'nisn' });
-      if (error) this.log('syncStudent error: ' + error.message, 'warn');
+        .upsert(payload, { onConflict: 'nisn' })
+        .select('id')
+        .single();
+
+      if (error) {
+        this.log('syncStudent error: ' + error.message, 'warn');
+        return null;
+      }
+      return res ? String((res as any).id) : null;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('syncStudent exception: ' + msg, 'warn');
+      return null;
     }
   }
 
-  public async syncClass(cls: ClassRoom, supabaseAcademicYearId?: string): Promise<void> {
-    if (!this.isAvailable() || !supabase) return;
+  public async syncClass(cls: ClassRoom, supabaseAcademicYearId?: string): Promise<string | null> {
+    if (!this.isAvailable() || !supabase) return null;
     try {
-      const ayId = supabaseAcademicYearId || cls.academicYearId;
+      const ayId = await this.resolveAcademicYearId(supabaseAcademicYearId || cls.academicYearId);
       const { data: existing } = await supabase
         .from('classes')
         .select('id')
-        .eq('name', cls.name)
+        .eq('name', cls.name.trim())
         .maybeSingle();
 
       const payload = toSupabaseClass(cls, ayId);
+      let classUuid: string | null = null;
+
       if (existing?.id) {
-        const { error } = await supabase.from('classes').update(payload).eq('id', existing.id);
+        classUuid = String(existing.id);
+        const { error } = await supabase.from('classes').update(payload).eq('id', classUuid);
         if (error) this.log('syncClass update error: ' + error.message, 'warn');
       } else {
-        const { error } = await supabase.from('classes').insert(payload);
-        if (error) this.log('syncClass insert error: ' + error.message, 'warn');
+        const { data: inserted, error } = await supabase
+          .from('classes')
+          .insert(payload)
+          .select('id')
+          .single();
+
+        if (error) {
+          this.log('syncClass insert error: ' + error.message, 'warn');
+        } else if (inserted) {
+          classUuid = String((inserted as any).id);
+        }
       }
+
+      if (classUuid) {
+        this.classIdMap.set(cls.id, classUuid);
+        this.classIdMap.set(cls.name.trim().toLowerCase(), classUuid);
+      }
+      return classUuid;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('syncClass exception: ' + msg, 'warn');
+      return null;
     }
   }
 
   public async syncAcademicYear(ay: AcademicYear): Promise<void> {
     if (!this.isAvailable() || !supabase) return;
     try {
-      const { error } = await supabase
+      const payload = toSupabaseAcademicYear(ay);
+      if (isValidUuid(ay.id)) {
+        (payload as any).id = ay.id;
+      }
+      const { data, error } = await supabase
         .from('academic_years')
-        .upsert(toSupabaseAcademicYear(ay), { onConflict: 'year_label,semester' });
-      if (error) this.log('syncAcademicYear error: ' + error.message, 'warn');
+        .upsert(payload, { onConflict: 'year_label,semester' })
+        .select('id')
+        .single();
+
+      if (error) {
+        this.log('syncAcademicYear error: ' + error.message, 'warn');
+      } else if (data?.id) {
+        this.cachedAcademicYearId = String(data.id);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('syncAcademicYear exception: ' + msg, 'warn');
@@ -645,6 +790,18 @@ class SupabaseDbService {
     }
   }
 
+  public async removeTeachersBatchByNip(nips: string[]): Promise<void> {
+    if (!this.isAvailable() || !supabase || !nips.length) return;
+    try {
+      const cleanNips = nips.map(n => n.trim()).filter(Boolean);
+      const { error } = await supabase.from('teachers').delete().in('nip', cleanNips);
+      if (error) this.log('removeTeachersBatchByNip error: ' + error.message, 'warn');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('removeTeachersBatchByNip exception: ' + msg, 'warn');
+    }
+  }
+
   public async removeStudentByNisn(nisn: string): Promise<void> {
     if (!this.isAvailable() || !supabase) return;
     try {
@@ -656,6 +813,21 @@ class SupabaseDbService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('removeStudentByNisn exception: ' + msg, 'warn');
+    }
+  }
+
+  public async removeStudentsBatchByNisn(nisns: string[]): Promise<void> {
+    if (!this.isAvailable() || !supabase || !nisns.length) return;
+    try {
+      const cleanNisns = nisns.map(n => n.trim()).filter(Boolean);
+      const { error } = await supabase
+        .from('students')
+        .delete()
+        .in('nisn', cleanNisns);
+      if (error) this.log('removeStudentsBatchByNisn error: ' + error.message, 'warn');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('removeStudentsBatchByNisn exception: ' + msg, 'warn');
     }
   }
 
@@ -673,6 +845,18 @@ class SupabaseDbService {
     }
   }
 
+  public async removeSubjectsBatchByCode(codes: string[]): Promise<void> {
+    if (!this.isAvailable() || !supabase || !codes.length) return;
+    try {
+      const cleanCodes = codes.map(c => c.trim()).filter(Boolean);
+      const { error } = await supabase.from('subjects').delete().in('code', cleanCodes);
+      if (error) this.log('removeSubjectsBatchByCode error: ' + error.message, 'warn');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('removeSubjectsBatchByCode exception: ' + msg, 'warn');
+    }
+  }
+
   public async removeClassByName(name: string): Promise<void> {
     if (!this.isAvailable() || !supabase) return;
     try {
@@ -684,6 +868,20 @@ class SupabaseDbService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('removeClassByName exception: ' + msg, 'warn');
+    }
+  }
+
+  public async removeClassesBatch(ids: string[]): Promise<void> {
+    if (!this.isAvailable() || !supabase || !ids.length) return;
+    try {
+      const uuids = ids.map(id => this.classIdMap.get(id) || id).filter(isValidUuid);
+      if (uuids.length) {
+        const { error } = await supabase.from('classes').delete().in('id', uuids);
+        if (error) this.log('removeClassesBatch error: ' + error.message, 'warn');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('removeClassesBatch exception: ' + msg, 'warn');
     }
   }
 
@@ -790,9 +988,16 @@ class SupabaseDbService {
       await attempt(`Subject ${s.code}`, () => this.syncSubject(s));
     }
 
-    // 3. Classes
+    // 3. Classes — sync and build class map
+    const localClassMap = new Map<string, string>();
     for (const c of state.classes) {
-      await attempt(`Class ${c.name}`, () => this.syncClass(c));
+      await attempt(`Class ${c.name}`, async () => {
+        const classUuid = await this.syncClass(c);
+        if (classUuid) {
+          localClassMap.set(c.id, classUuid);
+          localClassMap.set(c.name.trim().toLowerCase(), classUuid);
+        }
+      });
     }
 
     // 4. Users + Teachers (paired)
@@ -801,9 +1006,19 @@ class SupabaseDbService {
       await attempt(`Teacher ${t.nip}`, () => this.syncTeacher(t, user));
     }
 
-    // 5. Students
+    // 5. Students — resolve class UUID and upsert
     for (const s of state.students) {
-      await attempt(`Student ${s.nisn}`, () => this.syncStudent(s, s.classId));
+      const classRef = state.classes.find(c => c.id === s.classId);
+      const resolvedClassId = localClassMap.get(s.classId) ||
+                              (classRef ? localClassMap.get(classRef.name.trim().toLowerCase()) : undefined) ||
+                              s.classId;
+
+      await attempt(`Student ${s.nisn}`, async () => {
+        const studentUuid = await this.syncStudent(s, resolvedClassId, classRef?.name);
+        if (!studentUuid) {
+          throw new Error(`Gagal menyimpan siswa ${s.name} (${s.nisn}) ke database cloud`);
+        }
+      });
     }
 
     // 6. Exam Packages (jika ada)

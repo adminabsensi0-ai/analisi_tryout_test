@@ -1349,7 +1349,7 @@ export class AnalyticsService {
     questionsPerTryout = 35
   ) {
     const academicYears: AcademicYear[] = [
-      { id: 'ay-2025-2', yearLabel: '2025/2026', semester: 'EVEN', isActive: true },
+      { id: '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1', yearLabel: '2025/2026', semester: 'EVEN', isActive: true },
     ];
 
     const subjects: Subject[] = [
@@ -1383,7 +1383,7 @@ export class AnalyticsService {
         id: `bench-c-${idx + 1}`,
         name: cfg.name,
         gradeLevel: cfg.grade,
-        academicYearId: 'ay-2025-2',
+        academicYearId: '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1',
       });
     });
 
@@ -1419,7 +1419,7 @@ export class AnalyticsService {
         id: 'bench-to-1',
         code: 'TO-BENCHMARK-2026',
         title: 'Try Out Simulasi Akbar 900+ Siswa',
-        academicYearId: 'ay-2025-2',
+        academicYearId: '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1',
         startDate: '2026-03-01T08:00:00Z',
         endDate: '2026-03-02T15:00:00Z',
         status: 'COMPLETED',

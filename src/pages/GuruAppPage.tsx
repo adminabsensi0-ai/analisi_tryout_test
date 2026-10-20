@@ -191,7 +191,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       code: createdCode,
       title: newToTitle.trim(),
       assessmentType: 'TRYOUT',
-      academicYearId: selectedPkg?.academicYearId || 'ay-2025-2',
+      academicYearId: selectedPkg?.academicYearId || '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1',
       startDate: new Date().toISOString(),
       endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'ACTIVE',

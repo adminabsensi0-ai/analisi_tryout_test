@@ -30,6 +30,7 @@ import {
   ProductionValidationService, ProductionValidationSuiteResult
 } from './productionValidation';
 import { sdb } from './supabaseDb';
+import { generateUuid, isValidUuid } from '../utils/idUtils';
 
 const STORAGE_KEY = 'school_tryout_analytics_db_v1';
 
@@ -81,10 +82,87 @@ export class DatabaseService {
 
   constructor() {
     this.state = this.loadFromStorage();
+    this.migrateLegacyIds();
     this.rebuildIndexes();
     this.setupLocalStorageListener();
     // Trigger async Supabase init after synchronous construction
     this.initSupabaseSync();
+  }
+
+  /**
+   * Mengonversi ID lama (c-*, s-*, ay-*) ke format UUID standar
+   * agar kompatibel 100% dengan database cloud Supabase / PostgreSQL.
+   */
+  private migrateLegacyIds(): void {
+    let changed = false;
+
+    // 1. Standarisasi Academic Year ke UUID Supabase
+    const activeAyUuid = '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1';
+    this.state.academicYears.forEach(ay => {
+      if (!isValidUuid(ay.id)) {
+        const oldId = ay.id;
+        ay.id = activeAyUuid;
+        changed = true;
+
+        this.state.classes.forEach(c => {
+          if (c.academicYearId === oldId) c.academicYearId = activeAyUuid;
+        });
+        if (this.state.examPackages) {
+          this.state.examPackages.forEach(p => {
+            if (p.academicYearId === oldId) p.academicYearId = activeAyUuid;
+          });
+        }
+        if (this.state.tryouts) {
+          this.state.tryouts.forEach(t => {
+            if (t.academicYearId === oldId) t.academicYearId = activeAyUuid;
+          });
+        }
+      }
+    });
+
+    // 2. Standarisasi Classes ke UUID
+    this.state.classes.forEach(c => {
+      if (!isValidUuid(c.id)) {
+        const oldId = c.id;
+        const newUuid = generateUuid();
+        c.id = newUuid;
+        changed = true;
+
+        this.state.students.forEach(s => {
+          if (s.classId === oldId) s.classId = newUuid;
+        });
+
+        this.state.teachers.forEach(t => {
+          if (t.classPermissions && t.classPermissions.includes(oldId)) {
+            t.classPermissions = t.classPermissions.map(p => p === oldId ? newUuid : p);
+          }
+          if (t.homeRoomClassId === oldId) {
+            t.homeRoomClassId = newUuid;
+          }
+        });
+
+        if (this.state.examPackages) {
+          this.state.examPackages.forEach(p => {
+            if (p.targetClassIds && p.targetClassIds.includes(oldId)) {
+              p.targetClassIds = p.targetClassIds.map(cid => cid === oldId ? newUuid : cid);
+            }
+          });
+        }
+      }
+    });
+
+    // 3. Standarisasi Siswa ke UUID
+    this.state.students.forEach(s => {
+      if (!isValidUuid(s.id)) {
+        s.id = generateUuid();
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      this.persistState();
+      console.info('[DB] Migrasi ID lokal ke UUID standar berhasil dilakukan.');
+    }
   }
 
   private setupLocalStorageListener(): void {
@@ -118,24 +196,29 @@ export class DatabaseService {
       console.info('[DB] Supabase aktif — memeriksa sinkronisasi cloud...');
       const cloudState = await sdb.fetchCoreState();
 
-      const hasCloudData = cloudState && (
-        cloudState.teachers.length > 0 ||
-        cloudState.students.length > 0 ||
-        cloudState.classes.length > 0 ||
-        cloudState.subjects.length > 0 ||
-        (cloudState.examPackages && cloudState.examPackages.length > 0) ||
-        (cloudState.tryouts && cloudState.tryouts.length > 0) ||
-        !!cloudState.schoolProfile
-      );
-
-      if (hasCloudData) {
-        // Jika di cloud sudah ada data (dari perangkat manapun), langsung sync ke perangkat ini
+      if (cloudState) {
+        // 1. Sinkronkan data dari cloud ke perangkat ini
         const hadChanges = this.mergeCloudState(cloudState);
         if (hadChanges) {
           this.persistState();
           this.rebuildIndexes();
           this.notifyListeners();
           console.info('[DB] Sinkronisasi otomatis: data perangkat ini telah diselaraskan dengan cloud.');
+        }
+
+        // 2. Sinkronisasi Dua Arah Otomatis:
+        // Jika di perangkat ini ada kelas atau murid yang BELUM ada di cloud,
+        // otomatis dorong (push) ke cloud agar tidak tertinggal di lokal!
+        const unsyncedClasses = this.state.classes.filter(
+          c => !cloudState.classes.some(cc => cc.name.toLowerCase() === c.name.toLowerCase())
+        );
+        const unsyncedStudents = this.state.students.filter(
+          s => !cloudState.students.some(cs => cs.nisn === s.nisn)
+        );
+
+        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0) {
+          console.info(`[DB] Terdeteksi ${unsyncedClasses.length} kelas dan ${unsyncedStudents.length} siswa belum ada di cloud. Menyinkronkan ke cloud...`);
+          await this.exportToSupabase();
         }
       } else {
         // Jika cloud masih kosong, otomatis unggah data awal ke cloud di latar belakang!
@@ -208,8 +291,21 @@ export class DatabaseService {
 
     // Merge classes (by name)
     cloud.classes.forEach(cloudCls => {
-      const exists = this.state.classes.some(c => c.name.toLowerCase() === cloudCls.name.toLowerCase());
-      if (!exists) { this.state.classes.push(cloudCls); changed = true; }
+      const idx = this.state.classes.findIndex(c => c.name.toLowerCase() === cloudCls.name.toLowerCase());
+      if (idx === -1) {
+        this.state.classes.push(cloudCls);
+        changed = true;
+      } else {
+        const local = this.state.classes[idx];
+        if (local.id !== cloudCls.id) {
+          const oldId = local.id;
+          this.state.classes[idx] = { ...local, ...cloudCls };
+          this.state.students.forEach(st => {
+            if (st.classId === oldId) st.classId = cloudCls.id;
+          });
+          changed = true;
+        }
+      }
     });
 
     // Merge teachers (by nip) — update name/email/permissions if changed
@@ -237,12 +333,28 @@ export class DatabaseService {
         changed = true;
       } else {
         const local = this.state.students[idx];
-        if (local.name !== cloudStudent.name || local.classId !== cloudStudent.classId) {
-          this.state.students[idx] = { ...local, ...cloudStudent, id: local.id };
+        if (
+          local.name !== cloudStudent.name ||
+          local.classId !== cloudStudent.classId ||
+          local.gender !== cloudStudent.gender ||
+          local.birthDate !== cloudStudent.birthDate ||
+          local.nis !== cloudStudent.nis
+        ) {
+          this.state.students[idx] = { ...local, ...cloudStudent };
           changed = true;
         }
       }
     });
+
+    // Reconcile deleted students jika cloud sudah memiliki data
+    if (this.supabaseInitDone && cloud.students.length > 0) {
+      const cloudNisns = new Set(cloud.students.map(s => s.nisn));
+      const beforeCount = this.state.students.length;
+      this.state.students = this.state.students.filter(s => cloudNisns.has(s.nisn));
+      if (this.state.students.length !== beforeCount) {
+        changed = true;
+      }
+    }
 
     // Merge exam packages (by code)
     if (cloud.examPackages && Array.isArray(cloud.examPackages)) {
@@ -518,7 +630,7 @@ export class DatabaseService {
             code: 'PKT-ARSIP',
             title: 'Arsip Paket Ujian Awal',
             assessmentType: 'TRYOUT',
-            academicYearId: parsed.academicYears?.[0]?.id || 'ay-2025-2',
+            academicYearId: parsed.academicYears?.[0]?.id || '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1',
             targetGrades: ['X', 'XI', 'XII', '7', '8', '9'],
             targetClassIds: allClasses.map((c: any) => c.id),
             startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -565,7 +677,7 @@ export class DatabaseService {
           code: 'PKT-ARSIP',
           title: 'Arsip Paket Ujian Awal',
           assessmentType: 'TRYOUT',
-          academicYearId: INITIAL_ACADEMIC_YEARS[0]?.id || 'ay-2025-2',
+          academicYearId: INITIAL_ACADEMIC_YEARS[0]?.id || '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1',
           targetGrades: ['X', 'XI', 'XII', '7', '8', '9'],
           targetClassIds: INITIAL_CLASSES.map(c => c.id),
           startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -909,12 +1021,20 @@ export class DatabaseService {
       throw new Error(`Validasi Gagal: NISN '${student.nisn}' sudah terdaftar dalam sistem.`);
     }
 
-    const newStudent: Student = { ...student, id: `s-${Date.now()}` };
+    const newStudent: Student = { ...student, id: generateUuid() };
     this.state.students.push(newStudent);
     this.logAudit(currentUser, 'CREATE_STUDENT', 'STUDENT', `Menambahkan siswa baru: ${newStudent.name} (NISN: ${newStudent.nisn})`);
     this.persistState();
+    this.rebuildIndexes();
+    this.notifyListeners();
+
     // Fire-and-forget cloud sync
-    if (this.supabaseSyncEnabled) sdb.syncStudent(newStudent, newStudent.classId).catch(() => {});
+    if (this.supabaseSyncEnabled) {
+      const classRef = this.state.classes.find(c => c.id === newStudent.classId);
+      sdb.syncStudent(newStudent, newStudent.classId, classRef?.name).catch(err => {
+        console.error('[DB] Gagal sinkronisasi siswa ke cloud:', err);
+      });
+    }
     return newStudent;
   }
   public updateStudent(id: string, updates: Partial<Student>, currentUser: any) {
@@ -928,10 +1048,18 @@ export class DatabaseService {
     this.state.students = this.state.students.map(s => s.id === id ? { ...s, ...updates } : s);
     this.logAudit(currentUser, 'UPDATE_STUDENT', 'STUDENT', `Memperbarui data siswa ID: ${id}`);
     this.persistState();
+    this.rebuildIndexes();
+    this.notifyListeners();
+
     // Fire-and-forget cloud sync
     if (this.supabaseSyncEnabled) {
       const updatedS = this.state.students.find(s => s.id === id);
-      if (updatedS) sdb.syncStudent(updatedS, updatedS.classId).catch(() => {});
+      if (updatedS) {
+        const classRef = this.state.classes.find(c => c.id === updatedS.classId);
+        sdb.syncStudent(updatedS, updatedS.classId, classRef?.name).catch(err => {
+          console.error('[DB] Gagal sinkronisasi update siswa ke cloud:', err);
+        });
+      }
     }
   }
   public deleteStudent(id: string, currentUser: any) {
@@ -940,6 +1068,9 @@ export class DatabaseService {
     this.state.students = this.state.students.filter(s => s.id !== id);
     this.logAudit(currentUser, 'DELETE_STUDENT', 'STUDENT', `Menghapus data siswa: ${student?.name || id}`);
     this.persistState();
+    this.rebuildIndexes();
+    this.notifyListeners();
+
     // Fire-and-forget cloud sync
     if (this.supabaseSyncEnabled && student?.nisn) sdb.removeStudentByNisn(student.nisn).catch(() => {});
   }
@@ -947,9 +1078,19 @@ export class DatabaseService {
   public deleteStudentsBatch(ids: string[], currentUser: any) {
     this.assertAdmin(currentUser, 'BULK_DELETE_STUDENT');
     if (!ids.length) return;
+    const toDelete = this.state.students.filter(s => ids.includes(s.id));
+    const nisns = toDelete.map(s => s.nisn);
     this.state.students = this.state.students.filter(s => !ids.includes(s.id));
     this.logAudit(currentUser, 'BULK_DELETE_STUDENT', 'STUDENT', `Menghapus massal ${ids.length} data siswa.`);
     this.persistState();
+    this.rebuildIndexes();
+    this.notifyListeners();
+
+    if (this.supabaseSyncEnabled && nisns.length > 0) {
+      sdb.removeStudentsBatchByNisn(nisns).catch(err => {
+        console.error('[DB] Gagal menghapus siswa massal di cloud:', err);
+      });
+    }
   }
 
   // TEACHERS CRUD
@@ -1104,9 +1245,16 @@ export class DatabaseService {
       return !isRootAdmin && !isSelf;
     });
     if (!filteredIds.length) return;
+    const nipsToDelete = filteredIds
+      .map(id => this.state.teachers.find(t => t.id === id)?.nip)
+      .filter(Boolean) as string[];
     this.state.teachers = this.state.teachers.filter(t => !filteredIds.includes(t.id));
     this.logAudit(currentUser, 'BULK_DELETE_TEACHER', 'TEACHER', `Menghapus massal ${filteredIds.length} data guru/staf.`);
     this.persistState();
+    this.notifyListeners();
+    if (this.supabaseSyncEnabled && nipsToDelete.length > 0) {
+      sdb.removeTeachersBatchByNip(nipsToDelete).catch(() => {});
+    }
   }
 
   // CLASSES CRUD
@@ -1116,12 +1264,16 @@ export class DatabaseService {
     if (this.state.classes.some(c => c.name.toLowerCase() === cls.name.trim().toLowerCase() && c.academicYearId === cls.academicYearId)) {
       throw new Error(`Validasi Gagal: Kelas '${cls.name}' sudah ada pada tahun ajaran ini.`);
     }
-    const newClass: ClassRoom = { ...cls, id: `c-${Date.now()}` };
+    const newClass: ClassRoom = { ...cls, id: generateUuid() };
     this.state.classes.push(newClass);
     this.logAudit(currentUser, 'CREATE_CLASS', 'CLASS', `Menambahkan kelas baru: ${newClass.name}`);
     this.persistState();
-    // Fire-and-forget cloud sync
-    if (this.supabaseSyncEnabled) sdb.syncClass(newClass).catch(() => {});
+    this.rebuildIndexes();
+    this.notifyListeners();
+    // Fire-and-forget cloud sync (akan mengembalikan UUID Supabase dan menyimpan ke classIdMap)
+    if (this.supabaseSyncEnabled) sdb.syncClass(newClass).catch(err => {
+      console.error('[DB] Gagal sinkronisasi kelas ke cloud:', err);
+    });
     return newClass;
   }
   public updateClass(id: string, updates: Partial<ClassRoom>, currentUser: any) {
@@ -1129,6 +1281,8 @@ export class DatabaseService {
     this.state.classes = this.state.classes.map(c => c.id === id ? { ...c, ...updates } : c);
     this.logAudit(currentUser, 'UPDATE_CLASS', 'CLASS', `Memperbarui kelas ID: ${id}`);
     this.persistState();
+    this.rebuildIndexes();
+    this.notifyListeners();
     const updatedClass = this.state.classes.find(c => c.id === id);
     if (this.supabaseSyncEnabled && updatedClass) sdb.syncClass(updatedClass).catch(() => {});
   }
@@ -1138,6 +1292,8 @@ export class DatabaseService {
     this.state.classes = this.state.classes.filter(item => item.id !== id);
     this.logAudit(currentUser, 'DELETE_CLASS', 'CLASS', `Menghapus kelas: ${c?.name || id}`);
     this.persistState();
+    this.rebuildIndexes();
+    this.notifyListeners();
     if (this.supabaseSyncEnabled && c?.name) sdb.removeClassByName(c.name).catch(() => {});
   }
 
@@ -1147,6 +1303,11 @@ export class DatabaseService {
     this.state.classes = this.state.classes.filter(c => !ids.includes(c.id));
     this.logAudit(currentUser, 'BULK_DELETE_CLASS', 'CLASS', `Menghapus massal ${ids.length} kelas.`);
     this.persistState();
+    this.rebuildIndexes();
+    this.notifyListeners();
+    if (this.supabaseSyncEnabled && ids.length > 0) {
+      sdb.removeClassesBatch(ids).catch(() => {});
+    }
   }
 
   // SUBJECTS CRUD
@@ -1196,20 +1357,27 @@ export class DatabaseService {
   public deleteSubjectsBatch(ids: string[], currentUser: any) {
     this.assertAdmin(currentUser, 'BULK_DELETE_SUBJECT');
     if (!ids.length) return;
+    const codesToDelete = ids
+      .map(id => this.state.subjects.find(s => s.id === id)?.code)
+      .filter(Boolean) as string[];
     this.state.subjects = this.state.subjects.filter(s => !ids.includes(s.id));
     this.logAudit(currentUser, 'BULK_DELETE_SUBJECT', 'SUBJECT', `Menghapus massal ${ids.length} mata pelajaran.`);
     this.persistState();
+    this.notifyListeners();
+    if (this.supabaseSyncEnabled && codesToDelete.length > 0) {
+      sdb.removeSubjectsBatchByCode(codesToDelete).catch(() => {});
+    }
   }
 
   // ACADEMIC YEARS CRUD
   public getAcademicYears(): AcademicYear[] { return this.state.academicYears; }
   public addAcademicYear(ay: Omit<AcademicYear, 'id'>, currentUser: any): AcademicYear {
     this.assertAdmin(currentUser, 'CREATE_ACADEMIC_YEAR');
-    const newAy: AcademicYear = { ...ay, id: `ay-${Date.now()}` };
+    const newAy: AcademicYear = { ...ay, id: generateUuid() };
     this.state.academicYears.push(newAy);
     this.logAudit(currentUser, 'CREATE_ACADEMIC_YEAR', 'ACADEMIC_YEAR', `Menambahkan tahun ajaran: ${newAy.yearLabel} (${newAy.semester})`);
     this.persistState();
-    // Fire-and-forget cloud sync
+    // Fire-and-forget cloud sync — resolves UUID from Supabase
     if (this.supabaseSyncEnabled) sdb.syncAcademicYear(newAy).catch(() => {});
     return newAy;
   }
