@@ -128,6 +128,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const [schoolPrincipalNip, setSchoolPrincipalNip] = useState(initialSchoolProfile.principalNip);
   const [schoolAcademicYear, setSchoolAcademicYear] = useState(initialSchoolProfile.academicYear);
 
+  // Cloud Sync State
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudSyncResult, setCloudSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   // Assign Wali Kelas State
   const [assigningClass, setAssigningClass] = useState<ClassRoom | null>(null);
   const [selectedWaliTeacherId, setSelectedWaliTeacherId] = useState('');
@@ -317,6 +321,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
       const isWali = formRole === 'WALI_KELAS' || formIsWaliKelas;
       const roleToSave: Role = formRole === 'ADMIN' ? 'ADMIN' : (isWali ? 'WALI_KELAS' : 'GURU');
       const passwordToSave = formPassword.trim() || 'password123';
+      const cleanEmail = formEmail.trim() || (roleToSave === 'ADMIN' ? `${formNip.trim().toLowerCase()}@admin.sekolah.id` : `${formNip.trim()}@guru.sekolah.id`);
 
       if (editingTeacherId) {
         const existingTeacher = teachers.find(t => t.id === editingTeacherId);
@@ -326,13 +331,13 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
           {
             nip: formNip.trim(),
             name: formName.trim(),
-            email: existingTeacher?.email || `${formNip.trim()}@guru.sekolah.id`,
-            phone: existingTeacher?.phone || '',
+            email: formEmail.trim() || existingTeacher?.email || cleanEmail,
+            phone: formPhone.trim() || existingTeacher?.phone || '',
             password: passwordToSave,
-            subjectPermissions: formSubjectPermissions,
-            classPermissions: formClassPermissions,
-            isWaliKelas: isWali,
-            homeRoomClassId: isWali ? (formHomeRoomClassId || undefined) : undefined
+            subjectPermissions: roleToSave === 'ADMIN' ? [] : formSubjectPermissions,
+            classPermissions: roleToSave === 'ADMIN' ? [] : formClassPermissions,
+            isWaliKelas: roleToSave === 'ADMIN' ? false : isWali,
+            homeRoomClassId: roleToSave === 'ADMIN' ? undefined : (isWali ? (formHomeRoomClassId || undefined) : undefined)
           },
           currentUser,
           roleToSave,
@@ -347,13 +352,13 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
             userId: `u-${Date.now()}`,
             nip: formNip.trim(),
             name: formName.trim(),
-            email: `${formNip.trim()}@guru.sekolah.id`,
-            phone: '',
+            email: cleanEmail,
+            phone: formPhone.trim() || '',
             password: passwordToSave,
-            subjectPermissions: formSubjectPermissions,
-            classPermissions: formClassPermissions,
-            isWaliKelas: isWali,
-            homeRoomClassId: isWali ? (formHomeRoomClassId || undefined) : undefined
+            subjectPermissions: roleToSave === 'ADMIN' ? [] : formSubjectPermissions,
+            classPermissions: roleToSave === 'ADMIN' ? [] : formClassPermissions,
+            isWaliKelas: roleToSave === 'ADMIN' ? false : isWali,
+            homeRoomClassId: roleToSave === 'ADMIN' ? undefined : (isWali ? (formHomeRoomClassId || undefined) : undefined)
           },
           currentUser,
           roleToSave,
@@ -1322,13 +1327,22 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                               </td>
                               <td className="px-4 py-3">
                                 <div className="font-bold text-slate-900 dark:text-slate-100">{t.name}</div>
-                                <div className="text-[10px] text-slate-400">
-                                  {t.subjectPermissions?.length ? (
+                                <div className="text-[10px]">
+                                  {role === 'ADMIN' ? (
+                                    <span className="text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-1">
+                                      <ShieldCheck className="w-3 h-3 shrink-0" />
+                                      Administrator Sistem {t.email ? `• ${t.email}` : ''}
+                                    </span>
+                                  ) : t.subjectPermissions?.length ? (
                                     <span className="text-blue-600 dark:text-blue-400 font-medium">
                                       Mapel: {t.subjectPermissions.map(id => subjects.find(s => s.id === id)?.name || id).join(', ')}
                                     </span>
+                                  ) : role === 'WALI_KELAS' || t.isWaliKelas ? (
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                                      Wali Kelas {homeRoomClass ? homeRoomClass.name : ''}
+                                    </span>
                                   ) : (
-                                    'Guru Pengampu'
+                                    <span className="text-slate-400 dark:text-slate-500">Guru Pengampu</span>
                                   )}
                                 </div>
                               </td>
@@ -1361,14 +1375,20 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                                 >
                                   Edit
                                 </button>
-                                <button
-                                  onClick={() => {
-                                    setAdminDeleteConfirm({ id: t.id, title: t.name, type: 'GURU' });
-                                  }}
-                                  className="text-rose-600 dark:text-rose-400 hover:underline font-semibold cursor-pointer"
-                                >
-                                  Hapus
-                                </button>
+                                {t.id === 't-admin-custom' || (currentUser && (t.userId === currentUser.id || (t.email && currentUser.email && t.email.toLowerCase() === currentUser.email.toLowerCase()))) ? (
+                                  <span className="text-slate-400 dark:text-slate-600 text-[10px] italic px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800">
+                                    Terkunci
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setAdminDeleteConfirm({ id: t.id, title: t.name, type: 'GURU' });
+                                    }}
+                                    className="text-rose-600 dark:text-rose-400 hover:underline font-semibold cursor-pointer"
+                                  >
+                                    Hapus
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );
@@ -2027,6 +2047,53 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 </div>
               </div>
 
+              {/* Sinkronisasi ke Cloud */}
+              <div className="bg-sky-50 dark:bg-sky-950/40 p-6 rounded-2xl border border-sky-200 dark:border-sky-900 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900 text-sky-600 dark:text-sky-300 flex items-center justify-center shrink-0">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-sky-900 dark:text-sky-200">
+                      Sinkronisasi Data ke Cloud (Supabase)
+                    </h3>
+                    <p className="text-xs text-sky-700 dark:text-sky-300">
+                      Unggah seluruh data lokal (guru, siswa, kelas, mapel, tahun ajaran) ke server cloud agar dapat diakses dari perangkat lain.
+                    </p>
+                  </div>
+                </div>
+
+                {cloudSyncResult && (
+                  <div className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg ${cloudSyncResult.ok ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'}`}>
+                    {cloudSyncResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                    {cloudSyncResult.message}
+                  </div>
+                )}
+
+                <button
+                  disabled={cloudSyncing}
+                  onClick={async () => {
+                    setCloudSyncing(true);
+                    setCloudSyncResult(null);
+                    try {
+                      const result = await dbService.exportToSupabase();
+                      setCloudSyncResult({ ok: result.ok, message: result.message });
+                    } catch (err: any) {
+                      setCloudSyncResult({ ok: false, message: err.message || 'Sinkronisasi gagal.' });
+                    } finally {
+                      setCloudSyncing(false);
+                    }
+                  }}
+                  className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-400 text-white font-semibold text-xs rounded-xl shadow-xs cursor-pointer transition-colors flex items-center gap-2"
+                >
+                  {cloudSyncing ? (
+                    <><RefreshCw className="w-4 h-4 animate-spin" />Menyinkronkan...</>
+                  ) : (
+                    <><Upload className="w-4 h-4" />Sinkronisasi ke Cloud Sekarang</>
+                  )}
+                </button>
+              </div>
+
               <div className="bg-rose-50 dark:bg-rose-950/40 p-6 rounded-2xl border border-rose-200 dark:border-rose-900 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900 text-rose-600 dark:text-rose-300 flex items-center justify-center shrink-0">
@@ -2139,6 +2206,11 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                           if (!formHomeRoomClassId) setFormHomeRoomClassId(classes[0]?.id || '');
                         } else if (r === 'GURU') {
                           setFormIsWaliKelas(false);
+                        } else if (r === 'ADMIN') {
+                          setFormIsWaliKelas(false);
+                          setFormHomeRoomClassId('');
+                          setFormSubjectPermissions([]);
+                          setFormClassPermissions([]);
                         }
                       }}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-semibold"
@@ -2164,7 +2236,21 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                   </div>
                 </div>
 
-                {/* SECTION 1: Status Wali Kelas */}
+                {formRole === 'ADMIN' ? (
+                  <div className="p-4 bg-indigo-50/80 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-800 flex items-start gap-3">
+                    <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-indigo-950 dark:text-indigo-100 text-xs block">
+                        Hak Akses Administrator Penuh
+                      </span>
+                      <p className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-1 leading-relaxed">
+                        Akun Administrator memiliki wewenang penuh untuk mengelola seluruh master data, pengaturan sistem, paket ujian, dan audit log sekolah. Akun ini tidak memerlukan penugasan khusus mata pelajaran pengajaran atau rombel wali kelas.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* SECTION 1: Status Wali Kelas */}
                 <div className="p-3.5 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/80 space-y-2">
                   <div className="flex items-center justify-between">
                     <div>
@@ -2417,7 +2503,9 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                     </div>
                   )}
                 </div>
-              </div>
+              </>
+            )}
+          </div>
 
               {/* Sticky Bottom Actions Footer */}
               <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2.5 shrink-0 bg-slate-50 dark:bg-slate-950/60">

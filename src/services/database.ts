@@ -29,6 +29,7 @@ import {
 import {
   ProductionValidationService, ProductionValidationSuiteResult
 } from './productionValidation';
+import { sdb } from './supabaseDb';
 
 const STORAGE_KEY = 'school_tryout_analytics_db_v1';
 
@@ -63,6 +64,10 @@ class DatabaseService {
   private state: DatabaseState;
   private listeners: (() => void)[] = [];
 
+  // Supabase cloud sync state
+  private supabaseSyncEnabled = false;
+  private supabaseInitDone = false;
+
   // Fast In-Memory Performance Indexes for O(1) Lookups
   private responsesByTryoutStudent = new Map<string, Response>();
   private answersByTryout = new Map<string, Answer[]>();
@@ -74,6 +79,116 @@ class DatabaseService {
   constructor() {
     this.state = this.loadFromStorage();
     this.rebuildIndexes();
+    // Trigger async Supabase init after synchronous construction
+    this.initSupabaseSync();
+  }
+
+  /**
+   * Async: Initialize Supabase sync.
+   * - If Supabase is available AND local storage is empty → load from cloud
+   * - If Supabase is available AND local storage has data → enable background sync
+   */
+  private async initSupabaseSync(): Promise<void> {
+    if (!sdb.isAvailable()) return;
+
+    this.supabaseSyncEnabled = true;
+
+    // Check if local data is essentially empty (fresh device)
+    const hasLocalData =
+      this.state.teachers.length > 2 || // more than the 2 seed admin teachers
+      this.state.students.length > 0 ||
+      this.state.classes.length > 0 ||
+      this.state.subjects.length > 0 ||
+      this.state.academicYears.filter(ay => !ay.yearLabel.includes('2025')).length > 0;
+
+    if (!hasLocalData) {
+      console.info('[DB] Local state is empty — attempting to load from Supabase cloud...');
+      try {
+        const cloudState = await sdb.fetchCoreState();
+        if (cloudState && (
+          cloudState.teachers.length > 0 ||
+          cloudState.students.length > 0 ||
+          cloudState.classes.length > 0 ||
+          cloudState.subjects.length > 0
+        )) {
+          // Merge cloud data into local state without overwriting existing seed data
+          this.mergeCloudState(cloudState);
+          this.persistState();
+          console.info('[DB] Successfully loaded data from Supabase cloud.');
+        }
+      } catch (err) {
+        console.warn('[DB] Supabase init load failed, using local data:', err);
+      }
+    }
+
+    this.supabaseInitDone = true;
+  }
+
+  /**
+   * Merge cloud state into local state, avoiding duplicate entries.
+   */
+  private mergeCloudState(cloud: {
+    users: User[];
+    teachers: Teacher[];
+    students: Student[];
+    classes: ClassRoom[];
+    academicYears: AcademicYear[];
+    subjects: Subject[];
+  }): void {
+    // Merge users (by email)
+    cloud.users.forEach(cloudUser => {
+      const exists = this.state.users.some(u => u.email.toLowerCase() === cloudUser.email.toLowerCase());
+      if (!exists) this.state.users.push(cloudUser);
+    });
+
+    // Merge academic years (by yearLabel+semester)
+    cloud.academicYears.forEach(cloudAy => {
+      const exists = this.state.academicYears.some(
+        ay => ay.yearLabel === cloudAy.yearLabel && ay.semester === cloudAy.semester
+      );
+      if (!exists) this.state.academicYears.push(cloudAy);
+    });
+
+    // Merge subjects (by code)
+    cloud.subjects.forEach(cloudSub => {
+      const exists = this.state.subjects.some(s => s.code === cloudSub.code);
+      if (!exists) this.state.subjects.push(cloudSub);
+    });
+
+    // Merge classes (by name + academicYearId)
+    cloud.classes.forEach(cloudCls => {
+      const exists = this.state.classes.some(
+        c => c.name.toLowerCase() === cloudCls.name.toLowerCase()
+      );
+      if (!exists) this.state.classes.push(cloudCls);
+    });
+
+    // Merge teachers (by nip)
+    cloud.teachers.forEach(cloudTeacher => {
+      const exists = this.state.teachers.some(t => t.nip === cloudTeacher.nip);
+      if (!exists) this.state.teachers.push(cloudTeacher);
+    });
+
+    // Merge students (by nisn)
+    cloud.students.forEach(cloudStudent => {
+      const exists = this.state.students.some(s => s.nisn === cloudStudent.nisn);
+      if (!exists) this.state.students.push(cloudStudent);
+    });
+  }
+
+  /**
+   * Public: Export all local data to Supabase.
+   * Called from Settings panel "Sinkronisasi ke Cloud" button.
+   */
+  public async exportToSupabase(): Promise<{ success: number; failed: number; errors: string[] }> {
+    return sdb.exportAllToSupabase({
+      users: this.state.users,
+      teachers: this.state.teachers,
+      students: this.state.students,
+      classes: this.state.classes,
+      academicYears: this.state.academicYears,
+      subjects: this.state.subjects,
+    });
   }
 
   private rebuildIndexes() {
@@ -136,13 +251,36 @@ class DatabaseService {
 
         if (parsed.teachers && Array.isArray(parsed.teachers)) {
           INITIAL_TEACHERS.forEach(it => {
-            const existing = parsed.teachers.find((t: any) => t.id === it.id || t.userId === it.userId);
+            const existing = parsed.teachers.find((t: any) => t.id === it.id || t.userId === it.userId || (it.email && t.email?.toLowerCase() === it.email.toLowerCase()));
             if (!existing) {
               parsed.teachers.push(it);
             }
           });
         } else {
           parsed.teachers = INITIAL_TEACHERS;
+        }
+
+        // Pastikan semua pengguna ber-role ADMIN memiliki profil di parsed.teachers agar tampil di daftar pengguna
+        if (parsed.users && Array.isArray(parsed.users) && parsed.teachers && Array.isArray(parsed.teachers)) {
+          parsed.users.forEach((u: any) => {
+            if (u.role === 'ADMIN') {
+              const hasTeacher = parsed.teachers.some((t: any) => t.userId === u.id || (u.email && t.email?.toLowerCase() === u.email.toLowerCase()));
+              if (!hasTeacher) {
+                parsed.teachers.push({
+                  id: `t-${u.id}`,
+                  userId: u.id,
+                  nip: u.id === 'u-admin-custom' ? 'ADMIN-001' : (u.id === 'u-admin' ? '196803121994031002' : `ADM-${u.id.replace('u-', '')}`),
+                  name: u.name,
+                  email: u.email,
+                  phone: '',
+                  password: u.password,
+                  subjectPermissions: [],
+                  classPermissions: [],
+                  isWaliKelas: false,
+                });
+              }
+            }
+          });
         }
 
         // Ensure answers and scores are hydrated if old storage is empty
@@ -579,6 +717,8 @@ class DatabaseService {
     this.state.students.push(newStudent);
     this.logAudit(currentUser, 'CREATE_STUDENT', 'STUDENT', `Menambahkan siswa baru: ${newStudent.name} (NISN: ${newStudent.nisn})`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled) sdb.syncStudent(newStudent, newStudent.classId).catch(() => {});
     return newStudent;
   }
   public updateStudent(id: string, updates: Partial<Student>, currentUser: any) {
@@ -592,6 +732,11 @@ class DatabaseService {
     this.state.students = this.state.students.map(s => s.id === id ? { ...s, ...updates } : s);
     this.logAudit(currentUser, 'UPDATE_STUDENT', 'STUDENT', `Memperbarui data siswa ID: ${id}`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled) {
+      const updatedS = this.state.students.find(s => s.id === id);
+      if (updatedS) sdb.syncStudent(updatedS, updatedS.classId).catch(() => {});
+    }
   }
   public deleteStudent(id: string, currentUser: any) {
     this.assertAdmin(currentUser, 'DELETE_STUDENT');
@@ -599,6 +744,8 @@ class DatabaseService {
     this.state.students = this.state.students.filter(s => s.id !== id);
     this.logAudit(currentUser, 'DELETE_STUDENT', 'STUDENT', `Menghapus data siswa: ${student?.name || id}`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled && student?.nisn) sdb.removeStudentByNisn(student.nisn).catch(() => {});
   }
 
   public deleteStudentsBatch(ids: string[], currentUser: any) {
@@ -662,6 +809,13 @@ class DatabaseService {
 
     this.logAudit(currentUser, 'CREATE_TEACHER', 'TEACHER', `Menambahkan guru baru: ${newTeacher.name} (NIP: ${newTeacher.nip}, Peran: ${finalRole})`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled) {
+      const addedUser = this.state.users.find(u =>
+        u.email.toLowerCase() === finalEmail.toLowerCase() || u.id === (teacher.userId || '')
+      );
+      sdb.syncTeacher(newTeacher, addedUser).catch(() => {});
+    }
     return newTeacher;
   }
 
@@ -719,20 +873,43 @@ class DatabaseService {
 
     this.logAudit(currentUser, 'UPDATE_TEACHER', 'TEACHER', `Memperbarui data guru ID: ${id} (${updatedTeacher.name}, Peran: ${finalRole})`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled) {
+      const updatedU = this.state.users.find(u =>
+        (targetUserId && u.id === targetUserId) ||
+        (targetEmail && u.email.toLowerCase() === targetEmail.toLowerCase())
+      );
+      sdb.syncTeacher(updatedTeacher, updatedU).catch(() => {});
+    }
   }
   public deleteTeacher(id: string, currentUser: any) {
     this.assertAdmin(currentUser, 'DELETE_TEACHER');
     const teacher = this.state.teachers.find(t => t.id === id);
+    if (id === 't-admin-custom' || teacher?.userId === 'u-admin-custom' || teacher?.email?.toLowerCase() === 'admin@sekolah.com') {
+      throw new Error('Akses Ditolak: Akun Administrator Utama sistem tidak dapat dihapus.');
+    }
+    if (currentUser && (teacher?.userId === currentUser.id || (teacher?.email && currentUser.email && teacher.email.toLowerCase() === currentUser.email.toLowerCase()))) {
+      throw new Error('Akses Ditolak: Anda tidak dapat menghapus akun Anda sendiri yang sedang aktif digunakan.');
+    }
     this.state.teachers = this.state.teachers.filter(t => t.id !== id);
-    this.logAudit(currentUser, 'DELETE_TEACHER', 'TEACHER', `Menghapus data guru: ${teacher?.name || id}`);
+    this.logAudit(currentUser, 'DELETE_TEACHER', 'TEACHER', `Menghapus data guru/staf: ${teacher?.name || id}`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled && teacher?.nip) sdb.removeTeacherByNip(teacher.nip).catch(() => {});
   }
 
   public deleteTeachersBatch(ids: string[], currentUser: any) {
     this.assertAdmin(currentUser, 'BULK_DELETE_TEACHER');
     if (!ids.length) return;
-    this.state.teachers = this.state.teachers.filter(t => !ids.includes(t.id));
-    this.logAudit(currentUser, 'BULK_DELETE_TEACHER', 'TEACHER', `Menghapus massal ${ids.length} data guru/staf.`);
+    const filteredIds = ids.filter(id => {
+      const t = this.state.teachers.find(item => item.id === id);
+      const isRootAdmin = id === 't-admin-custom' || t?.userId === 'u-admin-custom' || t?.email?.toLowerCase() === 'admin@sekolah.com';
+      const isSelf = currentUser && (t?.userId === currentUser.id || (t?.email && currentUser.email && t.email.toLowerCase() === currentUser.email.toLowerCase()));
+      return !isRootAdmin && !isSelf;
+    });
+    if (!filteredIds.length) return;
+    this.state.teachers = this.state.teachers.filter(t => !filteredIds.includes(t.id));
+    this.logAudit(currentUser, 'BULK_DELETE_TEACHER', 'TEACHER', `Menghapus massal ${filteredIds.length} data guru/staf.`);
     this.persistState();
   }
 
@@ -747,6 +924,8 @@ class DatabaseService {
     this.state.classes.push(newClass);
     this.logAudit(currentUser, 'CREATE_CLASS', 'CLASS', `Menambahkan kelas baru: ${newClass.name}`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled) sdb.syncClass(newClass).catch(() => {});
     return newClass;
   }
   public updateClass(id: string, updates: Partial<ClassRoom>, currentUser: any) {
@@ -782,6 +961,8 @@ class DatabaseService {
     this.state.subjects.push(newSubj);
     this.logAudit(currentUser, 'CREATE_SUBJECT', 'SUBJECT', `Menambahkan mata pelajaran: ${newSubj.name} (${newSubj.code})`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled) sdb.syncSubject(newSubj).catch(() => {});
     return newSubj;
   }
   public updateSubject(id: string, updates: Partial<Subject>, currentUser: any) {
@@ -789,6 +970,11 @@ class DatabaseService {
     this.state.subjects = this.state.subjects.map(s => s.id === id ? { ...s, ...updates } : s);
     this.logAudit(currentUser, 'UPDATE_SUBJECT', 'SUBJECT', `Memperbarui mata pelajaran ID: ${id}`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled) {
+      const updatedSub = this.state.subjects.find(s => s.id === id);
+      if (updatedSub) sdb.syncSubject(updatedSub).catch(() => {});
+    }
   }
   public updateSubjectKKM(subjectId: string, passingGrade: number, currentUser: any) {
     this.state.subjects = this.state.subjects.map(s => s.id === subjectId ? { ...s, passingGrade } : s);
@@ -801,6 +987,8 @@ class DatabaseService {
     this.state.subjects = this.state.subjects.filter(item => item.id !== id);
     this.logAudit(currentUser, 'DELETE_SUBJECT', 'SUBJECT', `Menghapus mata pelajaran: ${s?.name || id}`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled && s?.code) sdb.removeSubjectByCode(s.code).catch(() => {});
   }
 
   public deleteSubjectsBatch(ids: string[], currentUser: any) {
@@ -819,6 +1007,8 @@ class DatabaseService {
     this.state.academicYears.push(newAy);
     this.logAudit(currentUser, 'CREATE_ACADEMIC_YEAR', 'ACADEMIC_YEAR', `Menambahkan tahun ajaran: ${newAy.yearLabel} (${newAy.semester})`);
     this.persistState();
+    // Fire-and-forget cloud sync
+    if (this.supabaseSyncEnabled) sdb.syncAcademicYear(newAy).catch(() => {});
     return newAy;
   }
   public toggleAcademicYear(id: string, currentUser: any) {

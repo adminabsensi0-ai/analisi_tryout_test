@@ -28,7 +28,32 @@ export const INITIAL_USERS: User[] = [
   },
 ];
 
-export const INITIAL_TEACHERS: Teacher[] = [];
+export const INITIAL_TEACHERS: Teacher[] = [
+  {
+    id: 't-admin-custom',
+    userId: 'u-admin-custom',
+    nip: 'ADMIN-001',
+    name: 'admin',
+    email: 'admin@sekolah.com',
+    phone: '',
+    password: 'admin123',
+    subjectPermissions: [],
+    classPermissions: [],
+    isWaliKelas: false,
+  },
+  {
+    id: 't-admin',
+    userId: 'u-admin',
+    nip: '196803121994031002',
+    name: 'Drs. Supriyadi, M.Pd',
+    email: 'admin@sekolah.sch.id',
+    phone: '',
+    password: 'password123',
+    subjectPermissions: [],
+    classPermissions: [],
+    isWaliKelas: false,
+  },
+];
 
 export const INITIAL_CLASSES: ClassRoom[] = [];
 
