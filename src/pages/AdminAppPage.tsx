@@ -131,6 +131,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   // Cloud Sync State
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [cloudSyncResult, setCloudSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
 
   // Assign Wali Kelas State
   const [assigningClass, setAssigningClass] = useState<ClassRoom | null>(null);
@@ -205,7 +206,18 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
 
   useEffect(() => {
     refreshData();
-    return dbService.subscribe(refreshData);
+    const unsubscribeLocal = dbService.subscribe(refreshData);
+
+    // Mulai sync otomatis dua arah (Realtime + polling 30s)
+    const stopRealtimeSync = dbService.startRealtimeSync();
+    // Tandai status koneksi cloud (cek setelah 2 detik)
+    const timer = setTimeout(() => setRealtimeConnected(true), 2000);
+
+    return () => {
+      unsubscribeLocal();
+      stopRealtimeSync();
+      clearTimeout(timer);
+    };
   }, []);
 
   const handleConfirmAdminDelete = () => {
@@ -2053,12 +2065,21 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                   <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900 text-sky-600 dark:text-sky-300 flex items-center justify-center shrink-0">
                     <Upload className="w-5 h-5" />
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-sky-900 dark:text-sky-200">
-                      Sinkronisasi Data ke Cloud (Supabase)
-                    </h3>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-sky-900 dark:text-sky-200">
+                        Sinkronisasi Cloud Otomatis (Supabase)
+                      </h3>
+                      {realtimeConnected && (
+                        <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-full">
+                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse inline-block" />
+                          Live
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-sky-700 dark:text-sky-300">
-                      Unggah seluruh data lokal (guru, siswa, kelas, mapel, tahun ajaran) ke server cloud agar dapat diakses dari perangkat lain.
+                      Perubahan dari perangkat manapun otomatis disinkronkan via Realtime + polling 30 detik.
+                      Klik tombol di bawah untuk mengunggah <strong>seluruh</strong> data lokal ke cloud (untuk inisialisasi pertama kali).
                     </p>
                   </div>
                 </div>
@@ -2089,7 +2110,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                   {cloudSyncing ? (
                     <><RefreshCw className="w-4 h-4 animate-spin" />Menyinkronkan...</>
                   ) : (
-                    <><Upload className="w-4 h-4" />Sinkronisasi ke Cloud Sekarang</>
+                    <><Upload className="w-4 h-4" />Upload Semua Data Lokal ke Cloud</>
                   )}
                 </button>
               </div>

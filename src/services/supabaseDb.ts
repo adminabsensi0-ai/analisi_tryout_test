@@ -428,6 +428,49 @@ class SupabaseDbService {
   }
 
   // ----------------------------------------------------------
+  // REALTIME: Subscribe to changes from other devices
+  // ----------------------------------------------------------
+
+  /**
+   * Subscribe ke Supabase Realtime untuk tabel-tabel inti.
+   * Callback `onchange` dipanggil saat ada INSERT/UPDATE/DELETE dari perangkat lain.
+   * @returns channel object (gunakan di unsubscribe() saat cleanup)
+   */
+  public subscribeToChanges(onchange: () => void): unknown {
+    if (!this.isAvailable() || !supabase) return null;
+
+    const TABLES = ['teachers', 'students', 'classes', 'subjects', 'academic_years', 'users'];
+    const channel = (supabase as any).channel('db-realtime-sync');
+
+    TABLES.forEach((table: string) => {
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table },
+        (_payload: unknown) => { onchange(); }
+      );
+    });
+
+    channel.subscribe((status: string) => {
+      if (status === 'SUBSCRIBED') {
+        console.info('[SupabaseDB] Realtime aktif — perubahan dari perangkat lain disinkronkan otomatis.');
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[SupabaseDB] Realtime error/timeout, fallback ke polling 30s.');
+      }
+    });
+
+    return channel;
+  }
+
+  /**
+   * Unsubscribe dari Realtime channel untuk cleanup.
+   */
+  public unsubscribe(channel: unknown): void {
+    if (channel && supabase) {
+      (supabase as any).removeChannel(channel).catch(() => {});
+    }
+  }
+
+  // ----------------------------------------------------------
   // BULK EXPORT: Push all local state to Supabase
   // Called from Settings panel "Sync to Cloud" button
   // ----------------------------------------------------------

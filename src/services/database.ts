@@ -134,11 +134,23 @@ class DatabaseService {
     classes: ClassRoom[];
     academicYears: AcademicYear[];
     subjects: Subject[];
-  }): void {
-    // Merge users (by email)
+  }): boolean {
+    let changed = false;
+
+    // Merge users (by email) — update existing too
     cloud.users.forEach(cloudUser => {
-      const exists = this.state.users.some(u => u.email.toLowerCase() === cloudUser.email.toLowerCase());
-      if (!exists) this.state.users.push(cloudUser);
+      const idx = this.state.users.findIndex(u => u.email.toLowerCase() === cloudUser.email.toLowerCase());
+      if (idx === -1) {
+        this.state.users.push(cloudUser);
+        changed = true;
+      } else {
+        // Update role/name if changed remotely
+        const local = this.state.users[idx];
+        if (local.role !== cloudUser.role || local.name !== cloudUser.name) {
+          this.state.users[idx] = { ...local, role: cloudUser.role, name: cloudUser.name };
+          changed = true;
+        }
+      }
     });
 
     // Merge academic years (by yearLabel+semester)
@@ -146,42 +158,71 @@ class DatabaseService {
       const exists = this.state.academicYears.some(
         ay => ay.yearLabel === cloudAy.yearLabel && ay.semester === cloudAy.semester
       );
-      if (!exists) this.state.academicYears.push(cloudAy);
+      if (!exists) { this.state.academicYears.push(cloudAy); changed = true; }
     });
 
-    // Merge subjects (by code)
+    // Merge subjects (by code) — update name/category if changed
     cloud.subjects.forEach(cloudSub => {
-      const exists = this.state.subjects.some(s => s.code === cloudSub.code);
-      if (!exists) this.state.subjects.push(cloudSub);
+      const idx = this.state.subjects.findIndex(s => s.code === cloudSub.code);
+      if (idx === -1) {
+        this.state.subjects.push(cloudSub);
+        changed = true;
+      } else {
+        const local = this.state.subjects[idx];
+        if (local.name !== cloudSub.name || local.category !== cloudSub.category) {
+          this.state.subjects[idx] = { ...local, name: cloudSub.name, category: cloudSub.category };
+          changed = true;
+        }
+      }
     });
 
-    // Merge classes (by name + academicYearId)
+    // Merge classes (by name)
     cloud.classes.forEach(cloudCls => {
-      const exists = this.state.classes.some(
-        c => c.name.toLowerCase() === cloudCls.name.toLowerCase()
-      );
-      if (!exists) this.state.classes.push(cloudCls);
+      const exists = this.state.classes.some(c => c.name.toLowerCase() === cloudCls.name.toLowerCase());
+      if (!exists) { this.state.classes.push(cloudCls); changed = true; }
     });
 
-    // Merge teachers (by nip)
+    // Merge teachers (by nip) — update name/email/permissions if changed
     cloud.teachers.forEach(cloudTeacher => {
-      const exists = this.state.teachers.some(t => t.nip === cloudTeacher.nip);
-      if (!exists) this.state.teachers.push(cloudTeacher);
+      const idx = this.state.teachers.findIndex(t => t.nip === cloudTeacher.nip);
+      if (idx === -1) {
+        this.state.teachers.push(cloudTeacher);
+        changed = true;
+      } else {
+        const local = this.state.teachers[idx];
+        const remoteSubs = JSON.stringify(cloudTeacher.subjectPermissions || []);
+        const localSubs = JSON.stringify(local.subjectPermissions || []);
+        if (local.name !== cloudTeacher.name || local.email !== cloudTeacher.email || localSubs !== remoteSubs) {
+          this.state.teachers[idx] = { ...local, ...cloudTeacher, id: local.id, userId: local.userId };
+          changed = true;
+        }
+      }
     });
 
     // Merge students (by nisn)
     cloud.students.forEach(cloudStudent => {
-      const exists = this.state.students.some(s => s.nisn === cloudStudent.nisn);
-      if (!exists) this.state.students.push(cloudStudent);
+      const idx = this.state.students.findIndex(s => s.nisn === cloudStudent.nisn);
+      if (idx === -1) {
+        this.state.students.push(cloudStudent);
+        changed = true;
+      } else {
+        const local = this.state.students[idx];
+        if (local.name !== cloudStudent.name || local.classId !== cloudStudent.classId) {
+          this.state.students[idx] = { ...local, ...cloudStudent, id: local.id };
+          changed = true;
+        }
+      }
     });
+
+    return changed;
   }
 
   /**
    * Public: Export all local data to Supabase.
    * Called from Settings panel "Sinkronisasi ke Cloud" button.
    */
-  public async exportToSupabase(): Promise<{ success: number; failed: number; errors: string[] }> {
-    return sdb.exportAllToSupabase({
+  public async exportToSupabase(): Promise<{ ok: boolean; message: string }> {
+    const result = await sdb.exportAllToSupabase({
       users: this.state.users,
       teachers: this.state.teachers,
       students: this.state.students,
@@ -189,6 +230,56 @@ class DatabaseService {
       academicYears: this.state.academicYears,
       subjects: this.state.subjects,
     });
+    const ok = result.failed === 0;
+    const message = ok
+      ? `Berhasil menyinkronkan ${result.success} data ke cloud.`
+      : `${result.success} berhasil, ${result.failed} gagal. Error: ${result.errors.slice(0, 2).join('; ')}`;
+    return { ok, message };
+  }
+
+  /**
+   * Pull terbaru dari Supabase dan merge ke state lokal.
+   * Dipanggil oleh Realtime listener atau polling berkala.
+   */
+  public async pullFromCloud(): Promise<void> {
+    if (!sdb.isAvailable()) return;
+    try {
+      const cloudState = await sdb.fetchCoreState();
+      if (!cloudState) return;
+      const hadChanges = this.mergeCloudState(cloudState);
+      if (hadChanges) {
+        this.persistState();
+        this.notifyListeners();
+        console.info('[DB] Cloud pull: data diperbarui dari Supabase.');
+      }
+    } catch (err) {
+      console.warn('[DB] pullFromCloud error:', err);
+    }
+  }
+
+  /**
+   * Mulai sinkronisasi otomatis dua arah:
+   * 1. Supabase Realtime subscription (push notif saat ada perubahan)
+   * 2. Polling berkala setiap 30 detik sebagai fallback
+   */
+  public startRealtimeSync(): () => void {
+    if (!sdb.isAvailable()) return () => {};
+
+    // Subscribe Realtime Supabase untuk tabel inti
+    const channel = sdb.subscribeToChanges(() => {
+      this.pullFromCloud();
+    });
+
+    // Polling fallback setiap 30 detik
+    const interval = setInterval(() => {
+      this.pullFromCloud();
+    }, 30_000);
+
+    // Return cleanup function
+    return () => {
+      clearInterval(interval);
+      sdb.unsubscribe(channel);
+    };
   }
 
   private rebuildIndexes() {
