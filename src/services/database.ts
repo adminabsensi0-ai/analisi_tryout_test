@@ -105,7 +105,9 @@ export class DatabaseService {
 
   /**
    * Async: Initialize Supabase sync.
-   * Selalu tarik state terbaru dari cloud saat startup jika Supabase tersedia.
+   * Cerdas & Otomatis:
+   * - Jika cloud sudah ada data (dari perangkat lain), langsung sinkronkan ke perangkat ini.
+   * - Jika cloud masih kosong (inisialisasi awal), otomatis unggah data lokal ke cloud di latar belakang tanpa perlu klik tombol.
    */
   private async initSupabaseSync(): Promise<void> {
     if (!sdb.isAvailable()) return;
@@ -113,8 +115,34 @@ export class DatabaseService {
     this.supabaseSyncEnabled = true;
 
     try {
-      console.info('[DB] Supabase aktif — menarik data terbaru dari cloud...');
-      await this.pullFromCloud();
+      console.info('[DB] Supabase aktif — memeriksa sinkronisasi cloud...');
+      const cloudState = await sdb.fetchCoreState();
+
+      const hasCloudData = cloudState && (
+        cloudState.teachers.length > 0 ||
+        cloudState.students.length > 0 ||
+        cloudState.classes.length > 0 ||
+        cloudState.subjects.length > 0 ||
+        (cloudState.examPackages && cloudState.examPackages.length > 0) ||
+        (cloudState.tryouts && cloudState.tryouts.length > 0)
+      );
+
+      if (hasCloudData) {
+        // Jika di cloud sudah ada data (dari perangkat manapun), langsung sync ke perangkat ini
+        const hadChanges = this.mergeCloudState(cloudState);
+        if (hadChanges) {
+          this.persistState();
+          this.rebuildIndexes();
+          this.notifyListeners();
+          console.info('[DB] Sinkronisasi otomatis: data perangkat ini telah diselaraskan dengan cloud.');
+        }
+      } else {
+        // Jika cloud masih kosong, otomatis unggah data awal ke cloud di latar belakang!
+        console.info('[DB] Cloud masih kosong — otomatis menyinkronkan data awal ke cloud di latar belakang...');
+        this.exportToSupabase().catch(e => {
+          console.warn('[DB] Auto-sync initial data to cloud failed:', e);
+        });
+      }
     } catch (err) {
       console.warn('[DB] Supabase init sync failed, menggunakan data lokal:', err);
     }
@@ -1080,6 +1108,8 @@ export class DatabaseService {
     this.state.classes = this.state.classes.map(c => c.id === id ? { ...c, ...updates } : c);
     this.logAudit(currentUser, 'UPDATE_CLASS', 'CLASS', `Memperbarui kelas ID: ${id}`);
     this.persistState();
+    const updatedClass = this.state.classes.find(c => c.id === id);
+    if (this.supabaseSyncEnabled && updatedClass) sdb.syncClass(updatedClass).catch(() => {});
   }
   public deleteClass(id: string, currentUser: any) {
     this.assertAdmin(currentUser, 'DELETE_CLASS');
@@ -1087,6 +1117,7 @@ export class DatabaseService {
     this.state.classes = this.state.classes.filter(item => item.id !== id);
     this.logAudit(currentUser, 'DELETE_CLASS', 'CLASS', `Menghapus kelas: ${c?.name || id}`);
     this.persistState();
+    if (this.supabaseSyncEnabled && c?.name) sdb.removeClassByName(c.name).catch(() => {});
   }
 
   public deleteClassesBatch(ids: string[], currentUser: any) {

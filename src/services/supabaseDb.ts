@@ -643,6 +643,20 @@ class SupabaseDbService {
     }
   }
 
+  public async removeClassByName(name: string): Promise<void> {
+    if (!this.isAvailable() || !supabase) return;
+    try {
+      const { error } = await supabase
+        .from('classes')
+        .delete()
+        .eq('name', name.trim());
+      if (error) this.log('removeClassByName error: ' + error.message, 'warn');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('removeClassByName exception: ' + msg, 'warn');
+    }
+  }
+
   // ----------------------------------------------------------
   // REALTIME: Subscribe to changes from other devices
   // ----------------------------------------------------------
