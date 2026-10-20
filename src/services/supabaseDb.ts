@@ -11,7 +11,7 @@
  */
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
-  User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout
+  User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout, SchoolProfile
 } from '../types/database';
 
 // ============================================================
@@ -242,6 +242,30 @@ function fromSupabaseTryout(row: Record<string, unknown>): Tryout {
   };
 }
 
+function toSupabaseSchoolProfile(sp: SchoolProfile): Record<string, unknown> {
+  return {
+    id: 'default',
+    name: sp.name,
+    sub_header: sp.subHeader || '',
+    address: sp.address || '',
+    principal_name: sp.principalName || '',
+    principal_nip: sp.principalNip || '',
+    academic_year: sp.academicYear || '',
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function fromSupabaseSchoolProfile(row: Record<string, unknown>): SchoolProfile {
+  return {
+    name: String(row.name || ''),
+    subHeader: String(row.sub_header || ''),
+    address: String(row.address || ''),
+    principalName: String(row.principal_name || ''),
+    principalNip: String(row.principal_nip || ''),
+    academicYear: String(row.academic_year || ''),
+  };
+}
+
 // ============================================================
 // CORE SYNC SERVICE
 // ============================================================
@@ -255,6 +279,7 @@ export interface SupabaseCoreState {
   subjects: Subject[];
   examPackages?: ExamPackage[];
   tryouts?: Tryout[];
+  schoolProfile?: SchoolProfile;
 }
 
 class SupabaseDbService {
@@ -278,7 +303,7 @@ class SupabaseDbService {
 
     try {
       // Fetch semua data secara paralel
-      const [ayRes, classRes, subjectRes, userRes, teacherRes, studentRes, pkgRes, pkgSubRes, toRes] = await Promise.all([
+      const [ayRes, classRes, subjectRes, userRes, teacherRes, studentRes, pkgRes, pkgSubRes, toRes, spRes] = await Promise.all([
         supabase.from('academic_years').select('*'),
         supabase.from('classes').select('*'),
         supabase.from('subjects').select('*'),
@@ -288,6 +313,7 @@ class SupabaseDbService {
         supabase.from('exam_packages').select('*'),
         supabase.from('exam_package_subjects').select('*'),
         supabase.from('tryouts').select('*'),
+        supabase.from('school_profile').select('*').limit(1).maybeSingle(),
       ]);
 
       if (ayRes.error) throw new Error('academic_years: ' + ayRes.error.message);
@@ -355,9 +381,13 @@ class SupabaseDbService {
 
       const tryouts: Tryout[] = tryoutsData.map((row: any) => fromSupabaseTryout(row));
 
-      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes, ${examPackages.length} packages, ${tryouts.length} tryouts`);
+      const schoolProfile: SchoolProfile | undefined = spRes?.data
+        ? fromSupabaseSchoolProfile(spRes.data as Record<string, unknown>)
+        : undefined;
 
-      return { users, teachers, students, classes, academicYears, subjects, examPackages, tryouts };
+      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes, ${examPackages.length} packages, ${tryouts.length} tryouts${schoolProfile ? ', school profile' : ''}`);
+
+      return { users, teachers, students, classes, academicYears, subjects, examPackages, tryouts, schoolProfile };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('fetchCoreState failed: ' + msg, 'warn');
@@ -657,6 +687,20 @@ class SupabaseDbService {
     }
   }
 
+  public async syncSchoolProfile(sp: SchoolProfile): Promise<void> {
+    if (!this.isAvailable() || !supabase) return;
+    try {
+      const payload = toSupabaseSchoolProfile(sp);
+      const { error } = await supabase
+        .from('school_profile')
+        .upsert(payload, { onConflict: 'id' });
+      if (error) this.log('syncSchoolProfile error: ' + error.message, 'warn');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('syncSchoolProfile exception: ' + msg, 'warn');
+    }
+  }
+
   // ----------------------------------------------------------
   // REALTIME: Subscribe to changes from other devices
   // ----------------------------------------------------------
@@ -671,7 +715,7 @@ class SupabaseDbService {
 
     const TABLES = [
       'teachers', 'students', 'classes', 'subjects', 'academic_years', 'users',
-      'exam_packages', 'exam_package_subjects', 'tryouts', 'scores'
+      'exam_packages', 'exam_package_subjects', 'tryouts', 'scores', 'school_profile'
     ];
     const channel = (supabase as any).channel('db-realtime-sync');
 
@@ -716,6 +760,7 @@ class SupabaseDbService {
     subjects: Subject[];
     examPackages?: ExamPackage[];
     tryouts?: Tryout[];
+    schoolProfile?: SchoolProfile;
   }): Promise<{ success: number; failed: number; errors: string[] }> {
     if (!this.isAvailable() || !supabase) {
       return { success: 0, failed: 0, errors: ['Supabase tidak terkonfigurasi.'] };
@@ -773,6 +818,11 @@ class SupabaseDbService {
       for (const to of state.tryouts) {
         await attempt(`Tryout ${to.code}`, () => this.syncTryout(to));
       }
+    }
+
+    // 8. School Profile (jika ada)
+    if (state.schoolProfile) {
+      await attempt('SchoolProfile', () => this.syncSchoolProfile(state.schoolProfile!));
     }
 
     console.info(`[SupabaseDB] Export done: ${success} synced, ${failed} failed`);

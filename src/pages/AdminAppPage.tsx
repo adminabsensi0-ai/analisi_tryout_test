@@ -5,7 +5,7 @@ import {
   AlertCircle, ShieldAlert, Search, Trash2, Edit3,
   Layers, ChevronLeft, ChevronRight, Check, AlertTriangle,
   FileSpreadsheet, Sparkles, Download, Upload, UserPlus,
-  Award, FileText, ArrowRight, FolderKanban, ChevronDown, ChevronUp
+  Award, FileText, ArrowRight, FolderKanban, ChevronDown, ChevronUp, Cloud
 } from 'lucide-react';
 import { dbService } from '../services/database';
 import {
@@ -202,6 +202,15 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setSubjects(state.subjects);
     setAuditLogs(state.auditLogs);
     setExamPackages(dbService.getExamPackages());
+
+    // Perbarui field profil sekolah jika ada perubahan dari cloud/perangkat lain
+    const sp = dbService.getSchoolProfile();
+    setSchoolName(sp.name);
+    setSchoolSubHeader(sp.subHeader);
+    setSchoolAddress(sp.address);
+    setSchoolPrincipalName(sp.principalName);
+    setSchoolPrincipalNip(sp.principalNip);
+    setSchoolAcademicYear(sp.academicYear);
   };
 
   useEffect(() => {
@@ -961,13 +970,13 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
 
         {/* Sidebar Navigation */}
         <aside
-          className={`fixed lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:overflow-y-auto inset-y-0 left-0 z-30 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-transform duration-300 ease-in-out ${
+          className={`fixed lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] inset-y-0 left-0 z-30 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between overflow-hidden transition-transform duration-300 ease-in-out ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }`}
         >
-          <div>
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Admin Header */}
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
                   AD
@@ -990,20 +999,20 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
             </div>
 
             {/* Active Academic Year Pill */}
-            <div className="p-3 mx-3 my-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 rounded-xl text-xs">
+            <div className="p-3 mx-3 my-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 rounded-xl text-xs shrink-0">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] uppercase font-bold text-indigo-700 dark:text-indigo-300">
                   Tahun Ajaran Aktif
                 </span>
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               </div>
-              <div className="font-bold text-slate-900 dark:text-slate-100">
+              <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
                 {activeYear ? `${activeYear.yearLabel} (${activeYear.semester === 'ODD' ? 'Ganjil' : 'Genap'})` : '2025/2026 (Genap)'}
               </div>
             </div>
 
             {/* Nav Menu */}
-            <nav className="px-2 space-y-1">
+            <nav className="px-2 space-y-1 flex-1 overflow-y-auto pb-2">
               {navItems.map(item => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.key;
@@ -1039,7 +1048,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
           </div>
 
           {/* Sidebar Footer User Info */}
-          <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+          <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">
                 {currentUser.name.charAt(0)}
@@ -1929,13 +1938,28 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
           {/* TAB 8: SETTINGS */}
           {!isLoading && activeTab === 'SETTINGS' && (
             <div className="space-y-6 max-w-3xl">
-              <div>
-                <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Pengaturan Sistem & Database
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Konfigurasi pemeliharaan database dan reset pabrik.
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    Pengaturan Sistem &amp; Database
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Konfigurasi informasi institusi sekolah dan status sinkronisasi cloud.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {realtimeConnected ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 rounded-xl">
+                      <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse inline-block" />
+                      Cloud Realtime Aktif
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-400" />
+                      Menghubungkan Cloud...
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Form Profil Sekolah & Header Dokumen PDF */}
@@ -2059,60 +2083,53 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                 </div>
               </div>
 
-              {/* Sinkronisasi ke Cloud */}
-              <div className="bg-sky-50 dark:bg-sky-950/40 p-6 rounded-2xl border border-sky-200 dark:border-sky-900 space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900 text-sky-600 dark:text-sky-300 flex items-center justify-center shrink-0">
-                    <Upload className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-sky-900 dark:text-sky-200">
-                        Sinkronisasi Cloud Otomatis (Supabase)
-                      </h3>
-                      {realtimeConnected && (
-                        <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-full">
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse inline-block" />
-                          Live
-                        </span>
-                      )}
+              {/* Integrasi Cloud Database & Sinkronisasi Cadangan */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                      <Cloud className="w-5 h-5" />
                     </div>
-                    <p className="text-xs text-sky-700 dark:text-sky-300">
-                      Perubahan dari perangkat manapun otomatis disinkronkan via Realtime + polling 30 detik.
-                      Klik tombol di bawah untuk mengunggah <strong>seluruh</strong> data lokal ke cloud (untuk inisialisasi pertama kali).
-                    </p>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                        Sinkronisasi Cloud Terpusat (Supabase)
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Data ujian, master data, dan informasi sekolah otomatis realtime disinkronkan antar-perangkat di latar belakang.
+                      </p>
+                    </div>
                   </div>
+
+                  <button
+                    disabled={cloudSyncing}
+                    onClick={async () => {
+                      setCloudSyncing(true);
+                      setCloudSyncResult(null);
+                      try {
+                        const result = await dbService.exportToSupabase();
+                        setCloudSyncResult({ ok: result.ok, message: result.message });
+                      } catch (err: any) {
+                        setCloudSyncResult({ ok: false, message: err.message || 'Sinkronisasi gagal.' });
+                      } finally {
+                        setCloudSyncing(false);
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+                  >
+                    {cloudSyncing ? (
+                      <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Menyinkronkan...</>
+                    ) : (
+                      <><Upload className="w-3.5 h-3.5" />Unggah Salinan Manual</>
+                    )}
+                  </button>
                 </div>
 
                 {cloudSyncResult && (
-                  <div className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg ${cloudSyncResult.ok ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'}`}>
-                    {cloudSyncResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                    {cloudSyncResult.message}
+                  <div className={`flex items-center gap-2 text-xs font-medium px-3.5 py-2.5 rounded-xl border ${cloudSyncResult.ok ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300' : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'}`}>
+                    {cloudSyncResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />}
+                    <span>{cloudSyncResult.message}</span>
                   </div>
                 )}
-
-                <button
-                  disabled={cloudSyncing}
-                  onClick={async () => {
-                    setCloudSyncing(true);
-                    setCloudSyncResult(null);
-                    try {
-                      const result = await dbService.exportToSupabase();
-                      setCloudSyncResult({ ok: result.ok, message: result.message });
-                    } catch (err: any) {
-                      setCloudSyncResult({ ok: false, message: err.message || 'Sinkronisasi gagal.' });
-                    } finally {
-                      setCloudSyncing(false);
-                    }
-                  }}
-                  className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-400 text-white font-semibold text-xs rounded-xl shadow-xs cursor-pointer transition-colors flex items-center gap-2"
-                >
-                  {cloudSyncing ? (
-                    <><RefreshCw className="w-4 h-4 animate-spin" />Menyinkronkan...</>
-                  ) : (
-                    <><Upload className="w-4 h-4" />Upload Semua Data Lokal ke Cloud</>
-                  )}
-                </button>
               </div>
 
               <div className="bg-rose-50 dark:bg-rose-950/40 p-6 rounded-2xl border border-rose-200 dark:border-rose-900 space-y-4">

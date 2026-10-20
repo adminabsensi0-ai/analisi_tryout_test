@@ -124,7 +124,8 @@ export class DatabaseService {
         cloudState.classes.length > 0 ||
         cloudState.subjects.length > 0 ||
         (cloudState.examPackages && cloudState.examPackages.length > 0) ||
-        (cloudState.tryouts && cloudState.tryouts.length > 0)
+        (cloudState.tryouts && cloudState.tryouts.length > 0) ||
+        !!cloudState.schoolProfile
       );
 
       if (hasCloudData) {
@@ -162,6 +163,7 @@ export class DatabaseService {
     subjects: Subject[];
     examPackages?: ExamPackage[];
     tryouts?: Tryout[];
+    schoolProfile?: SchoolProfile;
   }): boolean {
     let changed = false;
 
@@ -278,6 +280,23 @@ export class DatabaseService {
       });
     }
 
+    // Merge school profile
+    if (cloud.schoolProfile) {
+      const current = this.state.schoolProfile || this.getSchoolProfile();
+      const hasDiff =
+        current.name !== cloud.schoolProfile.name ||
+        current.subHeader !== cloud.schoolProfile.subHeader ||
+        current.address !== cloud.schoolProfile.address ||
+        current.principalName !== cloud.schoolProfile.principalName ||
+        current.principalNip !== cloud.schoolProfile.principalNip ||
+        current.academicYear !== cloud.schoolProfile.academicYear;
+
+      if (hasDiff) {
+        this.state.schoolProfile = { ...current, ...cloud.schoolProfile };
+        changed = true;
+      }
+    }
+
     return changed;
   }
 
@@ -295,6 +314,7 @@ export class DatabaseService {
       subjects: this.state.subjects,
       examPackages: this.state.examPackages,
       tryouts: this.state.tryouts,
+      schoolProfile: this.getSchoolProfile(),
     });
     const ok = result.failed === 0;
     const message = ok
@@ -650,6 +670,7 @@ export class DatabaseService {
     this.state.schoolProfile = updated;
     this.persistState();
     this.notifyListeners();
+    if (this.supabaseSyncEnabled) sdb.syncSchoolProfile(updated).catch(() => {});
     if (currentUser) {
       this.logAudit(
         currentUser,
