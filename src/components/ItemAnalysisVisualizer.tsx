@@ -264,7 +264,7 @@ export const ItemAnalysisVisualizer: React.FC<ItemAnalysisVisualizerProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Evaluasi tingkat kesukaran ($p$), daya pembeda ($D$), dan efektivitas pilihan pengecoh opsi (A–E).
+                Evaluasi tingkat kesukaran (<span className="font-serif italic font-medium">p</span>), daya pembeda (<span className="font-serif italic font-medium">D</span>), dan efektivitas pilihan pengecoh opsi (A–E).
               </p>
             </div>
           </div>
@@ -346,8 +346,8 @@ export const ItemAnalysisVisualizer: React.FC<ItemAnalysisVisualizerProps> = ({
       {showPedagogicalGuide && (
         <div className="p-4 bg-gradient-to-r from-indigo-50/70 to-slate-50 dark:from-indigo-950/40 dark:to-slate-950/60 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl space-y-3 text-xs animate-fade-in">
           <div className="flex items-center justify-between">
-            <h4 className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
-              <Lightbulb className="w-4 h-4 text-amber-500" />
+            <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+              <Lightbulb className="w-4 h-4 text-slate-600 dark:text-slate-400" />
               <span>Pedoman Analisis Butir Soal (Suharsimi Arikunto)</span>
             </h4>
             <span className="text-[10px] text-slate-500 font-mono">Batas Layak: Daya Beda ≥ 0.20 &amp; Kesukaran 0.20 s.d. 0.80</span>
@@ -356,33 +356,33 @@ export const ItemAnalysisVisualizer: React.FC<ItemAnalysisVisualizerProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* Tingkat Kesukaran Info */}
             <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-indigo-500" />
+              <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-slate-500 dark:bg-slate-400" />
                 <span>Indeks Kesukaran (p-value = B / N)</span>
               </div>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed text-[11px]">
                 Menghitung rasio siswa yang menjawab benar terhadap total peserta:
               </p>
               <ul className="text-[11px] space-y-1 text-slate-600 dark:text-slate-400">
-                <li>• <strong className="text-emerald-600">p &gt; 0.70</strong>: Soal Mudah (perlu pengayaan / pemantik)</li>
-                <li>• <strong className="text-indigo-600">0.30 ≤ p ≤ 0.70</strong>: Soal Sedang (Ideal untuk bank soal)</li>
-                <li>• <strong className="text-rose-600">p &lt; 0.30</strong>: Soal Sulit (memerlukan analisis materi prasyarat)</li>
+                <li>• <strong className="text-slate-900 dark:text-slate-100 font-semibold">p &gt; 0.70</strong>: Soal Mudah (perlu pengayaan / pemantik)</li>
+                <li>• <strong className="text-slate-900 dark:text-slate-100 font-semibold">0.30 ≤ p ≤ 0.70</strong>: Soal Sedang (Ideal untuk bank soal)</li>
+                <li>• <strong className="text-slate-900 dark:text-slate-100 font-semibold">p &lt; 0.30</strong>: Soal Sulit (memerlukan analisis materi prasyarat)</li>
               </ul>
             </div>
 
             {/* Daya Pembeda Info */}
             <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-              <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-slate-500 dark:bg-slate-400" />
                 <span>Indeks Daya Pembeda (D = p_atas - p_bawah)</span>
               </div>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed text-[11px]">
                 Kemampuan soal membedakan siswa kelompok atas (unggul) dan kelompok bawah:
               </p>
               <ul className="text-[11px] space-y-1 text-slate-600 dark:text-slate-400">
-                <li>• <strong className="text-emerald-600">D ≥ 0.40</strong>: Sangat Baik (Pertahankan)</li>
-                <li>• <strong className="text-indigo-600">0.30 ≤ D &lt; 0.40</strong>: Baik (Gunakan)</li>
-                <li>• <strong className="text-amber-600">0.20 ≤ D &lt; 0.30</strong>: Cukup (Revisi pilihan pengecoh)</li>
+                <li>• <strong className="text-slate-900 dark:text-slate-100 font-semibold">D ≥ 0.40</strong>: Sangat Baik (Pertahankan)</li>
+                <li>• <strong className="text-slate-900 dark:text-slate-100 font-semibold">0.30 ≤ D &lt; 0.40</strong>: Baik (Gunakan)</li>
+                <li>• <strong className="text-slate-900 dark:text-slate-100 font-semibold">0.20 ≤ D &lt; 0.30</strong>: Cukup (Revisi pilihan pengecoh)</li>
                 <li>• <strong className="text-rose-600">D &lt; 0.20 / Negatif</strong>: Buruk (Buang / Revisi kunci)</li>
               </ul>
             </div>

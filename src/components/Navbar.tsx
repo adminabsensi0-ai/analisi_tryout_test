@@ -319,15 +319,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             <>
               <button
                 onClick={() => { onNavigate('/wali-kelas'); setMobileMenuOpen(false); }}
-                className={`block w-full text-left px-3 py-2 rounded-md font-medium cursor-pointer ${currentPath === '/wali-kelas' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-md font-medium cursor-pointer ${currentPath === '/wali-kelas' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
               >
-                🏫 Dashboard Wali Kelas (/wali-kelas)
+                <School className="w-4 h-4 shrink-0" />
+                <span>Dashboard Wali Kelas (/wali-kelas)</span>
               </button>
               <button
                 onClick={() => { onNavigate('/guru'); setMobileMenuOpen(false); }}
-                className={`block w-full text-left px-3 py-2 rounded-md font-medium cursor-pointer ${currentPath === '/guru' ? 'bg-teal-600 text-white font-bold' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-md font-medium cursor-pointer ${currentPath === '/guru' ? 'bg-teal-600 text-white font-bold' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
               >
-                📖 Modul Guru Mapel (/guru)
+                <BookOpen className="w-4 h-4 shrink-0" />
+                <span>Modul Guru Mapel (/guru)</span>
               </button>
             </>
           )}

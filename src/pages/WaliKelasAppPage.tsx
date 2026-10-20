@@ -707,7 +707,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                                 <td className="py-3 px-4 text-center font-bold text-emerald-600">+{delta}</td>
                                 <td className="py-3 px-4 text-right font-sans whitespace-nowrap">
                                   <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-bold">
-                                    ✓ Tuntas KKM
+                                    Tuntas KKM
                                   </span>
                                 </td>
                               </tr>
@@ -857,11 +857,11 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                                 <span className="font-bold text-slate-900 dark:text-slate-100 font-sans">{subj.name}</span>
                                 <div className="flex items-center gap-3 text-[11px] font-mono tabular-nums">
                                   <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                                    ✓ {stats.pass} Siswa ({passPct}%) Tuntas
+                                    {stats.pass} Siswa ({passPct}%) Tuntas
                                   </span>
                                   <span className="text-slate-300 dark:text-slate-700">|</span>
                                   <span className="text-rose-700 dark:text-rose-400 font-bold">
-                                    ✕ {stats.fail} Siswa ({failPct}%) Belum Tuntas
+                                    {stats.fail} Siswa ({failPct}%) Belum Tuntas
                                   </span>
                                 </div>
                               </div>

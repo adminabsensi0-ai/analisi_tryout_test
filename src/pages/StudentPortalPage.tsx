@@ -758,9 +758,9 @@ export const StudentPortalPage: React.FC = () => {
                         </span>
                       </div>
                       <p className="text-xs text-slate-600 dark:text-slate-300">
-                        {classRank === 1 ? '🌟 Posisi Puncak! Pertahankan konsistensi capaian ini.' :
-                         classRank <= 3 ? '🥉 Masuk dalam 3 besar terbaik di rombel kelas.' :
-                         classRank <= 10 ? '✨ Masuk dalam 10 besar kelas. Terus tingkatkan capaianmu!' :
+                        {classRank === 1 ? 'Posisi Puncak! Pertahankan konsistensi capaian ini.' :
+                         classRank <= 3 ? 'Masuk dalam 3 besar terbaik di rombel kelas.' :
+                         classRank <= 10 ? 'Masuk dalam 10 besar kelas. Terus tingkatkan capaianmu!' :
                          'Terus berlatih untuk menembus peringkat 10 besar kelas.'}
                       </p>
                     </div>
@@ -785,9 +785,9 @@ export const StudentPortalPage: React.FC = () => {
                         </span>
                       </div>
                       <p className="text-xs text-slate-600 dark:text-slate-300">
-                        {overallRank === 1 ? '👑 Peringkat 1 Umum se-angkatan! Prestasi luar biasa!' :
-                         overallRank <= 5 ? '🔥 Top 5 Angkatan! Berpotensi kuat menembus prodi impian.' :
-                         overallRank <= 20 ? '📈 Top 20 Angkatan. Daya saing sudah sangat kompetitif.' :
+                        {overallRank === 1 ? 'Peringkat 1 Umum se-angkatan! Prestasi luar biasa!' :
+                         overallRank <= 5 ? 'Top 5 Angkatan. Berpotensi kuat menembus prodi impian.' :
+                         overallRank <= 20 ? 'Top 20 Angkatan. Daya saing sudah sangat kompetitif.' :
                          'Kompetisi angkatan terbuka luas, optimalkan mata pelajaran utama.'}
                       </p>
                     </div>
@@ -798,7 +798,7 @@ export const StudentPortalPage: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                       <span>
-                        <strong>Aturan Penentuan Peringkat:</strong> 1. Total Skor Ujian $\rightarrow$ 2. Jumlah Benar Seluruh Mapel $\rightarrow$ 3. Jumlah Benar Mapel Matematika.
+                        <strong>Aturan Penentuan Peringkat:</strong> 1. Total Skor Ujian → 2. Jumlah Benar Seluruh Mapel → 3. Jumlah Benar Mapel Matematika.
                       </span>
                     </div>
                     <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider shrink-0">
@@ -1475,7 +1475,7 @@ export const StudentPortalPage: React.FC = () => {
                 onClick={() => setSelectedVideoUrl(null)}
                 className="px-2.5 py-1 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-slate-100 dark:bg-slate-800 text-xs font-bold cursor-pointer transition-colors"
               >
-                ✕ Tutup
+                Tutup
               </button>
             </div>
 

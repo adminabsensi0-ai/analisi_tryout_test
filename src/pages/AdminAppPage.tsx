@@ -1094,7 +1094,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                     Selamat Datang, {currentUser.name}!
                   </h2>
                   <p className="text-xs sm:text-sm text-indigo-100/90 leading-relaxed mb-6">
-                    Sistem difokuskan khusus untuk pengelolaan **Pengguna**, **Staf Pengajar & Wali Kelas**, **Data Siswa (Bulk Import Excel)**, **Manajemen Kelas**, dan **Kurikulum Mata Pelajaran**.
+                    Sistem difokuskan khusus untuk pengelolaan <strong className="text-white font-semibold">Pengguna</strong>, <strong className="text-white font-semibold">Staf Pengajar &amp; Wali Kelas</strong>, <strong className="text-white font-semibold">Data Siswa (Bulk Import Excel)</strong>, <strong className="text-white font-semibold">Manajemen Kelas</strong>, dan <strong className="text-white font-semibold">Kurikulum Mata Pelajaran</strong>.
                   </p>
 
                   <div className="flex flex-wrap gap-2.5">
@@ -1794,7 +1794,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                                 if (!isNaN(val) && val >= 50 && val <= 100) {
                                   dbService.updateSubjectKKM(s.id, val, currentUser);
                                   refreshData();
-                                  triggerToast(`🎯 KKM '${s.name}' berhasil diperbarui menjadi ${val.toFixed(1)} Poin.`);
+                                  triggerToast(`KKM '${s.name}' berhasil diperbarui menjadi ${val.toFixed(1)} Poin.`);
                                 } else {
                                   triggerToast('Nilai KKM harus di rentang 50.0 - 100.0 Poin.', 'error');
                                 }

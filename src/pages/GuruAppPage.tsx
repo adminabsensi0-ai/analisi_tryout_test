@@ -171,7 +171,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       setNewToQuestionCount(result.totalQuestions);
       setAnswerKeyUploadErrors(result.errors);
       setAnswerKeyUploadSuccess(true);
-      triggerToast(`✅ Kunci jawaban berhasil dimuat: ${result.totalQuestions} soal.`);
+      triggerToast(`Kunci jawaban berhasil dimuat: ${result.totalQuestions} soal.`);
     } catch (err) {
       setAnswerKeyUploadErrors([(err as Error).message]);
     }
@@ -651,7 +651,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     }
     dbService.updateSubjectKKM(activeSubjectObj.id, val, currentUser);
     setSubjects(dbService.getSubjects());
-    triggerToast(`🎯 Target KKM Mata Pelajaran '${activeSubjectObj.name}' berhasil diatur menjadi ${val.toFixed(1)} Poin! Seluruh grafik & indikator ketuntasan telah disesuaikan.`);
+    triggerToast(`Target KKM Mata Pelajaran '${activeSubjectObj.name}' berhasil diatur menjadi ${val.toFixed(1)} Poin! Seluruh grafik & indikator ketuntasan telah disesuaikan.`);
   };
 
   // Filtered Questions in Bank
@@ -1431,10 +1431,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             }}
                             className="bg-slate-950 text-white font-bold text-xs rounded-xl px-3 py-1.5 border border-teal-600/60 focus:outline-none focus:ring-1 focus:ring-teal-400 cursor-pointer"
                           >
-                            <option value="ALL">✨ Semua Kelas Diampu ({classes.length} Kelas)</option>
+                            <option value="ALL">Semua Kelas Diampu ({classes.length} Kelas)</option>
                             {classes.map(c => (
                               <option key={c.id} value={c.id}>
-                                🏫 Kelas {c.name}
+                                Kelas {c.name}
                               </option>
                             ))}
                           </select>
@@ -1935,7 +1935,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                                   : 'bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
                               }`}>
-                                {to.scoringConfig?.scoreSource === 'CUSTOM_ENGINE' ? '⚡ Aturan Sekolah' : '📋 Kuis Google Form'}
+                                {to.scoringConfig?.scoreSource === 'CUSTOM_ENGINE' ? 'Aturan Sekolah' : 'Kuis Google Form'}
                               </span>
                             </div>
 
@@ -4066,7 +4066,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                             {ans.studentAnswer || 'Kosong'}
                                           </span>
                                           <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
-                                            ✓ {ans.correctAnswer}
+                                            {ans.correctAnswer}
                                           </span>
                                         </div>
                                       ))}
@@ -4572,11 +4572,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                       <span className="font-bold text-slate-900 dark:text-slate-100 font-sans">{cls.classLabel}</span>
                                       <div className="flex items-center gap-3 text-[11px] font-mono tabular-nums">
                                         <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                                          ✓ {stats.pass} Siswa ({passPct}%) Tuntas
+                                          {stats.pass} Siswa ({passPct}%) Tuntas
                                         </span>
                                         <span className="text-slate-300 dark:text-slate-700">|</span>
                                         <span className="text-rose-700 dark:text-rose-400 font-bold">
-                                          ✕ {stats.fail} Siswa ({failPct}%) Belum Tuntas
+                                          {stats.fail} Siswa ({failPct}%) Belum Tuntas
                                         </span>
                                       </div>
                                     </div>
@@ -6308,8 +6308,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               : 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
                           }`}>
                             {activeTryout?.scoringConfig?.scoreSource === 'CUSTOM_ENGINE'
-                              ? '⚡ Aturan Penilaian Sekolah'
-                              : '📋 Nilai Langsung Kuis Google Form'}
+                              ? 'Aturan Penilaian Sekolah'
+                              : 'Nilai Langsung Kuis Google Form'}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
@@ -6342,8 +6342,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <Sliders className="w-4 h-4" />
                         <span>
                           {activeTryout?.scoringConfig?.scoreSource === 'CUSTOM_ENGINE'
-                            ? '⚡ Mode Aturan Sekolah (Aktif) — Klik untuk Beralih ke Google Form'
-                            : '📋 Mode Google Form (Aktif) — Klik untuk Beralih ke Aturan Sekolah'}
+                            ? 'Mode Aturan Sekolah (Aktif) — Klik untuk Beralih ke Google Form'
+                            : 'Mode Google Form (Aktif) — Klik untuk Beralih ke Aturan Sekolah'}
                         </span>
                       </button>
                     </div>
@@ -7822,13 +7822,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 </div>
 
                 <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400">
-                  💡 Isi kunci jawaban sekarang atau tambahkan nanti melalui tombol Edit pada kartu Try Out.
+                  Isi kunci jawaban sekarang atau tambahkan nanti melalui tombol Edit pada kartu Try Out.
                 </div>
               </div>
 
               {/* Info box */}
               <div className="p-3 bg-teal-50 dark:bg-teal-950/40 rounded-xl border border-teal-200 dark:border-teal-800 text-[11px] text-teal-800 dark:text-teal-300 leading-relaxed">
-                💡 <strong>Informasi:</strong> Kunci jawaban digunakan untuk menghitung skor otomatis saat data respons siswa dari Google Sheet disinkronkan. Urutan kunci harus sama dengan urutan soal di Google Form.
+                <strong>Informasi:</strong> Kunci jawaban digunakan untuk menghitung skor otomatis saat data respons siswa dari Google Sheet disinkronkan. Urutan kunci harus sama dengan urutan soal di Google Form.
               </div>
             </div>
 
@@ -7934,7 +7934,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 onClick={() => setActiveVideoModalUrl(null)}
                 className="px-2.5 py-1 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold cursor-pointer transition-colors"
               >
-                ✕ Tutup
+                Tutup
               </button>
             </div>
 
