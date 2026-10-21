@@ -43,22 +43,52 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
   // Wali Kelas Notes State per student ID
   const [waliNotes, setWaliNotes] = useState<Record<string, string>>({});
 
-  const teacherObj = dbService.getTeacherByUserId(currentUser);
-  const allStudents = dbService.getStudents();
-  // Get current assigned homeroom class or fallback to XII IPA 1
-  const assignedClassId = teacherObj?.homeRoomClassId || 'c-xii-ipa1';
-  const assignedClass: ClassRoom = dbService.getClasses().find(c => c.id === assignedClassId) || {
-    id: 'c-xii-ipa1',
-    name: 'XII IPA 1',
-    gradeLevel: 'XII',
-    academicYearId: 'ay-2025-1',
-    homeRoomTeacherId: teacherObj?.id || 't-2',
+  // Local Reactive Database States
+  const [teachers, setTeachers] = useState(dbService.getTeachers());
+  const [classes, setClasses] = useState(dbService.getClasses());
+  const [allStudents, setAllStudents] = useState(dbService.getStudents());
+  const [allSubjects, setAllSubjects] = useState(dbService.getSubjects());
+  const [allScores, setAllScores] = useState(dbService.getScores());
+  const [rawTryouts, setRawTryouts] = useState(dbService.getTryouts());
+
+  // Subscribe to real-time database changes from Supabase / localStorage
+  useEffect(() => {
+    const refreshData = () => {
+      setTeachers(dbService.getTeachers());
+      setClasses(dbService.getClasses());
+      setAllStudents(dbService.getStudents());
+      setAllSubjects(dbService.getSubjects());
+      setAllScores(dbService.getScores());
+      setRawTryouts(dbService.getTryouts());
+    };
+    refreshData();
+    return dbService.subscribe(refreshData);
+  }, []);
+
+  const teacherObj = teachers.find(t =>
+    (t.userId && t.userId === currentUser.id) ||
+    (t.email && currentUser.email && t.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+    (t.nip && currentUser.nip && t.nip === currentUser.nip)
+  );
+
+  // Resolve assigned class properly without hardcoding
+  const assignedClass = classes.find(c =>
+    (teacherObj?.homeRoomClassId && c.id === teacherObj.homeRoomClassId) ||
+    (teacherObj?.id && c.homeRoomTeacherId === teacherObj.id)
+  ) || classes[0] || {
+    id: '',
+    name: 'Belum Ditetapkan',
+    gradeLevel: '-',
+    academicYearId: '',
+    homeRoomTeacherId: '',
   };
+
+  const assignedClassId = assignedClass.id;
 
   // Scoped Tryouts: Hanya menampilkan tryouts yang menargetkan kelas binaan wali kelas
   const allTryouts = useMemo(() => {
-    const rawTryouts = dbService.getTryouts();
     return rawTryouts.filter(t => {
+      if (!assignedClassId) return true;
       if (t.packageId) {
         const pkg = dbService.getExamPackageById(t.packageId);
         if (pkg) {
@@ -76,14 +106,13 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
       }
       return true;
     });
-  }, [assignedClassId, assignedClass.gradeLevel]);
+  }, [rawTryouts, assignedClassId, assignedClass.gradeLevel]);
 
-  const allSubjects = dbService.getSubjects();
-  const allScores = dbService.getScores();
-
-  // Filter students in homeroom class
-  const classStudents = allStudents.filter(s => s.classId === assignedClassId || s.classId === 'c-xii-ipa1');
-  const activeStudentList = classStudents.length > 0 ? classStudents : allStudents.slice(0, 8);
+  // Filter students strictly in homeroom class (NO FALLBACK SLICE)
+  const activeStudentList = useMemo(() => {
+    if (!assignedClassId) return [];
+    return allStudents.filter(s => s.classId === assignedClassId);
+  }, [allStudents, assignedClassId]);
 
   const filteredStudents = activeStudentList.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -132,8 +161,18 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  const csvData = "NISN,Nama Siswa,Matematika,Fisika,Bahasa Indonesia,Bahasa Inggris,Rata-Rata,Status Rapor,Catatan Wali Kelas\n" +
-                    activeStudentList.map(s => `${s.nisn},"${s.name}",85,80,88,82,83.75,Tuntas,"${waliNotes[s.id] || 'Siswa menunjukkan peningkatan baik.'}"`).join("\n");
+                  const subHeaders = allSubjects.map(s => s.name);
+                  const csvData = `NISN,Nama Siswa,${subHeaders.length > 0 ? subHeaders.join(',') + ',' : ''}Rata-Rata,Status Rapor,Catatan Wali Kelas\n` +
+                    activeStudentList.map(s => {
+                      const studentScores = allSubjects.map(subj => {
+                        const score = getStudentSubjectScore(s.id, selectedTryoutId || (allTryouts[0]?.id ?? ''), subj.id);
+                        return score !== null ? score.toFixed(1) : '-';
+                      });
+                      const validScores = studentScores.filter(v => v !== '-').map(Number);
+                      const avg = validScores.length > 0 ? (validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1) : '-';
+                      const status = validScores.length > 0 ? (Number(avg) >= 75 ? 'Tuntas' : 'Remedial') : 'Belum Ada Data';
+                      return `${s.nisn},"${s.name}",${studentScores.length > 0 ? studentScores.join(',') + ',' : ''}${avg},${status},"${waliNotes[s.id] || 'Siswa aktif mengikuti proses belajar.'}"`;
+                    }).join("\n");
                   const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
@@ -228,231 +267,239 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
         </div>
 
         {/* TAB 1: OVERVIEW RINGKASAN ROMBEL */}
-        {activeTab === 'OVERVIEW' && (
-          <div className="space-y-6">
-            {/* Metric Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Siswa</span>
-                  <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-                    <Users className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-3xl font-black text-slate-900 dark:text-white font-mono">
-                  {activeStudentList.length} <span className="text-xs font-normal text-slate-500">Siswa</span>
-                </div>
-                <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Aktif di Rombel {assignedClass.name}</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Rata-Rata Rombel (TO-3)</span>
-                  <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-                    <TrendingUp className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
-                  83.8 <span className="text-xs font-normal text-slate-500">Poin</span>
-                </div>
-                <div className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
-                  <ArrowUp className="w-3.5 h-3.5" />
-                  <span>+6.5 poin dari TO-2</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tuntas KKM (&ge; 75.0)</span>
-                  <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-                    <Award className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-3xl font-black text-slate-900 dark:text-white font-mono">
-                  88% <span className="text-xs font-normal text-slate-500">Persentase</span>
-                </div>
-                <div className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>27 dari 31 siswa tuntas</span>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-rose-700 dark:text-rose-400">Perlu Pendampingan</span>
-                  <div className="w-9 h-9 rounded-xl bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold">
-                    <AlertTriangle className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-3xl font-black text-rose-600 dark:text-rose-400 font-mono">
-                  4 <span className="text-xs font-normal text-slate-500">Siswa</span>
-                </div>
-                <div className="text-[11px] text-rose-600 font-bold flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>Prioritas bimbingan konseling</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Overview Sections */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* Left Column: Trajectory Chart Preview */}
-              <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-emerald-600" />
-                      <span>Grafik Perkembangan Nilai Rombel {assignedClass.name}</span>
-                    </h3>
-                    <p className="text-xs text-slate-500">Perkembangan rata-rata kelas di setiap tahapan TryOut</p>
-                  </div>
-                  <button
-                    onClick={() => setActiveTab('TRYOUT_PROGRESS')}
-                    className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"
-                  >
-                    <span>Detail Grafik</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
-
-                <div className="p-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-                  <div className="flex items-center justify-between text-xs text-slate-500 font-mono">
-                    <span className="text-amber-600 dark:text-amber-400 font-bold">Garis KKM: 75.0 Poin</span>
-                    <span className="text-emerald-600 font-bold">Laju Pertumbuhan: +12.5 Poin</span>
-                  </div>
-
-                  {/* Expanded Proportional Preview Chart (Identical Layout to Main Chart) */}
-                  <div className="relative w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
-                    <svg className="w-full h-52 overflow-visible z-10 relative" viewBox="0 0 500 160" preserveAspectRatio="none">
-                      <defs>
-                        <linearGradient id="prevGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#10b981" stopOpacity="0.2" />
-                          <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
-                        </linearGradient>
-                      </defs>
-
-                      {/* Grid Lines & Y Axis */}
-                      <line x1="40" y1="20" x2="490" y2="20" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                      <text x="32" y="23" textAnchor="end" className="text-[9px] fill-slate-400 font-mono">100</text>
-
-                      {/* KKM Line 75 (Amber Gold) */}
-                      <line x1="40" y1="52.5" x2="490" y2="52.5" stroke="#f59e0b" strokeWidth="2" strokeDasharray="5 4" />
-                      <text x="32" y="55.5" textAnchor="end" className="text-[9px] fill-amber-500 font-mono font-bold">75</text>
-                      <rect x="410" y="40" width="75" height="16" rx="4" fill="#f59e0b" />
-                      <text x="447" y="51" textAnchor="middle" className="text-[8px] font-mono font-bold fill-slate-950">Garis KKM</text>
-
-                      <line x1="40" y1="120" x2="490" y2="120" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1" />
-                      <text x="32" y="123" textAnchor="end" className="text-[9px] fill-slate-400 font-mono">0</text>
-
-                      {/* Area Fill */}
-                      <polygon points="60,120 60,56 190,46 320,34 450,26 450,120" fill="url(#prevGradient)" />
-
-                      {/* Line connecting points */}
-                      <polyline
-                        fill="none"
-                        stroke="#10b981"
-                        strokeWidth="3.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points="60,56 190,46 320,34 450,26"
-                      />
-
-                      {/* Coordinate Nodes, Badges & X-Axis Labels */}
-                      {[
-                        { x: 60, y: 56, score: "72.0", label: "TO 1" },
-                        { x: 190, y: 46, score: "78.0", label: "TO 2" },
-                        { x: 320, y: 34, score: "84.5", label: "TO 3" },
-                        { x: 450, y: 26, score: "88.0", label: "TO 4" },
-                      ].map((node, i) => (
-                        <g key={i}>
-                          <rect x={node.x - 20} y={node.y - 22} width="40" height="17" rx="6" className="fill-slate-900 dark:fill-slate-100" />
-                          <text x={node.x} y={node.y - 10} textAnchor="middle" className="text-[10px] font-mono font-bold fill-emerald-400 dark:fill-emerald-700">{node.score}</text>
-                          <circle cx={node.x} cy={node.y} r="5" fill="#10b981" stroke="#ffffff" strokeWidth="2.5" />
-                          <text x={node.x} y="142" textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-500">{node.label}</text>
-                        </g>
-                      ))}
-                    </svg>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: Early Warning System */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-                <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-rose-600" />
-                    <span>Perhatian Wali Kelas</span>
-                  </h3>
-                  <p className="text-xs text-slate-500">Siswa memerlukan bimbingan khusus</p>
-                </div>
-
-                <div className="space-y-2.5">
-                  {activeStudentList.slice(0, 4).map((s, idx) => (
-                    <div key={s.id} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs flex items-center justify-between">
-                      <div>
-                        <div className="font-bold text-slate-900 dark:text-slate-100">{s.name}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">NISN: {s.nisn}</div>
-                      </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                        idx === 0 ? 'bg-emerald-100 text-emerald-800' : idx === 1 ? 'bg-indigo-100 text-indigo-800' : 'bg-rose-100 text-rose-800'
-                      }`}>
-                        {idx === 0 ? 'Riser +12.5' : idx === 1 ? 'Stabil 82.0' : 'Perlu Konseling'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  onClick={() => setActiveTab('LEGER_RAPOR')}
-                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer text-center"
-                >
-                  Buka Leger Multimapel Lengkap &rarr;
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: TRYOUT PROGRESS CHART (TO 1 -> TO 4) */}
-        {activeTab === 'TRYOUT_PROGRESS' && (() => {
-          // Subject specific scores mapping
-          const subjectDataMap: Record<string, { label: string; points: number[]; kkm: number; trend: string }> = {
-            'ALL': { label: 'Rata-Rata Multimapel Rombel', points: [72.0, 78.0, 84.5, 88.0], kkm: 75.0, trend: '+12.5 Poin' },
-            'subj-mat': { label: 'Matematika Wajib', points: [68.5, 74.0, 82.0, 86.5], kkm: 75.0, trend: '+13.5 Poin' },
-            'subj-fis': { label: 'Fisika Peminatan', points: [65.0, 72.5, 80.0, 85.0], kkm: 75.0, trend: '+15.0 Poin' },
-            'subj-bin': { label: 'Bahasa Indonesia', points: [78.0, 82.0, 88.0, 90.0], kkm: 75.0, trend: '+10.0 Poin' },
-            'subj-bing': { label: 'Bahasa Inggris', points: [75.0, 80.0, 85.0, 89.0], kkm: 75.0, trend: '+10.0 Poin' },
-          };
-
-          const activeData = subjectDataMap[selectedSubjectFilter] || subjectDataMap['ALL'];
-          
-          // Spatial Math for 1000x300 ViewBox SVG Line Chart
-          // Usable Width: X = 70px to 930px (spacing 286.6px)
-          // Usable Height: Y = 40px (score 100) to 260px (score 0)
-          const getCoordinates = (pts: number[]) => {
-            const xPositions = [80, 350, 620, 890];
-            return pts.map((val, idx) => {
-              const x = xPositions[idx];
-              const y = 260 - ((val / 100) * 220);
-              return { x, y, score: val };
-            });
-          };
-
-          const coords = getCoordinates(activeData.points);
-          const polylinePoints = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
-          const polygonPoints = `80,260 ${polylinePoints} 890,260`;
+        {activeTab === 'OVERVIEW' && (() => {
+          // Calculate real metrics from scores
+          const classScores = allScores.filter(sc => activeStudentList.some(st => st.id === sc.studentId));
+          const hasScores = classScores.length > 0;
+          const avgScore = hasScores
+            ? Math.round((classScores.reduce((acc, sc) => acc + (sc.calculatedScore || 0), 0) / classScores.length) * 10) / 10
+            : null;
+          const passingStudentsCount = activeStudentList.filter(st => {
+            const stScores = classScores.filter(sc => sc.studentId === st.id);
+            if (stScores.length === 0) return false;
+            const stAvg = stScores.reduce((acc, sc) => acc + (sc.calculatedScore || 0), 0) / stScores.length;
+            return stAvg >= 75.0;
+          }).length;
+          const passPercentage = activeStudentList.length > 0 && hasScores
+            ? Math.round((passingStudentsCount / activeStudentList.length) * 100)
+            : null;
+          const needSupportCount = activeStudentList.filter(st => {
+            const stScores = classScores.filter(sc => sc.studentId === st.id);
+            if (stScores.length === 0) return false;
+            const stAvg = stScores.reduce((acc, sc) => acc + (sc.calculatedScore || 0), 0) / stScores.length;
+            return stAvg < 75.0;
+          }).length;
 
           return (
             <div className="space-y-6">
-              {/* Main Container */}
+              {/* Metric Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Siswa</span>
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                      <Users className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-slate-900 dark:text-white font-mono">
+                    {activeStudentList.length} <span className="text-xs font-normal text-slate-500">Siswa</span>
+                  </div>
+                  <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Aktif di Rombel {assignedClass.name}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Rata-Rata Rombel</span>
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                      <TrendingUp className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                    {avgScore !== null ? avgScore : '—'} <span className="text-xs font-normal text-slate-500">{avgScore !== null ? 'Poin' : 'Belum ada data'}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-medium">
+                    {hasScores ? 'Berdasarkan hasil tryout aktif' : 'Menunggu sinkronisasi nilai'}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tuntas KKM (&ge; 75.0)</span>
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                      <Award className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-slate-900 dark:text-white font-mono">
+                    {passPercentage !== null ? `${passPercentage}%` : '—'} <span className="text-xs font-normal text-slate-500">{passPercentage !== null ? 'Persentase' : ''}</span>
+                  </div>
+                  <div className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{hasScores ? `${passingStudentsCount} dari ${activeStudentList.length} siswa tuntas` : 'Belum ada data nilai'}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-rose-700 dark:text-rose-400">Perlu Pendampingan</span>
+                    <div className="w-9 h-9 rounded-xl bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-rose-600 dark:text-rose-400 font-mono">
+                    {hasScores ? needSupportCount : '—'} <span className="text-xs font-normal text-slate-500">{hasScores ? 'Siswa' : ''}</span>
+                  </div>
+                  <div className="text-[11px] text-rose-600 font-bold flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>{hasScores ? `${needSupportCount} siswa di bawah KKM` : 'Belum ada data nilai'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Overview Sections */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Left Column: Trajectory Chart Preview */}
+                <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-emerald-600" />
+                        <span>Grafik Perkembangan Nilai Rombel {assignedClass.name}</span>
+                      </h3>
+                      <p className="text-xs text-slate-500">Perkembangan rata-rata kelas di setiap tahapan TryOut</p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('TRYOUT_PROGRESS')}
+                      className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Detail Grafik</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {allTryouts.length === 0 || !hasScores ? (
+                    <div className="p-12 text-center text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                      <TrendingUp className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 stroke-[1.5]" />
+                      <div className="font-semibold text-slate-700 dark:text-slate-300 text-sm">Grafik Belum Tersedia</div>
+                      <p className="text-xs max-w-sm mx-auto">
+                        Grafik perkembangan rombel akan terbentuk otomatis setelah guru mapel membuat paket tryout dan mengimpor nilai dari Google Sheet.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+                      <div className="flex items-center justify-between text-xs text-slate-500 font-mono">
+                        <span className="text-amber-600 dark:text-amber-400 font-bold">Garis KKM: 75.0 Poin</span>
+                        <span className="text-emerald-600 font-bold">Data Riil Supabase</span>
+                      </div>
+                      <div className="h-44 flex items-center justify-center text-xs text-slate-500">
+                        {allTryouts.length} Paket Ujian terdaftar
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: Early Warning System */}
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                  <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-600" />
+                      <span>Perhatian Wali Kelas</span>
+                    </h3>
+                    <p className="text-xs text-slate-500">Daftar siswa dalam rombel binaan</p>
+                  </div>
+
+                  {activeStudentList.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 text-xs">
+                      Belum ada siswa yang dialokasikan ke kelas ini oleh Admin.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 max-h-64 overflow-y-auto">
+                      {activeStudentList.slice(0, 5).map((s) => (
+                        <div key={s.id} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs flex items-center justify-between">
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-slate-100">{s.name}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">NISN: {s.nisn} · NIS: {s.nis || '-'}</div>
+                          </div>
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                            {assignedClass.name}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setActiveTab('LEGER_RAPOR')}
+                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer text-center"
+                  >
+                    Buka Leger Multimapel Lengkap &rarr;
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* TAB 2: TRYOUT PROGRESS CHART */}
+        {activeTab === 'TRYOUT_PROGRESS' && (() => {
+          // Calculate dynamic scores per tryout and per subject from allScores & activeStudentList
+          // Group by tryouts
+          const tryoutProgressData = allTryouts.map((to) => {
+            const scoresForTO = allScores.filter(sc => 
+              sc.tryoutId === to.id && 
+              activeStudentList.some(s => s.id === sc.studentId)
+            );
+            const totalScore = scoresForTO.reduce((sum, sc) => sum + (Number(sc.score) || 0), 0);
+            const avgScore = scoresForTO.length > 0 ? (totalScore / scoresForTO.length) : null;
+            return {
+              tryout: to,
+              avgScore,
+              totalRecords: scoresForTO.length,
+            };
+          });
+
+          const hasProgressData = tryoutProgressData.some(d => d.avgScore !== null);
+
+          // Subject-by-subject data
+          const subjectBreakdown = allSubjects.map(sub => {
+            const toAvgs = allTryouts.map(to => {
+              const scores = allScores.filter(sc => 
+                sc.tryoutId === to.id && 
+                sc.subjectId === sub.id && 
+                activeStudentList.some(s => s.id === sc.studentId)
+              );
+              const avg = scores.length > 0 ? (scores.reduce((a, b) => a + (Number(b.score) || 0), 0) / scores.length) : null;
+              const passCount = scores.filter(s => (Number(s.score) || 0) >= 75).length;
+              const failCount = scores.filter(s => (Number(s.score) || 0) < 75).length;
+              return { tryoutId: to.id, avg, passCount, failCount, total: scores.length };
+            });
+
+            // Overall pass/fail for this subject
+            const allSubjScores = allScores.filter(sc => 
+              sc.subjectId === sub.id && 
+              activeStudentList.some(s => s.id === sc.studentId)
+            );
+            const overallPass = allSubjScores.filter(s => (Number(s.score) || 0) >= 75).length;
+            const overallFail = allSubjScores.filter(s => (Number(s.score) || 0) < 75).length;
+
+            return {
+              subject: sub,
+              toAvgs,
+              overallPass,
+              overallFail,
+              totalScores: allSubjScores.length
+            };
+          });
+
+          return (
+            <div className="space-y-6">
               <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
                 
-                {/* Header & Subject Filter Bar */}
+                {/* Header */}
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
                   <div>
                     <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase tracking-wider font-mono">
@@ -460,508 +507,196 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                       <span>Grafik Perkembangan TryOut</span>
                     </div>
                     <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
-                      Progres Nilai TryOut
+                      Progres Nilai TryOut Rombel {assignedClass.name}
                     </h2>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Evaluasi perkembangan rata-rata nilai siswa Rombel {assignedClass.name}
+                      Evaluasi perkembangan rata-rata nilai siswa secara berkala dari seluruh paket ujian yang telah tersinkronisasi.
                     </p>
                   </div>
 
-                  {/* Filter Mapel Selector */}
-                  <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSubjectFilter('ALL')}
-                      className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
-                        selectedSubjectFilter === 'ALL'
-                          ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      Rata-Rata Rombel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSubjectFilter('subj-mat')}
-                      className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
-                        selectedSubjectFilter === 'subj-mat'
-                          ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      Matematika
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSubjectFilter('subj-fis')}
-                      className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
-                        selectedSubjectFilter === 'subj-fis'
-                          ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      Fisika
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSubjectFilter('subj-bin')}
-                      className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
-                        selectedSubjectFilter === 'subj-bin'
-                          ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      B. Indonesia
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSubjectFilter('subj-bing')}
-                      className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
-                        selectedSubjectFilter === 'subj-bing'
-                          ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      B. Inggris
-                    </button>
-                  </div>
-                </div>
-
-                {/* Proportional High-Fidelity Chart Viewport */}
-                <div className="p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900 dark:text-slate-100">{activeData.label}</span>
-                      <span className="text-[11px] text-slate-400">· KKM Minimal 75.0 Poin</span>
-                    </div>
-                    <span className="text-emerald-600 dark:text-emerald-400 font-bold font-mono flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/80 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                      <TrendingUp className="w-3.5 h-3.5" />
-                      <span>Total Kenaikan: {activeData.trend}</span>
-                    </span>
-                  </div>
-
-                  {/* SVG Canvas Area with 1000x300 Proportional ViewBox */}
-                  <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
-                    <svg
-                      className="w-full h-auto text-emerald-500 overflow-visible"
-                      viewBox="0 0 1000 300"
-                      preserveAspectRatio="xMidYMid meet"
-                    >
-                      <defs>
-                        <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
-                          <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
-                        </linearGradient>
-                      </defs>
-
-                      {/* Horizontal Grid Lines */}
-                      {/* Score 100 (Y=40) */}
-                      <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                      <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
-
-                      {/* Score 75 KKM Line (Y=95) - Distinct Amber Gold Line */}
-                      <line x1="50" y1="95" x2="950" y2="95" stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
-                      <text x="35" y="99" textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">75</text>
-                      
-                      {/* KKM Badge Tag inside Chart */}
-                      <rect x="810" y="78" width="130" height="22" rx="6" fill="#f59e0b" />
-                      <text x="875" y="93" textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">Garis KKM (75.0 Poin)</text>
-
-                      {/* Score 50 (Y=150) */}
-                      <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                      <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
-
-                      {/* Score 25 (Y=205) */}
-                      <line x1="50" y1="205" x2="950" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                      <text x="35" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
-
-                      {/* Score 0 (Y=260) */}
-                      <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
-                      <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
-
-                      {/* Gradient Fill under Polyline */}
-                      <polygon points={polygonPoints} fill="url(#chartGradient)" />
-
-                      {/* Connecting Line */}
-                      <polyline
-                        fill="none"
-                        stroke="#10b981"
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={polylinePoints}
-                      />
-
-                      {/* Coordinate Nodes & Floating Score Badges */}
-                      {coords.map((pt, i) => (
-                        <g key={i}>
-                          {/* Floating Score Badge above node */}
-                          <rect
-                            x={pt.x - 30}
-                            y={pt.y - 34}
-                            width="60"
-                            height="22"
-                            rx="8"
-                            className="fill-slate-900 dark:fill-slate-100 shadow-md"
-                          />
-                          <text
-                            x={pt.x}
-                            y={pt.y - 19}
-                            textAnchor="middle"
-                            className="text-[11px] font-mono font-bold fill-emerald-400 dark:fill-emerald-700"
-                          >
-                            {pt.score.toFixed(1)}
-                          </text>
-
-                          {/* Outer Aura Glow */}
-                          <circle cx={pt.x} cy={pt.y} r="10" fill="#10b981" opacity="0.25" />
-                          {/* Solid Coordinate Node */}
-                          <circle cx={pt.x} cy={pt.y} r="5.5" fill="#10b981" stroke="#ffffff" strokeWidth="2.5" />
-                        </g>
+                  {allSubjects.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSubjectFilter('ALL')}
+                        className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                          selectedSubjectFilter === 'ALL'
+                            ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        Semua Mapel
+                      </button>
+                      {allSubjects.map(sub => (
+                        <button
+                          key={sub.id}
+                          type="button"
+                          onClick={() => setSelectedSubjectFilter(sub.id)}
+                          className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                            selectedSubjectFilter === sub.id
+                              ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          {sub.name}
+                        </button>
                       ))}
-
-                      {/* X-Axis Labels */}
-                      <text x="80" y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">TO 1 (Awal)</text>
-                      <text x="350" y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">TO 2 (Tahap 1)</text>
-                      <text x="620" y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">TO 3 (Tahap 2)</text>
-                      <text x="890" y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-emerald-600 dark:fill-emerald-400">TO 4</text>
-                    </svg>
-                  </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Rekapitulasi Delta Kenaikan Nilai & Perbandingan Mapel */}
-                <div className="p-6 bg-slate-50/50 dark:bg-slate-950/50 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-5">
-                  <div className="flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60 pb-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4 text-emerald-600" />
-                        <span>Rekapitulasi Perkembangan Nilai Antar TryOut</span>
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Rincian perubahan nilai rata-rata rombel di setiap mata pelajaran pada seluruh tahapan TryOut.
-                      </p>
-                    </div>
+                {!hasProgressData ? (
+                  <div className="py-16 text-center bg-slate-50 dark:bg-slate-950 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
+                    <TrendingUp className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto" />
+                    <h3 className="text-base font-bold text-slate-700 dark:text-slate-300">Belum Ada Riwayat TryOut</h3>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Grafik tren dan ketuntasan siswa akan muncul otomatis saat guru mata pelajaran melakukan sinkronisasi lembar nilai dari spreadsheet ke paket ujian.
+                    </p>
                   </div>
-
-                  {/* Summary Delta Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs space-y-1 shadow-2xs">
-                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider font-mono">Peningkatan TO 1 &rarr; TO 2</span>
-                      <div className="text-xl font-black text-slate-900 dark:text-white font-mono">+6.0 Poin</div>
-                      <p className="text-[11px] text-slate-500">Meningkat signifikan setelah pengayaan awal.</p>
-                    </div>
-
-                    <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs space-y-1 shadow-2xs">
-                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider font-mono">Peningkatan TO 2 &rarr; TO 3</span>
-                      <div className="text-xl font-black text-slate-900 dark:text-white font-mono">+6.5 Poin</div>
-                      <p className="text-[11px] text-slate-500">Tren positif berlanjut secara konsisten.</p>
-                    </div>
-
-                    <div className="p-4 bg-emerald-50/80 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-xs space-y-1 shadow-2xs">
-                      <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold uppercase tracking-wider font-mono">Peningkatan TO 3 &rarr; TO 4</span>
-                      <div className="text-xl font-black text-emerald-700 dark:text-emerald-300 font-mono">+3.5 Poin</div>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-400">Pencapaian pertumbuhan rata-rata rombel.</p>
-                    </div>
-                  </div>
-
-                  {/* Explanation Badge for Average Score clarification */}
-                  <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-                    <Info className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span><strong>Keterangan Nilai:</strong> Seluruh angka yang tertera pada kolom TryOut di bawah ini merupakan <strong>Rata-Rata Nilai Rombel</strong> (Mean score seluruh siswa di kelas {assignedClass.name}).</span>
-                  </div>
-
-                  {/* Clean High-Density Table Breakdown per Subject with Sticky Header & First Column */}
-                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xs">
-                    <div className="overflow-auto max-h-[420px] scrollbar-thin">
-                      <table className="w-full text-xs text-left border-collapse">
-                        <thead className="bg-slate-100 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-mono border-b border-slate-200 dark:border-slate-800">
-                          <tr>
-                            <th className="py-3.5 px-4 font-bold sticky top-0 left-0 z-30 bg-slate-100 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 shadow-2xs min-w-[180px]">
-                              Mata Pelajaran
-                            </th>
-                            <th className="py-3.5 px-4 text-center font-bold sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Rata-Rata TO 1</th>
-                            <th className="py-3.5 px-4 text-center font-bold sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Rata-Rata TO 2</th>
-                            <th className="py-3.5 px-4 text-center font-bold sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Rata-Rata TO 3</th>
-                            <th className="py-3.5 px-4 text-center font-bold sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Rata-Rata TO 4</th>
-                            <th className="py-3.5 px-4 text-center font-bold sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Total Kenaikan</th>
-                            <th className="py-3.5 px-4 text-right font-bold sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Status KKM</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-mono tabular-nums">
-                          {[
-                            { name: 'Matematika Wajib', to1: 68.5, to2: 74.0, to3: 82.0, to4: 86.5 },
-                            { name: 'Fisika Peminatan', to1: 65.0, to2: 72.5, to3: 80.0, to4: 85.0 },
-                            { name: 'Bahasa Indonesia', to1: 78.0, to2: 82.0, to3: 88.0, to4: 90.0 },
-                            { name: 'Bahasa Inggris', to1: 75.0, to2: 80.0, to3: 85.0, to4: 89.0 },
-                          ].map((s, idx) => {
-                            const delta = (s.to4 - s.to1).toFixed(1);
-                            return (
-                              <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                                <td className="py-3 px-4 font-sans font-bold text-slate-900 dark:text-slate-100 sticky left-0 z-10 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xs whitespace-nowrap">
-                                  {s.name}
-                                </td>
-                                <td className="py-3 px-4 text-center text-slate-600 dark:text-slate-400">{s.to1.toFixed(1)}</td>
-                                <td className="py-3 px-4 text-center text-slate-600 dark:text-slate-400">{s.to2.toFixed(1)}</td>
-                                <td className="py-3 px-4 text-center font-bold text-emerald-600">{s.to3.toFixed(1)}</td>
-                                <td className="py-3 px-4 text-center font-bold text-emerald-700 dark:text-emerald-300">{s.to4.toFixed(1)}</td>
-                                <td className="py-3 px-4 text-center font-bold text-emerald-600">+{delta}</td>
-                                <td className="py-3 px-4 text-right font-sans whitespace-nowrap">
-                                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-bold">
-                                    Tuntas KKM
-                                  </span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* DIAGRAM PERBANDINGAN KETUNTASAN SISWA (ATAS KKM vs BAWAH KKM PER MAPEL & PER TRYOUT) */}
-                  <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-5 shadow-2xs">
-                    
-                    {/* Header & Filter Selector for TryOut Stage */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                          <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                          <span>Diagram Ketuntasan Siswa (Atas KKM vs Di Bawah KKM)</span>
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Perbandingan jumlah & persentase siswa tuntas (≥ KKM 75) vs belum tuntas (&lt; KKM 75) per mata pelajaran.
-                        </p>
-                      </div>
-
-                      {/* TryOut Selector Filter Buttons */}
-                      <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shrink-0">
-                        {['ALL', 'TO 1', 'TO 2', 'TO 3', 'TO 4'].map((stage) => (
-                          <button
-                            key={stage}
-                            onClick={() => setSelectedPassFailTO(stage)}
-                            className={`px-2.5 py-1 text-xs font-mono font-bold rounded-lg transition-all ${
-                              selectedPassFailTO === stage
-                                ? 'bg-emerald-600 text-white shadow-2xs'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                            }`}
-                          >
-                            {stage === 'ALL' ? 'Rata-Rata TO' : stage}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Overall Class Pass Rate Summary KPI Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                      <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1 shadow-2xs">
-                        <span className="text-[10px] text-slate-500 font-mono uppercase">Total Siswa Rombel</span>
-                        <div className="text-lg font-black text-slate-900 dark:text-white font-mono">30 Siswa</div>
-                        <p className="text-[11px] text-slate-500">Kelas {assignedClass.name}</p>
-                      </div>
-
-                      <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 rounded-xl space-y-1 shadow-2xs">
-                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-mono font-bold uppercase">Rata-Rata Siswa Tuntas</span>
-                        <div className="text-lg font-black text-emerald-700 dark:text-emerald-300 font-mono">
-                          {selectedPassFailTO === 'TO 1' ? '21 Siswa (70.0%)' :
-                           selectedPassFailTO === 'TO 2' ? '24 Siswa (80.0%)' :
-                           selectedPassFailTO === 'TO 3' ? '27 Siswa (90.0%)' :
-                           selectedPassFailTO === 'TO 4' ? '29 Siswa (96.7%)' :
-                           '25 Siswa (84.2%)'}
-                        </div>
-                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400">Memenuhi / Melampaui KKM 75.0</p>
-                      </div>
-
-                      <div className="p-3.5 bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 rounded-xl space-y-1 shadow-2xs">
-                        <span className="text-[10px] text-rose-700 dark:text-rose-300 font-mono font-bold uppercase">Siswa Belum Tuntas</span>
-                        <div className="text-lg font-black text-rose-700 dark:text-rose-300 font-mono">
-                          {selectedPassFailTO === 'TO 1' ? '9 Siswa (30.0%)' :
-                           selectedPassFailTO === 'TO 2' ? '6 Siswa (20.0%)' :
-                           selectedPassFailTO === 'TO 3' ? '3 Siswa (10.0%)' :
-                           selectedPassFailTO === 'TO 4' ? '1 Siswa (3.3%)' :
-                           '5 Siswa (15.8%)'}
-                        </div>
-                        <p className="text-[11px] text-rose-600 dark:text-rose-400">Memerlukan Remedial</p>
-                      </div>
-
-                      <div className="p-3.5 bg-slate-100/80 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1 shadow-2xs">
-                        <span className="text-[10px] text-slate-500 font-mono uppercase">Tahapan Evaluasi</span>
-                        <div className="text-lg font-black text-slate-900 dark:text-white font-mono">
-                          {selectedPassFailTO === 'ALL' ? 'Aggregat All TO' : selectedPassFailTO}
-                        </div>
-                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                          {selectedPassFailTO === 'TO 4' ? 'Hasil Evaluasi Akhir' : 'Progres Sesi'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Subject-by-Subject Stacked Bar Visualization */}
-                    <div className="space-y-4 pt-1">
-                      <div className="flex items-center justify-between text-xs border-b border-slate-100 dark:border-slate-800 pb-2">
-                        <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
-                          Rasio Ketuntasan Per Mapel ({selectedPassFailTO === 'ALL' ? 'Seluruh TO' : selectedPassFailTO})
-                        </span>
-                        <div className="flex items-center gap-4 text-[11px] font-mono">
-                          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-xs bg-emerald-500 inline-block"></span> Tuntas (≥ KKM 75)</span>
-                          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-xs bg-rose-500 inline-block"></span> Belum Tuntas (&lt; KKM 75)</span>
+                ) : (
+                  <>
+                    {/* SVG Trend Area */}
+                    <div className="p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900 dark:text-slate-100">
+                            {selectedSubjectFilter === 'ALL' 
+                              ? 'Rata-Rata Multimapel Rombel' 
+                              : (allSubjects.find(s => s.id === selectedSubjectFilter)?.name || 'Mata Pelajaran')}
+                          </span>
+                          <span className="text-[11px] text-slate-400">· Standar KKM 75.0 Poin</span>
                         </div>
                       </div>
 
-                      {/* List of Subjects with Stacked Ratio Bars */}
-                      <div className="space-y-4">
-                        {[
-                          { id: 'subj-mat', name: 'Matematika Wajib',
-                            data: {
-                              'TO 1': { pass: 20, fail: 10 },
-                              'TO 2': { pass: 23, fail: 7 },
-                              'TO 3': { pass: 27, fail: 3 },
-                              'TO 4': { pass: 29, fail: 1 },
-                              'ALL':  { pass: 25, fail: 5 },
-                            }
-                          },
-                          { id: 'subj-fis', name: 'Fisika Peminatan',
-                            data: {
-                              'TO 1': { pass: 18, fail: 12 },
-                              'TO 2': { pass: 22, fail: 8 },
-                              'TO 3': { pass: 26, fail: 4 },
-                              'TO 4': { pass: 28, fail: 2 },
-                              'ALL':  { pass: 24, fail: 6 },
-                            }
-                          },
-                          { id: 'subj-bin', name: 'Bahasa Indonesia',
-                            data: {
-                              'TO 1': { pass: 25, fail: 5 },
-                              'TO 2': { pass: 27, fail: 3 },
-                              'TO 3': { pass: 29, fail: 1 },
-                              'TO 4': { pass: 30, fail: 0 },
-                              'ALL':  { pass: 28, fail: 2 },
-                            }
-                          },
-                          { id: 'subj-bing', name: 'Bahasa Inggris',
-                            data: {
-                              'TO 1': { pass: 22, fail: 8 },
-                              'TO 2': { pass: 25, fail: 5 },
-                              'TO 3': { pass: 28, fail: 2 },
-                              'TO 4': { pass: 29, fail: 1 },
-                              'ALL':  { pass: 26, fail: 4 },
-                            }
-                          },
-                        ].map((subj) => {
-                          const stats = subj.data[selectedPassFailTO as keyof typeof subj.data] || subj.data['ALL'];
-                          const total = stats.pass + stats.fail;
-                          const passPct = ((stats.pass / total) * 100).toFixed(1);
-                          const failPct = ((stats.fail / total) * 100).toFixed(1);
+                      {/* SVG Canvas */}
+                      <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+                        {(() => {
+                          const validPoints = tryoutProgressData
+                            .map((d, idx) => ({
+                              label: d.tryout.code || d.tryout.title,
+                              score: d.avgScore ?? 0,
+                              hasScore: d.avgScore !== null,
+                              idx
+                            }))
+                            .filter(d => d.hasScore);
+
+                          if (validPoints.length === 0) return null;
+
+                          const width = 1000;
+                          const height = 300;
+                          const paddingX = 80;
+                          const stepX = validPoints.length > 1 ? (width - paddingX * 2) / (validPoints.length - 1) : 0;
+
+                          const coords = validPoints.map((p, i) => {
+                            const x = validPoints.length === 1 ? width / 2 : paddingX + i * stepX;
+                            const y = 260 - ((p.score / 100) * 220);
+                            return { ...p, x, y };
+                          });
+
+                          const polylinePoints = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
 
                           return (
-                            <div key={subj.id} className="space-y-1.5 p-3 bg-slate-50/70 dark:bg-slate-950/70 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1">
-                                <span className="font-bold text-slate-900 dark:text-slate-100 font-sans">{subj.name}</span>
-                                <div className="flex items-center gap-3 text-[11px] font-mono tabular-nums">
-                                  <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                                    {stats.pass} Siswa ({passPct}%) Tuntas
-                                  </span>
-                                  <span className="text-slate-300 dark:text-slate-700">|</span>
-                                  <span className="text-rose-700 dark:text-rose-400 font-bold">
-                                    {stats.fail} Siswa ({failPct}%) Belum Tuntas
-                                  </span>
-                                </div>
-                              </div>
+                            <svg className="w-full h-auto text-emerald-500 overflow-visible" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
+                              {/* Horizontal Grid */}
+                              <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                              <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
 
-                              {/* Visual Stacked Bar */}
-                              <div className="w-full h-7 bg-slate-200 dark:bg-slate-800 rounded-xl overflow-hidden flex p-0.5 border border-slate-300/60 dark:border-slate-700/60 shadow-2xs">
-                                {stats.pass > 0 && (
-                                  <div
-                                    style={{ width: `${passPct}%` }}
-                                    className="bg-gradient-to-r from-emerald-600 to-emerald-500 h-full rounded-l-lg flex items-center justify-start px-2.5 transition-all duration-500 group relative"
-                                  >
-                                    <span className="text-[10px] font-mono font-bold text-white whitespace-nowrap drop-shadow-xs">
-                                      {stats.pass} ({passPct}%)
-                                    </span>
-                                  </div>
-                                )}
-                                {stats.fail > 0 && (
-                                  <div
-                                    style={{ width: `${failPct}%` }}
-                                    className="bg-gradient-to-r from-rose-500 to-rose-600 h-full rounded-r-lg flex items-center justify-end px-2.5 transition-all duration-500 group relative"
-                                  >
-                                    <span className="text-[10px] font-mono font-bold text-white whitespace-nowrap drop-shadow-xs">
-                                      {stats.fail} ({failPct}%)
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
+                              {/* KKM Line 75 */}
+                              <line x1="50" y1="95" x2="950" y2="95" stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
+                              <text x="35" y="99" textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">75</text>
+
+                              <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
+                              <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
+
+                              <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
+                              <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+
+                              {/* Connecting Line */}
+                              {coords.length > 1 && (
+                                <polyline
+                                  fill="none"
+                                  stroke="#10b981"
+                                  strokeWidth="4"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  points={polylinePoints}
+                                />
+                              )}
+
+                              {/* Nodes */}
+                              {coords.map((pt, i) => (
+                                <g key={i}>
+                                  <rect x={pt.x - 30} y={pt.y - 34} width="60" height="22" rx="8" className="fill-slate-900 dark:fill-slate-100 shadow-md" />
+                                  <text x={pt.x} y={pt.y - 19} textAnchor="middle" className="text-[11px] font-mono font-bold fill-emerald-400 dark:fill-emerald-700">
+                                    {pt.score.toFixed(1)}
+                                  </text>
+                                  <circle cx={pt.x} cy={pt.y} r="10" fill="#10b981" opacity="0.25" />
+                                  <circle cx={pt.x} cy={pt.y} r="5.5" fill="#10b981" stroke="#ffffff" strokeWidth="2.5" />
+                                  <text x={pt.x} y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">
+                                    {pt.label}
+                                  </text>
+                                </g>
+                              ))}
+                            </svg>
                           );
-                        })}
+                        })()}
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Student Performance Clusters */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                  <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                        <ArrowUp className="w-4 h-4 text-emerald-600" />
-                        <span>Consistent Risers</span>
-                      </span>
-                      <span className="text-xs font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
-                        7 Siswa
-                      </span>
+                    {/* Rekapitulasi Per Mapel */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xs">
+                      <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                          <BarChart3 className="w-4 h-4 text-emerald-600" />
+                          <span>Ringkasan Nilai dan Ketuntasan per Mata Pelajaran</span>
+                        </h3>
+                      </div>
+                      <div className="overflow-auto max-h-[360px] scrollbar-thin">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead className="bg-slate-100 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-mono border-b border-slate-200 dark:border-slate-800">
+                            <tr>
+                              <th className="py-3 px-4 font-bold sticky top-0 left-0 bg-slate-100 dark:bg-slate-950">Mata Pelajaran</th>
+                              <th className="py-3 px-4 text-center font-bold">Total Nilai Masuk</th>
+                              <th className="py-3 px-4 text-center font-bold">Tuntas (≥ 75)</th>
+                              <th className="py-3 px-4 text-center font-bold">Belum Tuntas (&lt; 75)</th>
+                              <th className="py-3 px-4 text-right font-bold">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
+                            {subjectBreakdown.map((sb) => {
+                              const pctPass = sb.totalScores > 0 ? ((sb.overallPass / sb.totalScores) * 100).toFixed(0) : '0';
+                              return (
+                                <tr key={sb.subject.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                                  <td className="py-3 px-4 font-sans font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900">
+                                    {sb.subject.name}
+                                  </td>
+                                  <td className="py-3 px-4 text-center text-slate-600 dark:text-slate-400">
+                                    {sb.totalScores} nilai
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-bold text-emerald-600">
+                                    {sb.overallPass} ({pctPass}%)
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-bold text-rose-600">
+                                    {sb.overallFail}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-sans">
+                                    {sb.totalScores === 0 ? (
+                                      <span className="text-[11px] text-slate-400">Belum ada data</span>
+                                    ) : sb.overallFail === 0 ? (
+                                      <span className="text-[11px] text-emerald-700 font-bold">100% Tuntas</span>
+                                    ) : (
+                                      <span className="text-[11px] text-amber-600 font-bold">Sebagian Remedial</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-500">Siswa dengan kenaikan nilai konsisten dari TO 1 ke TO 3.</p>
-                    <div className="space-y-1.5">
-                      {activeStudentList.slice(0, 3).map(s => (
-                        <div key={s.id} className="p-2 bg-slate-50 dark:bg-slate-950 rounded-lg text-xs flex items-center justify-between">
-                          <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
-                          <span className="font-mono text-emerald-600 font-bold">+12.5 Poin</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-indigo-600" />
-                        <span>Steady Performers</span>
-                      </span>
-                      <span className="text-xs font-mono font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">
-                        20 Siswa
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500">Siswa tuntas di atas KKM secara konsisten.</p>
-                    <div className="space-y-1.5">
-                      {activeStudentList.slice(3, 6).map(s => (
-                        <div key={s.id} className="p-2 bg-slate-50 dark:bg-slate-950 rounded-lg text-xs flex items-center justify-between">
-                          <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
-                          <span className="font-mono text-indigo-600 font-bold">Stabil &gt; 80</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-rose-200 dark:border-rose-900/60 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-rose-700 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                        <AlertTriangle className="w-4 h-4 text-rose-600" />
-                        <span>Perlu Pendampingan</span>
-                      </span>
-                      <span className="text-xs font-mono font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded">
-                        4 Siswa
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500">Siswa membutuhkan bimbingan konseling.</p>
-                    <div className="space-y-1.5">
-                      {activeStudentList.slice(6, 8).map(s => (
-                        <div key={s.id} className="p-2 bg-rose-50/70 dark:bg-rose-950/30 rounded-lg text-xs flex items-center justify-between">
-                          <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
-                          <span className="font-mono text-rose-600 font-bold">Remedial 3 Mapel</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                  </>
+                )}
               </div>
             </div>
           );
@@ -1596,35 +1331,59 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                       <th className="px-3.5 py-3 sticky top-0 left-0 z-30 bg-slate-100 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 shadow-2xs min-w-[180px]">
                         NISN / Nama Siswa
                       </th>
-                      <th className="px-3 py-3 text-center sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Matematika</th>
-                      <th className="px-3 py-3 text-center sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Fisika</th>
-                      <th className="px-3 py-3 text-center sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">B. Indonesia</th>
-                      <th className="px-3 py-3 text-center sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">B. Inggris</th>
+                      {allSubjects.map(sub => (
+                        <th key={sub.id} className="px-3 py-3 text-center sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">
+                          {sub.name}
+                        </th>
+                      ))}
                       <th className="px-3 py-3 text-center sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Rata-Rata</th>
                       <th className="px-3 py-3 text-center sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Status Rapor</th>
                       <th className="px-3 py-3 sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 whitespace-nowrap">Catatan Pembimbing Wali Kelas</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredStudents.map(s => {
+                    {filteredStudents.length === 0 ? (
+                      <tr>
+                        <td colSpan={allSubjects.length + 4} className="py-8 text-center text-slate-400">
+                          Tidak ada siswa dalam rombel ini
+                        </td>
+                      </tr>
+                    ) : filteredStudents.map(s => {
                       const isSelected = selectedStudentId === s.id;
+                      const activeTOId = selectedTryoutId || (allTryouts[0]?.id ?? '');
+                      const scores = allSubjects.map(subj => getStudentSubjectScore(s.id, activeTOId, subj.id));
+                      const validScores = scores.filter((v): v is number => v !== null);
+                      const avg = validScores.length > 0 ? (validScores.reduce((a, b) => a + b, 0) / validScores.length) : null;
+                      const status = avg !== null ? (avg >= 75 ? 'TUNTAS' : 'REMEDIAL') : 'BELUM ADA DATA';
+
                       return (
                         <tr key={s.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 ${isSelected ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : ''}`}>
                           <td className="px-3.5 py-3 sticky left-0 z-10 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xs whitespace-nowrap">
                             <div className="font-bold text-slate-900 dark:text-slate-100">{s.name}</div>
                             <div className="text-[10px] font-mono text-slate-500">NISN: {s.nisn}</div>
                           </td>
-                          <td className="px-3 py-3 text-center font-mono font-bold text-emerald-600">85.0</td>
-                          <td className="px-3 py-3 text-center font-mono font-bold text-indigo-600">80.0</td>
-                          <td className="px-3 py-3 text-center font-mono font-bold text-emerald-600">88.0</td>
-                          <td className="px-3 py-3 text-center font-mono font-bold text-indigo-600">82.0</td>
+                          {scores.map((score, idx) => (
+                            <td key={idx} className="px-3 py-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
+                              {score !== null ? score.toFixed(1) : <span className="text-slate-300 dark:text-slate-700 font-normal">—</span>}
+                            </td>
+                          ))}
                           <td className="px-3 py-3 text-center font-mono font-black text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 rounded">
-                            83.8
+                            {avg !== null ? avg.toFixed(1) : '—'}
                           </td>
                           <td className="px-3 py-3 text-center">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
-                              TUNTAS
-                            </span>
+                            {avg !== null ? (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                status === 'TUNTAS' 
+                                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' 
+                                  : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                              }`}>
+                                {status}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-400">
+                                BELUM ADA DATA
+                              </span>
+                            )}
                           </td>
                           <td className="px-3 py-3">
                             <input
