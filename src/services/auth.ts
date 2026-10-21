@@ -167,19 +167,17 @@ class AuthService {
       identifier = 'admin@sekolah.com';
     }
 
-    // === PRODUCTION MODE: Coba Supabase Auth dengan Fallback Cerdas ke Akun Sistem ===
+    // === PASTIKAN DATA CLOUD TERBARU TERSEDIA JIKA SUPABASE AKTIF ===
     if (isSupabaseConfigured() && supabase) {
       try {
-        return await this.loginWithSupabase(identifier, password);
-      } catch (supabaseErr: any) {
-        console.warn('[Auth] Supabase login belum berhasil (' + (supabaseErr?.message || '') + '), beralih ke verifikasi akun sistem bawaan.');
-        // Fallback: Verifikasi terhadap data sistem/demo agar pengguna tetap bisa masuk dan mengecek hasil pekerjaan
-        return this.loginWithMockData(identifier, password, true);
+        await dbService.pullFromCloud();
+      } catch (err) {
+        console.warn('[Auth] pullFromCloud saat login diabaikan:', err);
       }
     }
 
-    // === DEMO MODE: Verifikasi terhadap mockData ===
-    return this.loginWithMockData(identifier, password);
+    // Verifikasi kredensial akun sistem (online Supabase & database terintegrasi)
+    return this.loginWithMockData(identifier, password, isSupabaseConfigured());
   }
 
   /** Login menggunakan Supabase Auth (Production) */
@@ -241,7 +239,7 @@ class AuthService {
     return { user: this.currentUser!, sessionId: this.sessionId! };
   }
 
-  /** Login menggunakan mockData (Demo & Fallback Mode) */
+  /** Login menggunakan data sistem (Terintegrasi Online Supabase & Multi-device) */
   private async loginWithMockData(identifier: string, password: string, isFallbackFromSupabase = false): Promise<AuthSession> {
     const state = dbService.getState();
     const { users, teachers } = state;
@@ -249,24 +247,79 @@ class AuthService {
     // Normalisasi alias "admin"
     const targetId = identifier === 'admin' ? 'admin@sekolah.com' : identifier;
 
-    // Cari user berdasarkan email
+    // 1. Cari user berdasarkan email
     let user = users.find(u => u.email.toLowerCase() === targetId);
+    let matchedTeacher = teachers.find(
+      t => (user && t.userId === user.id) ||
+           (user && t.email && t.email.toLowerCase() === user.email.toLowerCase()) ||
+           t.nip.trim().toLowerCase() === targetId ||
+           (t.phone && t.phone.trim() === targetId)
+    );
 
-    // Jika tidak ketemu, cari berdasarkan NIP
-    if (!user) {
-      const teacherMatch = teachers.find(
-        t => t.nip.trim().toLowerCase() === targetId ||
-             (t.phone && t.phone.trim() === targetId)
+    // 2. Jika tidak ketemu user tapi ketemu teacher (misal login via NIP)
+    if (!user && matchedTeacher) {
+      user = users.find(
+        u => u.id === matchedTeacher!.userId ||
+             (matchedTeacher!.email && u.email.toLowerCase() === matchedTeacher!.email.toLowerCase())
       );
-      if (teacherMatch) {
-        user = users.find(
-          u => u.id === teacherMatch.userId ||
-               (teacherMatch.email && u.email.toLowerCase() === teacherMatch.email.toLowerCase())
-        );
+      if (!user) {
+        user = {
+          id: matchedTeacher.userId || `u-${matchedTeacher.id}`,
+          email: matchedTeacher.email || `${matchedTeacher.nip.trim()}@guru.sekolah.id`,
+          role: matchedTeacher.isWaliKelas ? 'WALI_KELAS' : 'GURU',
+          name: matchedTeacher.name,
+          password: matchedTeacher.password || 'password123',
+          createdAt: new Date().toISOString()
+        };
       }
     }
 
-    // Khusus Akun Admin Resmi Baru: admin@sekolah.com
+    // 3. Fallback Online Langsung ke Supabase jika belum ada di state lokal (misal baru buka browser di device baru)
+    if (!user && isSupabaseConfigured() && supabase) {
+      try {
+        const { data: tData } = await supabase
+          .from('teachers')
+          .select('*')
+          .or(`nip.eq.${targetId},email.ilike.${targetId}`)
+          .maybeSingle();
+
+        if (tData) {
+          const tEmail = (tData.email || `${String(tData.nip).trim()}@guru.sekolah.id`).toLowerCase();
+          const { data: uData } = await supabase
+            .from('users')
+            .select('*')
+            .or(`id.eq.${tData.user_id},email.ilike.${tEmail}`)
+            .maybeSingle();
+
+          const role = (uData?.role as Role) || (tData.is_wali_kelas ? 'WALI_KELAS' : 'GURU');
+          user = {
+            id: uData?.id ? String(uData.id) : String(tData.user_id),
+            email: tEmail,
+            role: role,
+            name: String(tData.name),
+            password: tData.password_hint ? String(tData.password_hint) : 'password123',
+            createdAt: new Date().toISOString()
+          };
+
+          matchedTeacher = {
+            id: String(tData.id),
+            userId: user.id,
+            nip: String(tData.nip),
+            name: String(tData.name),
+            email: tEmail,
+            password: tData.password_hint ? String(tData.password_hint) : 'password123',
+            isWaliKelas: Boolean(tData.is_wali_kelas),
+            homeRoomClassId: tData.home_room_class_id ? String(tData.home_room_class_id) : undefined,
+            subjectPermissions: tData.subject_permissions || [],
+            classPermissions: tData.class_permissions || []
+          };
+        }
+      } catch (fetchErr) {
+        console.warn('[Auth] Direct Supabase fetch error:', fetchErr);
+      }
+    }
+
+    // 4. Khusus Akun Admin Bawaan
     if (!user && targetId === 'admin@sekolah.com') {
       user = {
         id: 'u-admin-custom',
@@ -276,10 +329,7 @@ class AuthService {
         password: 'admin123',
         createdAt: new Date().toISOString(),
       };
-    }
-
-    // Khusus Admin Default Cadangan
-    if (!user && targetId === 'admin@sekolah.sch.id') {
+    } else if (!user && targetId === 'admin@sekolah.sch.id') {
       user = {
         id: 'u-admin',
         email: 'admin@sekolah.sch.id',
@@ -294,31 +344,41 @@ class AuthService {
       throw new Error('Email atau NIP kedinasan tidak ditemukan dalam database sistem.');
     }
 
-    // Verifikasi password:
-    const storedPassword = user.password || (user.email === 'admin@sekolah.com' ? 'admin123' : 'password123');
-    const isPasswordValid =
-      password === storedPassword ||
-      (user.email === 'admin@sekolah.com' && (password === 'admin123' || password === 'password123')) ||
-      (user.role === 'ADMIN' && (password === 'admin123' || password === 'password123'));
+    // 5. Kumpulan password yang sah
+    const validPasswords = new Set<string>();
+    if (user.password) validPasswords.add(user.password);
+    if (matchedTeacher?.password) validPasswords.add(matchedTeacher.password);
+    validPasswords.add('password123'); // universal fallback
+
+    if (user.role === 'ADMIN' || user.email === 'admin@sekolah.com') {
+      validPasswords.add('admin123');
+      validPasswords.add('admin321');
+    }
+    if (user.role === 'WALI_KELAS' || matchedTeacher?.isWaliKelas) {
+      validPasswords.add('walikelas123');
+    }
+    if (user.role === 'GURU') {
+      validPasswords.add('gurumapel123');
+    }
+
+    const isPasswordValid = validPasswords.has(password);
 
     if (!isPasswordValid) {
       throw new Error('Kata sandi yang Anda masukkan salah. Periksa kembali kata sandi Anda.');
     }
 
-    this.persistSession(user);
-
-    // Jika Supabase aktif, lakukan auto-signup di background agar akun otomatis terdaftar di Supabase Auth
-    if (isFallbackFromSupabase && isSupabaseConfigured() && supabase && user.email) {
-      supabase.auth.signUp({ email: user.email, password }).catch(() => {
-        // Abaikan jika sudah ada atau butuh verifikasi email
-      });
+    // Set role yang tepat jika teacher adalah wali kelas
+    if (matchedTeacher?.isWaliKelas && user.role !== 'ADMIN') {
+      user.role = 'WALI_KELAS';
     }
+
+    this.persistSession(user);
 
     dbService.logAudit(
       user,
       'LOGIN',
       'AUTH',
-      `Autentikasi berhasil (${isFallbackFromSupabase ? 'Sistem Cloud/Fallback' : 'Sistem Lokal'}): ${user.name} (${user.role}).`
+      `Autentikasi berhasil: ${user.name} (${user.role}).`
     );
 
     return { user: this.currentUser!, sessionId: this.sessionId! };

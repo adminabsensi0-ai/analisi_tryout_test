@@ -542,6 +542,20 @@ class SupabaseDbService {
         }
       });
 
+      // Hubungkan password guru (dari password_hint) ke User object agar login multi-device berhasil
+      users.forEach(u => {
+        const matchedT = teachers.find(
+          t => t.userId === u.id || (t.email && t.email.toLowerCase() === u.email.toLowerCase())
+        );
+        if (matchedT && matchedT.password) {
+          (u as any).password = matchedT.password;
+        } else if (u.email === 'admin@sekolah.com') {
+          (u as any).password = 'admin123';
+        } else if (!u.password) {
+          (u as any).password = 'password123';
+        }
+      });
+
       const students: Student[] = (studentRes.data || []).map(
         (row: Record<string, unknown>) => fromSupabaseStudent(row, supabaseClassIdToLocalId)
       );

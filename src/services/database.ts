@@ -262,10 +262,16 @@ export class DatabaseService {
         this.state.users.push(cloudUser);
         changed = true;
       } else {
-        // Update role/name if changed remotely
+        // Update role/name/password if changed remotely
         const local = this.state.users[idx];
-        if (local.role !== cloudUser.role || local.name !== cloudUser.name) {
-          this.state.users[idx] = { ...local, role: cloudUser.role, name: cloudUser.name };
+        const passChanged = (!local.password && cloudUser.password) || (cloudUser.password && local.password !== cloudUser.password);
+        if (local.role !== cloudUser.role || local.name !== cloudUser.name || passChanged) {
+          this.state.users[idx] = {
+            ...local,
+            role: cloudUser.role,
+            name: cloudUser.name,
+            password: cloudUser.password || local.password,
+          };
           changed = true;
         }
       }
