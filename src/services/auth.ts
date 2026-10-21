@@ -356,8 +356,9 @@ class AuthService {
     }
     if (user.role === 'WALI_KELAS' || matchedTeacher?.isWaliKelas) {
       validPasswords.add('walikelas123');
+      validPasswords.add('gurumapel123'); // wali kelas yang juga guru mapel
     }
-    if (user.role === 'GURU') {
+    if (user.role === 'GURU' || (matchedTeacher && !matchedTeacher?.isWaliKelas)) {
       validPasswords.add('gurumapel123');
     }
 
@@ -367,9 +368,12 @@ class AuthService {
       throw new Error('Kata sandi yang Anda masukkan salah. Periksa kembali kata sandi Anda.');
     }
 
-    // Set role yang tepat jika teacher adalah wali kelas
-    if (matchedTeacher?.isWaliKelas && user.role !== 'ADMIN') {
+    // Set role yang tepat berdasarkan data teacher terbaru dari cloud
+    if (matchedTeacher?.isWaliKelas && user.role !== 'ADMIN' && user.role !== 'GURU') {
       user.role = 'WALI_KELAS';
+    } else if (matchedTeacher && !matchedTeacher.isWaliKelas && user.role === 'WALI_KELAS') {
+      // Downgrade: teacher bukan wali kelas, tapi role masih WALI_KELAS (stale data)
+      user.role = 'GURU';
     }
 
     this.persistSession(user);
