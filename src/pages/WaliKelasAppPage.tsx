@@ -42,6 +42,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
   // Wali Kelas Notes State per student ID
   const [waliNotes, setWaliNotes] = useState<Record<string, string>>({});
+  const [selectedTryoutId, setSelectedTryoutId] = useState<string>('');
 
   // Local Reactive Database States
   const [teachers, setTeachers] = useState(dbService.getTeachers());
@@ -85,6 +86,14 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
   const assignedClassId = assignedClass.id;
 
+  // Dapatkan KKM acuan dari mata pelajaran di Admin
+  const rombelKKM = useMemo(() => {
+    if (allSubjects.length === 0) return 75.0;
+    // Rata-rata KKM dari seluruh mata pelajaran aktif yang diatur Admin
+    const validKKMs = allSubjects.map(s => Number(s.passingGrade) || 75.0);
+    return Math.round((validKKMs.reduce((a, b) => a + b, 0) / validKKMs.length) * 10) / 10;
+  }, [allSubjects]);
+
   // Scoped Tryouts: Hanya menampilkan tryouts yang menargetkan kelas binaan wali kelas
   const allTryouts = useMemo(() => {
     return rawTryouts.filter(t => {
@@ -126,7 +135,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
+    <div className="flex-1 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors min-h-full">
       
       {/* Toast Notification */}
       {successToast && (
@@ -151,7 +160,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                 Monitoring Nilai &amp; Performa Kelas {assignedClass.name}
               </h1>
               <p className="text-xs text-slate-300 max-w-2xl leading-relaxed mt-1">
-                Wali Kelas: <strong>{currentUser.name}</strong> · Total <strong>{activeStudentList.length} Siswa</strong> · KKM Rombel: <strong>75.0 Poin</strong>
+                Wali Kelas: <strong>{currentUser.name}</strong> · Total <strong>{activeStudentList.length} Siswa</strong> · KKM Acuan: <strong>{rombelKKM.toFixed(1)} Poin</strong>
               </p>
             </div>
 
@@ -170,7 +179,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                       });
                       const validScores = studentScores.filter(v => v !== '-').map(Number);
                       const avg = validScores.length > 0 ? (validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1) : '-';
-                      const status = validScores.length > 0 ? (Number(avg) >= 75 ? 'Tuntas' : 'Remedial') : 'Belum Ada Data';
+                      const status = validScores.length > 0 ? (Number(avg) >= rombelKKM ? 'Tuntas' : 'Remedial') : 'Belum Ada Data';
                       return `${s.nisn},"${s.name}",${studentScores.length > 0 ? studentScores.join(',') + ',' : ''}${avg},${status},"${waliNotes[s.id] || 'Siswa aktif mengikuti proses belajar.'}"`;
                     }).join("\n");
                   const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
@@ -278,7 +287,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
             const stScores = classScores.filter(sc => sc.studentId === st.id);
             if (stScores.length === 0) return false;
             const stAvg = stScores.reduce((acc, sc) => acc + (sc.calculatedScore || 0), 0) / stScores.length;
-            return stAvg >= 75.0;
+            return stAvg >= rombelKKM;
           }).length;
           const passPercentage = activeStudentList.length > 0 && hasScores
             ? Math.round((passingStudentsCount / activeStudentList.length) * 100)
@@ -287,7 +296,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
             const stScores = classScores.filter(sc => sc.studentId === st.id);
             if (stScores.length === 0) return false;
             const stAvg = stScores.reduce((acc, sc) => acc + (sc.calculatedScore || 0), 0) / stScores.length;
-            return stAvg < 75.0;
+            return stAvg < rombelKKM;
           }).length;
 
           return (
@@ -327,7 +336,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
                 <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tuntas KKM (&ge; 75.0)</span>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tuntas KKM (&ge; {rombelKKM.toFixed(1)})</span>
                     <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
                       <Award className="w-4 h-4" />
                     </div>
@@ -391,7 +400,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                   ) : (
                     <div className="p-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
                       <div className="flex items-center justify-between text-xs text-slate-500 font-mono">
-                        <span className="text-amber-600 dark:text-amber-400 font-bold">Garis KKM: 75.0 Poin</span>
+                        <span className="text-amber-600 dark:text-amber-400 font-bold">Garis KKM: {rombelKKM.toFixed(1)} Poin</span>
                         <span className="text-emerald-600 font-bold">Data Riil Supabase</span>
                       </div>
                       <div className="h-44 flex items-center justify-center text-xs text-slate-500">
@@ -466,6 +475,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
           // Subject-by-subject data
           const subjectBreakdown = allSubjects.map(sub => {
+            const subKKM = Number(sub.passingGrade) || 75.0;
             const toAvgs = allTryouts.map(to => {
               const scores = allScores.filter(sc => 
                 sc.tryoutId === to.id && 
@@ -473,8 +483,8 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                 activeStudentList.some(s => s.id === sc.studentId)
               );
               const avg = scores.length > 0 ? (scores.reduce((a, b) => a + (Number(b.score) || 0), 0) / scores.length) : null;
-              const passCount = scores.filter(s => (Number(s.score) || 0) >= 75).length;
-              const failCount = scores.filter(s => (Number(s.score) || 0) < 75).length;
+              const passCount = scores.filter(s => (Number(s.score) || 0) >= subKKM).length;
+              const failCount = scores.filter(s => (Number(s.score) || 0) < subKKM).length;
               return { tryoutId: to.id, avg, passCount, failCount, total: scores.length };
             });
 
@@ -483,11 +493,12 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
               sc.subjectId === sub.id && 
               activeStudentList.some(s => s.id === sc.studentId)
             );
-            const overallPass = allSubjScores.filter(s => (Number(s.score) || 0) >= 75).length;
-            const overallFail = allSubjScores.filter(s => (Number(s.score) || 0) < 75).length;
+            const overallPass = allSubjScores.filter(s => (Number(s.score) || 0) >= subKKM).length;
+            const overallFail = allSubjScores.filter(s => (Number(s.score) || 0) < subKKM).length;
 
             return {
               subject: sub,
+              subKKM,
               toAvgs,
               overallPass,
               overallFail,
@@ -564,7 +575,11 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                               ? 'Rata-Rata Multimapel Rombel' 
                               : (allSubjects.find(s => s.id === selectedSubjectFilter)?.name || 'Mata Pelajaran')}
                           </span>
-                          <span className="text-[11px] text-slate-400">· Standar KKM 75.0 Poin</span>
+                          <span className="text-[11px] text-slate-400">· Standar KKM {
+                            selectedSubjectFilter === 'ALL'
+                              ? `${rombelKKM.toFixed(1)} Poin`
+                              : `${(allSubjects.find(s => s.id === selectedSubjectFilter)?.passingGrade ?? 75).toFixed(1)} Poin`
+                          }</span>
                         </div>
                       </div>
 
@@ -601,9 +616,21 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                               <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
                               <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
 
-                              {/* KKM Line 75 */}
-                              <line x1="50" y1="95" x2="950" y2="95" stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
-                              <text x="35" y="99" textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">75</text>
+                              {/* KKM Line dynamic */}
+                              {(() => {
+                                const targetKKM = selectedSubjectFilter === 'ALL'
+                                  ? rombelKKM
+                                  : (allSubjects.find(s => s.id === selectedSubjectFilter)?.passingGrade ?? 75);
+                                const yPos = 260 - ((targetKKM / 100) * 220);
+                                return (
+                                  <>
+                                    <line x1="50" y1={yPos} x2="950" y2={yPos} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
+                                    <text x="35" y={yPos + 4} textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">
+                                      {targetKKM.toFixed(0)}
+                                    </text>
+                                  </>
+                                );
+                              })()}
 
                               <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
                               <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
@@ -657,8 +684,8 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                             <tr>
                               <th className="py-3 px-4 font-bold sticky top-0 left-0 bg-slate-100 dark:bg-slate-950">Mata Pelajaran</th>
                               <th className="py-3 px-4 text-center font-bold">Total Nilai Masuk</th>
-                              <th className="py-3 px-4 text-center font-bold">Tuntas (≥ 75)</th>
-                              <th className="py-3 px-4 text-center font-bold">Belum Tuntas (&lt; 75)</th>
+                              <th className="py-3 px-4 text-center font-bold">Tuntas (≥ KKM)</th>
+                              <th className="py-3 px-4 text-center font-bold">Belum Tuntas (&lt; KKM)</th>
                               <th className="py-3 px-4 text-right font-bold">Status</th>
                             </tr>
                           </thead>
@@ -714,8 +741,8 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
           if (tryoutOptions.length === 0 || subjectOptions.length === 0) {
             return (
               <div className="flex flex-col items-center justify-center py-20 text-center text-slate-500 dark:text-slate-400">
-                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
-                  <span className="text-3xl">📋</span>
+                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4 text-slate-400 dark:text-slate-500">
+                  <FileSpreadsheet className="w-8 h-8 stroke-[1.5]" />
                 </div>
                 <p className="font-semibold text-slate-700 dark:text-slate-300 mb-1">Belum Ada Data Buku Nilai</p>
                 <p className="text-xs max-w-sm">
@@ -767,8 +794,8 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
           };
 
           const activeKKM = gradebookSubject !== 'ALL'
-            ? (subjectOptions.find(s => s.id === gradebookSubject)?.passingGrade || 75)
-            : 75;
+            ? (subjectOptions.find(s => s.id === gradebookSubject)?.passingGrade || rombelKKM)
+            : rombelKKM;
 
           // Filter and Sort Students — overall bisa null jika belum ada data
           const processedStudents = filteredStudents
@@ -905,7 +932,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                       <option value="ALL">Semua Mata Pelajaran (Matriks Lengkap)</option>
                       {subjectOptions.map(s => (
                         <option key={s.id} value={s.id}>
-                          {s.name} (KKM: {s.passingGrade || 75})
+                          {s.name} (KKM: {s.passingGrade || rombelKKM})
                         </option>
                       ))}
                     </select>
@@ -990,7 +1017,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                             {subjectOptions.map(sub => (
                               <th key={sub.id} className="px-3 py-3 text-center whitespace-nowrap">
                                 {sub.name}
-                                <span className="block text-[10px] text-slate-400 font-normal font-mono">KKM {sub.passingGrade || 75}</span>
+                                <span className="block text-[10px] text-slate-400 font-normal font-mono">KKM {sub.passingGrade || rombelKKM}</span>
                               </th>
                             ))}
                           </>
@@ -1070,7 +1097,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                                 <>
                                   {subjectOptions.map(sub => {
                                     const val = getStudentSubjectScore(student.id, gradebookTO, sub.id);
-                                    const pass = val !== null && val >= (sub.passingGrade || 75);
+                                    const pass = val !== null && val >= (sub.passingGrade || rombelKKM);
                                     return (
                                       <td key={sub.id} className="px-3 py-3 text-center font-mono font-bold whitespace-nowrap">
                                         <span className={`px-2 py-1 rounded-lg ${val === null ? 'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800' : pass ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30'}`}>
@@ -1253,7 +1280,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                                     {sub.name}
                                   </td>
                                   {scores.map((val, idx) => {
-                                    const pass = val !== null && val >= (sub.passingGrade || 75);
+                                    const pass = val !== null && val >= (sub.passingGrade || rombelKKM);
                                     return (
                                       <td key={idx} className="p-2.5 text-center">
                                         <span className={`px-2 py-0.5 rounded font-bold ${val === null ? 'text-slate-400 bg-slate-100 dark:bg-slate-800' : pass ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40' : 'text-rose-600 bg-rose-50 dark:bg-rose-950/40'}`}>
@@ -1313,15 +1340,31 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                   </p>
                 </div>
 
-                <button
-                  onClick={() => {
-                    triggerToast('Seluruh catatan Wali Kelas berhasil disimpan.');
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer shrink-0"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Simpan Catatan Rapor</span>
-                </button>
+                <div className="flex items-center gap-2.5">
+                  {allTryouts.length > 0 && (
+                    <select
+                      value={selectedTryoutId || (allTryouts[0]?.id ?? '')}
+                      onChange={e => setSelectedTryoutId(e.target.value)}
+                      className="px-3 py-2 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                    >
+                      {allTryouts.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.title} ({t.code})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      triggerToast('Seluruh catatan Wali Kelas berhasil disimpan.');
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer shrink-0"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Simpan Catatan Rapor</span>
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-auto max-h-[440px] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs scrollbar-thin">
@@ -1354,7 +1397,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                       const scores = allSubjects.map(subj => getStudentSubjectScore(s.id, activeTOId, subj.id));
                       const validScores = scores.filter((v): v is number => v !== null);
                       const avg = validScores.length > 0 ? (validScores.reduce((a, b) => a + b, 0) / validScores.length) : null;
-                      const status = avg !== null ? (avg >= 75 ? 'TUNTAS' : 'REMEDIAL') : 'BELUM ADA DATA';
+                      const status = avg !== null ? (avg >= rombelKKM ? 'TUNTAS' : 'REMEDIAL') : 'BELUM ADA DATA';
 
                       return (
                         <tr key={s.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 ${isSelected ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : ''}`}>

@@ -139,7 +139,8 @@ function AppContent() {
         </div>
       )}
 
-      <main className={isDashboardRoute ? "flex-1 overflow-hidden flex flex-col min-h-0" : "flex-grow"}>
+      {/* Wali Kelas, Guru & Admin Dashboard pages scroll internally */}
+      <main className={activeRoute === '/admin' || activeRoute === '/guru' ? "flex-1 overflow-hidden flex flex-col min-h-0" : isDashboardRoute ? "flex-1 flex flex-col min-h-0 overflow-y-auto" : "flex-grow"}>
         {activeRoute === '/login' && (
           <ErrorBoundary>
             <LoginPage onLoginSuccess={handleLoginSuccess} onNavigate={navigateTo} returnTo={returnToQuery} />

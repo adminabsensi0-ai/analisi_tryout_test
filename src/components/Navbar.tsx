@@ -69,6 +69,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isAdmin = currentUser?.role === 'ADMIN';
   const isGuruOnly = currentUser?.role === 'GURU' && !isWaliKelas;
 
+  // Cek apakah guru yang bersangkutan juga mengajar mapel (memiliki hak akses mapel)
+  const teacherSubjects = teacherObj?.subjectPermissions || [];
+  const isGuruMapelAlso = isAdmin || teacherSubjects.length > 0;
+  // Dropdown ganti peran hanya tampil jika pengguna merangkap sebagai Wali Kelas DAN Guru Mapel
+  const showRoleSwitcher = currentUser && isWaliKelas && isGuruMapelAlso;
+
   const getRoleSubtitle = (user: User | null) => {
     if (!user) return 'Tamu';
     if (user.role === 'ADMIN') return 'Administrator';
@@ -153,8 +159,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
-            {/* Interactive Role Switcher Dropdown Menu for Dual-Role Users */}
-            {currentUser && isWaliKelas && (
+            {/* Interactive Role Switcher Dropdown Menu for Dual-Role Users (Wali Kelas + Guru Mapel) */}
+            {showRoleSwitcher && (
               <div className="relative">
                 <button
                   type="button"
@@ -324,13 +330,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <School className="w-4 h-4 shrink-0" />
                 <span>Dashboard Wali Kelas (/wali-kelas)</span>
               </button>
-              <button
-                onClick={() => { onNavigate('/guru'); setMobileMenuOpen(false); }}
-                className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-md font-medium cursor-pointer ${currentPath === '/guru' ? 'bg-teal-600 text-white font-bold' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-              >
-                <BookOpen className="w-4 h-4 shrink-0" />
-                <span>Modul Guru Mapel (/guru)</span>
-              </button>
+              {isGuruMapelAlso && (
+                <button
+                  onClick={() => { onNavigate('/guru'); setMobileMenuOpen(false); }}
+                  className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-md font-medium cursor-pointer ${currentPath === '/guru' ? 'bg-teal-600 text-white font-bold' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                >
+                  <BookOpen className="w-4 h-4 shrink-0" />
+                  <span>Modul Guru Mapel (/guru)</span>
+                </button>
+              )}
             </>
           )}
 
