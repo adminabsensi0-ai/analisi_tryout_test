@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  LogIn, Lock, Mail, ShieldAlert, GraduationCap,
+  LogIn, Lock, ShieldAlert, GraduationCap,
   CheckCircle2, RefreshCw, Award, Search, Calendar, UserCheck,
   Eye, EyeOff
 } from 'lucide-react';
@@ -18,7 +18,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
   const [activeTab, setActiveTab] = useState<'STAFF_LOGIN' | 'STUDENT_LOOKUP'>('STAFF_LOGIN');
   
   // Staff Login State (Default empty for clean manual entry)
-  const [email, setEmail] = useState('');
+  const [nip, setNip] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -37,13 +37,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
     setLoading(true);
 
     try {
-      const session = await authService.login(email, password);
+      const session = await authService.login(nip, password);
       setSuccessNotice(`Autentikasi Berhasil! Mengalihkan ke panel ${session.user.role}...`);
       setTimeout(() => {
         onLoginSuccess(session.user);
       }, 350);
     } catch (err: any) {
-      setError(err?.message || 'Gagal masuk. Periksa kembali email dan kata sandi Anda.');
+      setError(err?.message || 'Gagal masuk. Periksa kembali NIP dan kata sandi Anda.');
     } finally {
       setLoading(false);
     }
@@ -136,18 +136,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Email atau NIP Kedinasan
+                    NIP Kedinasan
                   </label>
                   <div className="relative">
                     <input
                       type="text"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="Masukkan email atau NIP kedinasan..."
+                      value={nip}
+                      onChange={e => setNip(e.target.value)}
+                      placeholder="Masukkan NIP kedinasan atau nama pengguna..."
                       className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                       required
                     />
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    <UserCheck className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                   </div>
                 </div>
 

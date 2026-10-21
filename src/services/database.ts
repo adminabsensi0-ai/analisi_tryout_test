@@ -427,7 +427,15 @@ export class DatabaseService {
           changed = true;
         } else {
           const local = this.state.examPackages[idx];
-          if (local.title !== cloudPkg.title || local.status !== cloudPkg.status || local.updatedAt !== cloudPkg.updatedAt) {
+          // Compare subjects' googleSheetUrl as well so URL changes sync across devices
+          const localSubsJson = JSON.stringify((local.subjects || []).map((s: any) => ({ code: s.code, url: s.googleSheetUrl })));
+          const cloudSubsJson = JSON.stringify((cloudPkg.subjects || []).map((s: any) => ({ code: s.code, url: s.googleSheetUrl })));
+          if (
+            local.title !== cloudPkg.title ||
+            local.status !== cloudPkg.status ||
+            local.updatedAt !== cloudPkg.updatedAt ||
+            localSubsJson !== cloudSubsJson
+          ) {
             this.state.examPackages[idx] = { ...local, ...cloudPkg, id: local.id };
             changed = true;
           }
@@ -445,7 +453,13 @@ export class DatabaseService {
           changed = true;
         } else {
           const local = this.state.tryouts[idx];
-          if (local.title !== cloudTo.title || local.status !== cloudTo.status) {
+          if (
+            local.title !== cloudTo.title ||
+            local.status !== cloudTo.status ||
+            local.googleSheetUrl !== cloudTo.googleSheetUrl ||
+            local.googleFormUrl !== cloudTo.googleFormUrl ||
+            JSON.stringify(local.scoringConfig) !== JSON.stringify(cloudTo.scoringConfig)
+          ) {
             this.state.tryouts[idx] = { ...local, ...cloudTo, id: local.id };
             changed = true;
           }
