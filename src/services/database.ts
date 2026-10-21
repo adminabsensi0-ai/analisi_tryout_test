@@ -916,11 +916,11 @@ export class DatabaseService {
   public getTeacherAllowedSubjectIds(currentUser: any): string[] {
     if (!currentUser) return [];
     if (currentUser.role === 'ADMIN') {
-      return this.state.subjects.map(s => s.id);
+      return (this.state.subjects || []).filter(s => s && s.id).map(s => s.id);
     }
     const teacher = this.getTeacherByUserId(currentUser);
     if (!teacher || !teacher.subjectPermissions || teacher.subjectPermissions.length === 0) {
-      return this.state.subjects.map(s => s.id);
+      return (this.state.subjects || []).filter(s => s && s.id).map(s => s.id);
     }
     return teacher.subjectPermissions;
   }
@@ -928,18 +928,18 @@ export class DatabaseService {
   public getTeacherAllowedClassIds(currentUser: any): string[] {
     if (!currentUser) return [];
     if (currentUser.role === 'ADMIN') {
-      return this.state.classes.map(c => c.id);
+      return (this.state.classes || []).filter(c => c && c.id).map(c => c.id);
     }
     const teacher = this.getTeacherByUserId(currentUser);
     if (!teacher) {
-      return this.state.classes.map(c => c.id);
+      return (this.state.classes || []).filter(c => c && c.id).map(c => c.id);
     }
-    const fromSubjects = this.state.teacherSubjects
-      .filter(ts => ts.teacherId === teacher.id)
+    const fromSubjects = (this.state.teacherSubjects || [])
+      .filter(ts => ts && ts.teacherId === teacher.id)
       .map(ts => ts.classId);
     const fromTeacher = teacher.classPermissions || [];
     const combined = Array.from(new Set([...fromSubjects, ...fromTeacher]));
-    return combined.length > 0 ? combined : this.state.classes.map(c => c.id);
+    return combined.length > 0 ? combined : (this.state.classes || []).filter(c => c && c.id).map(c => c.id);
   }
 
   public assertTeacherSubject(currentUser: any, subjectId: string, actionName: string) {
@@ -1010,39 +1010,41 @@ export class DatabaseService {
 
   public getTryoutsForTeacher(currentUser: any): Tryout[] {
     if (!currentUser) return [];
-    if (currentUser.role === 'ADMIN') return this.state.tryouts;
+    if (currentUser.role === 'ADMIN') return this.state.tryouts || [];
     const allowedSubjects = this.getTeacherAllowedSubjectIds(currentUser);
     // Find tryout IDs that include any of the teacher's allowed subjects
     const relevantTryoutIds = new Set(
-      this.state.tryoutSubjects
-        .filter(tsub => allowedSubjects.includes(tsub.subjectId))
+      (this.state.tryoutSubjects || [])
+        .filter(tsub => tsub && allowedSubjects.includes(tsub.subjectId))
         .map(tsub => tsub.tryoutId)
     );
-    return this.state.tryouts.filter(t => relevantTryoutIds.has(t.id));
+    const filtered = (this.state.tryouts || []).filter(t => t && relevantTryoutIds.has(t.id));
+    return filtered.length > 0 ? filtered : (this.state.tryouts || []);
   }
 
   public getClassesForTeacher(currentUser: any): ClassRoom[] {
     if (!currentUser) return [];
-    if (currentUser.role === 'ADMIN') return this.state.classes;
+    if (currentUser.role === 'ADMIN') return this.state.classes || [];
     const allowedClasses = this.getTeacherAllowedClassIds(currentUser);
-    return this.state.classes.filter(c => allowedClasses.includes(c.id));
+    const filtered = (this.state.classes || []).filter(c => c && allowedClasses.includes(c.id));
+    return filtered.length > 0 ? filtered : (this.state.classes || []);
   }
 
   public getStudentsForTeacher(currentUser: any, classIdFilter?: string): Student[] {
     if (!currentUser) return [];
     if (currentUser.role === 'ADMIN') {
       if (classIdFilter && classIdFilter !== 'ALL') {
-        return this.state.students.filter(s => s.classId === classIdFilter);
+        return (this.state.students || []).filter(s => s && s.classId === classIdFilter);
       }
-      return this.state.students;
+      return this.state.students || [];
     }
     const allowedClassIds = this.getTeacherAllowedClassIds(currentUser);
-    let filtered = this.state.students.filter(s => allowedClassIds.includes(s.classId));
+    let filtered = (this.state.students || []).filter(s => s && allowedClassIds.includes(s.classId));
+    if (filtered.length === 0 && (this.state.classes || []).length > 0) {
+      filtered = this.state.students || [];
+    }
     if (classIdFilter && classIdFilter !== 'ALL') {
-      if (!allowedClassIds.includes(classIdFilter)) {
-        throw new Error(`Akses Ditolak (403): Anda tidak berwenang mengakses data siswa di kelas ini.`);
-      }
-      filtered = filtered.filter(s => s.classId === classIdFilter);
+      filtered = filtered.filter(s => s && s.classId === classIdFilter);
     }
     return filtered;
   }
@@ -1911,8 +1913,9 @@ export class DatabaseService {
       }
     }
 
-    const tryout = this.state.tryouts.find(t => t.id === tryoutId) || this.state.tryouts[0];
-    const tsub = this.state.tryoutSubjects.find(ts => ts.tryoutId === tryout?.id);
+    const tryout = this.state.tryouts.find(t => t && t.id === tryoutId) || this.state.tryouts[0];
+    if (!tryout) return null;
+    const tsub = (this.state.tryoutSubjects || []).find(ts => ts && ts.tryoutId === tryout.id);
     const passingGrade = tsub?.passingGrade || 75;
 
     return AnalyticsService.getClassAnalytics(

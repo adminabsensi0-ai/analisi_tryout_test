@@ -69,13 +69,29 @@ export class ErrorBoundary extends React.Component<Props, State> {
             {/* Error Details */}
             <div className="p-6 space-y-4">
               {this.state.error && (
-                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl">
-                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
                     Detail Error
                   </p>
-                  <p className="text-xs font-mono text-rose-700 dark:text-rose-300 break-all">
+                  <p className="text-xs font-mono text-rose-700 dark:text-rose-300 break-all font-bold">
                     {this.state.error.message}
                   </p>
+                  {this.state.error.stack && (
+                    <div className="mt-2 text-left">
+                      <p className="text-[10px] font-mono text-slate-400 mb-1">Stack Trace:</p>
+                      <pre className="text-[10px] font-mono text-rose-600 dark:text-rose-400 p-2 bg-rose-50/50 dark:bg-rose-950/30 rounded border border-rose-200 dark:border-rose-900/40 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
+                        {this.state.error.stack}
+                      </pre>
+                    </div>
+                  )}
+                  {this.state.errorInfo?.componentStack && (
+                    <div className="mt-2 text-left">
+                      <p className="text-[10px] font-mono text-slate-400 mb-1">Component Stack:</p>
+                      <pre className="text-[10px] font-mono text-slate-500 p-2 bg-slate-100 dark:bg-slate-900 rounded overflow-x-auto max-h-36 overflow-y-auto whitespace-pre-wrap">
+                        {this.state.errorInfo.componentStack}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               )}
 

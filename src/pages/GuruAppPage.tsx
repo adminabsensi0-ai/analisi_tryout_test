@@ -4085,8 +4085,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                   {/* SUB-TAB 2: CLASS PROGRESS TRACKING */}
                   {progressSubTab === 'CLASS' && (() => {
-                    const classProg = dbService.getClassProgress(selectedClassForProgress || classes[0]?.id || 'c-xii-ipa1', currentUser);
-                    const selectedClassObj = classes.find(c => c.id === (selectedClassForProgress || classes[0]?.id));
+                    const targetClassId = selectedClassForProgress || classes[0]?.id || '';
+                    const classProg = targetClassId ? dbService.getClassProgress(targetClassId, currentUser) : null;
+                    const selectedClassObj = classes.find(c => c.id === targetClassId);
                     return (
                       <div className="space-y-5">
                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs transition-colors">
@@ -5403,6 +5404,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       <button
                         onClick={() => {
                           const activeTo = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
+                          if (!activeTo) {
+                            triggerError('Data TryOut belum tersedia untuk diekspor.');
+                            return;
+                          }
                           const scores = dbService.getScoresByTryout(selectedTryoutId);
                           const answers = dbService.getAnswers().filter(a => a.tryoutId === selectedTryoutId);
                           const qaList = dbService.getQuestionAnalysis(selectedTryoutId, 'ALL', 'ALL', currentUser);
@@ -5448,6 +5453,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         onClick={() => {
                           const activeTo = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
                           const activeCls = classes.find(c => c.id === classFilter) || classes[0];
+                          if (!activeCls || !activeTo) {
+                            triggerError('Data kelas atau TryOut belum tersedia untuk diekspor.');
+                            return;
+                          }
                           const scores = dbService.getScoresByTryout(selectedTryoutId);
                           const qaList = dbService.getQuestionAnalysis(selectedTryoutId, 'ALL', activeCls.id, currentUser);
                           const classAnalytics = dbService.getClassAnalytics(activeCls.id, selectedTryoutId, currentUser);
@@ -6359,7 +6368,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <div className="text-[11px] text-slate-600 dark:text-slate-400">
                           Tipe Penilaian:{' '}
                           <strong className="text-indigo-700 dark:text-indigo-400 font-mono">
-                            {activeTryout?.scoringConfig.scoringType}
+                            {activeTryout?.scoringConfig?.scoringType || 'STANDARD'}
                           </strong>
                         </div>
                       </div>
@@ -6369,21 +6378,21 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <div className="grid grid-cols-3 gap-2 text-[11px]">
                           <div>
                             <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Benar</span>
-                            <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">+{activeTryout?.scoringConfig.correctScore}</span>
+                            <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">+{activeTryout?.scoringConfig?.correctScore ?? 1}</span>
                           </div>
                           <div>
                             <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Salah</span>
-                            <span className="font-bold font-mono text-rose-700 dark:text-rose-400">{activeTryout?.scoringConfig.wrongScore}</span>
+                            <span className="font-bold font-mono text-rose-700 dark:text-rose-400">{activeTryout?.scoringConfig?.wrongScore ?? 0}</span>
                           </div>
                           <div>
                             <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Kosong</span>
-                            <span className="font-bold font-mono text-slate-700 dark:text-slate-300">{activeTryout?.scoringConfig.unansweredScore}</span>
+                            <span className="font-bold font-mono text-slate-700 dark:text-slate-300">{activeTryout?.scoringConfig?.unansweredScore ?? 0}</span>
                           </div>
                         </div>
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 pt-1">
                           Penalti Negatif:{' '}
-                          <span className={activeTryout?.scoringConfig.allowNegativeMarking ? 'text-rose-700 dark:text-rose-400 font-bold' : 'text-slate-600 dark:text-slate-400'}>
-                            {activeTryout?.scoringConfig.allowNegativeMarking ? 'AKTIF (Minus)' : 'TIDAK AKTIF (0 Poin)'}
+                          <span className={activeTryout?.scoringConfig?.allowNegativeMarking ? 'text-rose-700 dark:text-rose-400 font-bold' : 'text-slate-600 dark:text-slate-400'}>
+                            {activeTryout?.scoringConfig?.allowNegativeMarking ? 'AKTIF (Minus)' : 'TIDAK AKTIF (0 Poin)'}
                           </span>
                         </div>
                       </div>
@@ -6393,7 +6402,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <div className="text-[11px] text-slate-700 dark:text-slate-300">
                           Skor Maksimum (Max Score):{' '}
                           <span className="font-bold font-mono text-indigo-700 dark:text-indigo-400 text-sm">
-                            {activeTryout?.scoringConfig.maxScore}
+                            {activeTryout?.scoringConfig?.maxScore ?? 100}
                           </span>
                         </div>
                         <div className="text-[10px] text-slate-500 dark:text-slate-400">

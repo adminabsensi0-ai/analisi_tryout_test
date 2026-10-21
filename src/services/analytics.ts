@@ -671,15 +671,16 @@ export class AnalyticsService {
     competencies: Competency[],
     passingGrade = 75
   ): ClassAnalyticsResult | null {
-    const classRoom = classes.find(c => c.id === classId);
+    const classRoom = classes.find(c => c && c.id === classId);
     if (!classRoom) return null;
 
-    const tryout = tryouts.find(t => t.id === tryoutId) || tryouts[0];
-    const ay = academicYears.find(a => a.id === classRoom.academicYearId);
+    const tryout = tryouts.find(t => t && t.id === tryoutId) || tryouts[0];
+    if (!tryout) return null;
+    const ay = classRoom.academicYearId ? academicYears.find(a => a && a.id === classRoom.academicYearId) : undefined;
 
-    const classStudents = students.filter(s => s.classId === classId);
+    const classStudents = students.filter(s => s && s.classId === classId);
     const classStudentIds = new Set(classStudents.map(s => s.id));
-    const classScores = scores.filter(s => s.tryoutId === tryout.id && classStudentIds.has(s.studentId));
+    const classScores = scores.filter(s => s && s.tryoutId === tryout.id && classStudentIds.has(s.studentId));
 
     const studentCount = classScores.length;
     const scoreValues = classScores.map(s => s.calculatedScore).sort((a, b) => a - b);

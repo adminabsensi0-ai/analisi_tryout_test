@@ -115,9 +115,9 @@ export interface ProgressTestSuiteResult {
 
 export class ProgressService {
   private static sortTryoutsChronologically(tryouts: Tryout[]): Tryout[] {
-    return [...tryouts].sort((a, b) => {
-      const dateA = a.startDate || a.id;
-      const dateB = b.startDate || b.id;
+    return [...(tryouts || [])].filter(t => t && t.id).sort((a, b) => {
+      const dateA = a.startDate || a.id || '';
+      const dateB = b.startDate || b.id || '';
       return dateA.localeCompare(dateB);
     });
   }
@@ -229,10 +229,10 @@ export class ProgressService {
    * 2. CLASS PROGRESS TRACKING (Average, Attainment, Competency Progression)
    */
   public static getClassProgress(classId: string, dbState: any, currentUser?: User): ClassProgressResult | null {
-    const cls = dbState.classes.find((c: ClassRoom) => c.id === classId);
+    const cls = (dbState.classes || []).find((c: ClassRoom) => c && c.id === classId);
     if (!cls) return null;
 
-    const classStudents = dbState.students.filter((s: Student) => s.classId === classId);
+    const classStudents = (dbState.students || []).filter((s: Student) => s && s.classId === classId);
     const classStudentIds = new Set(classStudents.map((s: Student) => s.id));
     const tryouts = this.sortTryoutsChronologically(dbState.tryouts);
 
