@@ -101,6 +101,7 @@ function toSupabaseStudent(s: Student, supabaseClassId: string): Record<string, 
     phone: s.phone || null,
     birth_date: s.birthDate || null,
     target_score: s.targetScore || 80,
+    is_answer_key_account: Boolean(s.isAnswerKeyAccount),
   };
   if (isValidUuid(s.id)) {
     payload.id = s.id;
@@ -125,6 +126,7 @@ function fromSupabaseStudent(
     phone: row.phone ? String(row.phone) : undefined,
     birthDate: row.birth_date ? String(row.birth_date) : undefined,
     targetScore: row.target_score ? Number(row.target_score) : undefined,
+    isAnswerKeyAccount: Boolean(row.is_answer_key_account),
   };
 }
 

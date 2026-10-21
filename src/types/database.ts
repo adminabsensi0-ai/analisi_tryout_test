@@ -76,6 +76,8 @@ export interface Student {
   email?: string;
   phone?: string;
   targetScore?: number;
+  /** Menandakan akun khusus ini digunakan oleh Guru sebagai Kunci Jawaban resmi (dikecualikan dari statistik & rapor) */
+  isAnswerKeyAccount?: boolean;
 }
 
 export interface ClassRoom {
@@ -403,6 +405,9 @@ export interface SheetImportSummary {
   mismatchCount: number;
   duplicateCount: number;
   errorDetails: string[];
+  answerKeyDetected?: boolean;
+  answerKeyStudentName?: string;
+  answerKeyExtractedCount?: number;
 }
 
 export interface SchoolProfile {

@@ -117,10 +117,10 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
     });
   }, [rawTryouts, assignedClassId, assignedClass.gradeLevel]);
 
-  // Filter students strictly in homeroom class (NO FALLBACK SLICE)
+  // Filter students strictly in homeroom class (excluding answer key accounts)
   const activeStudentList = useMemo(() => {
     if (!assignedClassId) return [];
-    return allStudents.filter(s => s.classId === assignedClassId);
+    return allStudents.filter(s => s.classId === assignedClassId && !s.isAnswerKeyAccount);
   }, [allStudents, assignedClassId]);
 
   // Helper function to lookup student score safely across all tabs

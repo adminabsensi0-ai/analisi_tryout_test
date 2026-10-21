@@ -65,6 +65,39 @@ export interface ScoringTestCaseResult {
 
 export class ScoringService {
   /**
+   * Universal answer matching:
+   * 1. Exact match (case-insensitive, trimmed)
+   * 2. Complex Multiple Choice / Checkbox: comma-separated items sorted (e.g. "A, C" === "C, A")
+   * 3. True / False normalization (e.g. "BENAR" === "TRUE" === "B", "SALAH" === "FALSE" === "S")
+   */
+  public static isAnswerMatching(studentAns: string, correctAns: string): boolean {
+    const s = (studentAns || '').trim();
+    const c = (correctAns || '').trim();
+    if (!s || !c) return false;
+
+    // Exact string match (case-insensitive)
+    if (s.toUpperCase() === c.toUpperCase()) return true;
+
+    // Checkbox / Complex multiple-choice (comma-separated options)
+    if (s.includes(',') || c.includes(',')) {
+      const sParts = s.split(',').map(p => p.trim().toUpperCase()).filter(Boolean).sort();
+      const cParts = c.split(',').map(p => p.trim().toUpperCase()).filter(Boolean).sort();
+      if (sParts.length === cParts.length && sParts.every((val, idx) => val === cParts[idx])) {
+        return true;
+      }
+    }
+
+    // True/False or Benar/Salah mapping
+    const boolMap: Record<string, string> = {
+      B: 'BENAR', TRUE: 'BENAR', T: 'BENAR', '1': 'BENAR', YA: 'BENAR',
+      S: 'SALAH', FALSE: 'SALAH', F: 'SALAH', '0': 'SALAH', TIDAK: 'SALAH',
+    };
+    const sNorm = boolMap[s.toUpperCase()] || s.toUpperCase();
+    const cNorm = boolMap[c.toUpperCase()] || c.toUpperCase();
+    return sNorm === cNorm;
+  }
+
+  /**
    * Deterministic Score Calculation Engine adhering strictly to /docs/SCORING_RULES.md
    * Supports:
    * - Equal weighting vs Custom weighting
@@ -96,6 +129,8 @@ export class ScoringService {
       // Maximum possible raw points accumulates positive marks for correct responses
       maxPossibleRawScore += config.correctScore * questionWeight;
 
+      const isCorrect = this.isAnswerMatching(studentAns, correctAns);
+
       if (!studentAns) {
         totalUnanswered++;
         const itemScore = config.unansweredScore * questionWeight;
@@ -107,7 +142,7 @@ export class ScoringService {
           weight: questionWeight,
           score: itemScore,
         };
-      } else if (studentAns === correctAns) {
+      } else if (isCorrect) {
         totalCorrect++;
         const itemScore = config.correctScore * questionWeight;
         rawScoreSum += itemScore;

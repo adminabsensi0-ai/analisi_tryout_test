@@ -144,35 +144,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [newToGFormUrl, setNewToGFormUrl] = useState('');
   const [newToGSheetUrl, setNewToGSheetUrl] = useState('');
   const [newToPackageId, setNewToPackageId] = useState('');
-  // Answer key state for the tryout modal
-  const [newToQuestionCount, setNewToQuestionCount] = useState(40);
-  const [newToAnswerKey, setNewToAnswerKey] = useState<string[]>(Array(40).fill(''));
-  const [answerKeyUploadErrors, setAnswerKeyUploadErrors] = useState<string[]>([]);
-  const [answerKeyUploadSuccess, setAnswerKeyUploadSuccess] = useState(false);
-
-  // Sync answer key length when question count changes
-  const handleQuestionCountChange = (count: number) => {
-    setNewToQuestionCount(count);
-    setNewToAnswerKey(prev => {
-      const next = Array(count).fill('');
-      return next.map((_, i) => prev[i] ?? '');
-    });
-  };
-
-  const handleAnswerKeyExcelUpload = async (file: File) => {
-    setAnswerKeyUploadErrors([]);
-    setAnswerKeyUploadSuccess(false);
-    try {
-      const result = await ExportService.parseAnswerKeyFromExcel(file);
-      setNewToAnswerKey(result.answerKey);
-      setNewToQuestionCount(result.totalQuestions);
-      setAnswerKeyUploadErrors(result.errors);
-      setAnswerKeyUploadSuccess(true);
-      triggerToast(`Kunci jawaban berhasil dimuat: ${result.totalQuestions} soal.`);
-    } catch (err) {
-      setAnswerKeyUploadErrors([(err as Error).message]);
-    }
-  };
 
   const handleCreateTryoutPackage = () => {
     if (!newToTitle.trim()) {
@@ -195,7 +166,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       scoringConfig: {
         scoringType: 'EQUAL_WEIGHT',
         maxScore: 100,
-        correctScore: Math.round(100 / (newToQuestionCount || 40)),
+        correctScore: 1,
         wrongScore: 0,
         unansweredScore: 0,
         allowNegativeMarking: false,
@@ -206,7 +177,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       description: `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.${
         selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''
       }`,
-      answerKey: newToAnswerKey,
       packageId: selectedPkg?.id,
       targetClassIds: selectedPkg?.targetClassIds,
     };
@@ -237,14 +207,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setNewToGFormUrl('');
     setNewToGSheetUrl('');
     setNewToPackageId('');
-    setNewToAnswerKey(Array(40).fill(''));
-    setNewToQuestionCount(40);
-    setAnswerKeyUploadErrors([]);
-    setAnswerKeyUploadSuccess(false);
     triggerToast(
       `Paket TryOut '${newToObj.title}' berhasil ditambahkan${
         selectedPkg ? ` ke dalam wadah '${selectedPkg.title}'` : ''
-      }! Kunci jawaban ${newToAnswerKey.filter(a => a !== '').length}/${newToQuestionCount} soal tersimpan.`
+      }! Kunci jawaban akan otomatis terdeteksi dari Google Sheet.`
     );
   };
 
@@ -535,7 +501,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       const mappingConfig = GoogleIntegrationService.detectColumnMappings(headers, tryoutQuestions);
 
       // 5. Validate rows — produces previewItems with VALID / WARNING_MISMATCH / ERROR status
-      const allStudentsNow = dbService.getStudentsForTeacher(currentUser);
+      const allStudentsNow = dbService.getStudents();
       const allScoresNow = dbService.getScores();
       const validationResult = GoogleIntegrationService.validateSheetImportDetailed(
         rows,
@@ -546,6 +512,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         allScoresNow,
         mappingConfig
       );
+
+      if (validationResult.summary.answerKeyDetected) {
+        triggerToast(`Kunci Jawaban Resmi diperbarui dari respon "${validationResult.summary.answerKeyStudentName}" (${validationResult.summary.answerKeyExtractedCount} butir soal).`);
+      }
 
       const importableItems = validationResult.previewItems.filter(
         item => item.status === 'VALID' || item.status === 'WARNING_MISMATCH'
@@ -1017,7 +987,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       activeTryout,
       activeSubject,
       relevantQuestions,
-      students,
+      dbService.getStudents(),
       existingScores,
       columnMappings
     );
@@ -1034,7 +1004,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setPreviewItems(valRes.previewItems);
     setValidationSummary(valRes.summary);
     setImportStage('PREVIEW');
-    triggerToast(`Validasi selesai: ${valRes.summary.successCount} valid, ${valRes.summary.failedCount} gagal.`);
+    
+    if (valRes.summary.answerKeyDetected) {
+      triggerToast(`Kunci Jawaban dideteksi dari akun resmi "${valRes.summary.answerKeyStudentName}" (${valRes.summary.answerKeyExtractedCount} soal) dan otomatis diterapkan.`);
+    } else {
+      triggerToast(`Validasi selesai: ${valRes.summary.successCount} valid, ${valRes.summary.failedCount} gagal.`);
+    }
   };
 
   // Step 4 -> Step 5 (Confirmation & Idempotent Persistence)
@@ -6033,6 +6008,19 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         </div>
                       )}
 
+                      {/* Answer Key Auto-Detected Banner */}
+                      {validationSummary && validationSummary.answerKeyDetected && (
+                        <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 rounded-xl p-3.5 flex items-start space-x-2.5 text-xs text-emerald-900 dark:text-emerald-300">
+                          <Key className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold block text-sm">
+                              Kunci Jawaban Resmi Dideteksi &amp; Diterapkan Otomatis!
+                            </span>
+                            Kunci jawaban Try Out berhasil disinkronkan dari respon akun resmi <strong>"{validationSummary.answerKeyStudentName}"</strong> ({validationSummary.answerKeyExtractedCount} butir soal). Baris ini secara otomatis dikecualikan dari perhitungan nilai &amp; peringkat siswa.
+                          </div>
+                        </div>
+                      )}
+
                       {/* Mismatch Warning Box */}
                       {validationSummary && validationSummary.mismatchCount > 0 && (
                         <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 rounded-xl p-3.5 flex items-start space-x-2.5 text-xs text-amber-900 dark:text-amber-300">
@@ -7736,122 +7724,46 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 </div>
               </div>
 
-              {/* ── Kunci Jawaban Section ── */}
-              <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
-                {/* Section Header */}
-                <div className="bg-slate-50 dark:bg-slate-800/60 px-4 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <Key className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                    <span className="font-bold text-slate-800 dark:text-slate-100">Kunci Jawaban</span>
-                    <span className="text-[10px] bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 px-2 py-0.5 rounded-full font-semibold">
-                      {newToAnswerKey.filter(a => a !== '').length}/{newToQuestionCount} terisi
-                    </span>
+              {/* ── Panduan Kunci Jawaban Otomatis ── */}
+              <div className="p-4 bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-teal-950/40 dark:to-emerald-950/30 rounded-2xl border border-teal-200 dark:border-teal-800/80 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold shrink-0">
+                    <Key className="w-4 h-4" />
                   </div>
-                  <div className="flex items-center gap-2">
-                    {/* Download Template */}
-                    <button
-                      type="button"
-                      onClick={() => ExportService.downloadAnswerKeyTemplate(
-                        newToCode.trim() || 'TO-BARU',
-                        newToTitle.trim() || 'Paket TryOut',
-                        newToQuestionCount
-                      )}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-900 transition-colors cursor-pointer"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Unduh Template</span>
-                    </button>
-                    {/* Upload Excel */}
-                    <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900 transition-colors cursor-pointer">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Upload dari Excel</span>
-                      <input
-                        type="file"
-                        accept=".xlsx,.xls"
-                        className="hidden"
-                        onChange={e => {
-                          const file = e.target.files?.[0];
-                          if (file) handleAnswerKeyExcelUpload(file);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
+                  <div>
+                    <h4 className="font-bold text-slate-900 dark:text-white text-xs">
+                      Kunci Jawaban Otomatis via Akun Resmi
+                    </h4>
+                    <p className="text-[11px] text-teal-700 dark:text-teal-300">
+                      Anda tidak perlu menginput atau mengunggah file Excel kunci jawaban secara manual.
+                    </p>
                   </div>
                 </div>
 
-                {/* Upload feedback */}
-                {answerKeyUploadSuccess && answerKeyUploadErrors.length === 0 && (
-                  <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 border-b border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                    <span>Kunci jawaban berhasil dimuat dari Excel.</span>
+                <div className="p-3 bg-white/80 dark:bg-slate-900/80 rounded-xl border border-teal-150 dark:border-teal-900/60 text-[11px] text-slate-600 dark:text-slate-300 space-y-1.5 leading-relaxed">
+                  <div className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                    <span>Cara Kerja Sistem:</span>
                   </div>
-                )}
-                {answerKeyUploadErrors.length > 0 && (
-                  <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 space-y-0.5">
-                    <div className="font-bold flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Peringatan ({answerKeyUploadErrors.length} baris):</div>
-                    {answerKeyUploadErrors.slice(0, 3).map((e, i) => <div key={i}>• {e}</div>)}
-                    {answerKeyUploadErrors.length > 3 && <div>• ...dan {answerKeyUploadErrors.length - 3} peringatan lainnya</div>}
-                  </div>
-                )}
-
-                {/* Answer Key Grid — scrollable, 5 columns */}
-                <div className="p-3 max-h-56 overflow-y-auto">
-                  <div className="grid gap-1" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-                    {Array.from({ length: newToQuestionCount }, (_, i) => (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border transition-colors ${
-                          newToAnswerKey[i]
-                            ? 'bg-teal-50 dark:bg-teal-950/40 border-teal-300 dark:border-teal-700'
-                            : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 w-5 shrink-0 text-right">{i + 1}.</span>
-                        <select
-                          value={newToAnswerKey[i] ?? ''}
-                          onChange={e => {
-                            const updated = [...newToAnswerKey];
-                            updated[i] = e.target.value;
-                            setNewToAnswerKey(updated);
-                          }}
-                          className="flex-1 min-w-0 bg-transparent border-0 text-[11px] font-bold text-teal-700 dark:text-teal-300 focus:outline-none cursor-pointer appearance-none text-center"
-                        >
-                          <option value="">—</option>
-                          <option value="A">A</option>
-                          <option value="B">B</option>
-                          <option value="C">C</option>
-                          <option value="D">D</option>
-                          <option value="E">E</option>
-                        </select>
-                      </div>
-                    ))}
-                  </div>
+                  <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px]">
+                    <li>Kerjakan Google Form ujian ini <strong>1 kali</strong> menggunakan <strong>NISN Akun Kunci Resmi</strong> yang telah didaftarkan Admin.</li>
+                    <li>Sistem akan mendeteksi respon akun tersebut dan secara otomatis menjadikannya Kunci Acuan untuk semua butir soal (PG, PG Kompleks, maupun Benar/Salah).</li>
+                    <li>Nilai Akun Kunci otomatis dikecualikan dari rapor dan statistik siswa nyata.</li>
+                  </ol>
                 </div>
-
-                <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400">
-                  Isi kunci jawaban sekarang atau tambahkan nanti melalui tombol Edit pada kartu Try Out.
-                </div>
-              </div>
-
-              {/* Info box */}
-              <div className="p-3 bg-teal-50 dark:bg-teal-950/40 rounded-xl border border-teal-200 dark:border-teal-800 text-[11px] text-teal-800 dark:text-teal-300 leading-relaxed">
-                <strong>Informasi:</strong> Kunci jawaban digunakan untuk menghitung skor otomatis saat data respons siswa dari Google Sheet disinkronkan. Urutan kunci harus sama dengan urutan soal di Google Form.
               </div>
             </div>
 
             {/* Footer */}
             <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
-              <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                {newToAnswerKey.filter(a => a !== '').length} / {newToQuestionCount} kunci terisi
+              <div className="text-[11px] text-teal-600 dark:text-teal-400 font-medium flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Kunci jawaban terdeteksi otomatis dari Google Sheet</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowTryoutModal(false);
-                    setAnswerKeyUploadErrors([]);
-                    setAnswerKeyUploadSuccess(false);
-                  }}
+                  onClick={() => setShowTryoutModal(false)}
                   className="px-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                 >
                   Batal

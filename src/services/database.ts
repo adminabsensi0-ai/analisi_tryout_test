@@ -399,7 +399,8 @@ export class DatabaseService {
           local.classId !== cloudStudent.classId ||
           local.gender !== cloudStudent.gender ||
           local.birthDate !== cloudStudent.birthDate ||
-          local.nis !== cloudStudent.nis
+          local.nis !== cloudStudent.nis ||
+          local.isAnswerKeyAccount !== cloudStudent.isAnswerKeyAccount
         ) {
           this.state.students[idx] = { ...local, ...cloudStudent };
           changed = true;
@@ -1034,14 +1035,14 @@ export class DatabaseService {
     if (!currentUser) return [];
     if (currentUser.role === 'ADMIN') {
       if (classIdFilter && classIdFilter !== 'ALL') {
-        return (this.state.students || []).filter(s => s && s.classId === classIdFilter);
+        return (this.state.students || []).filter(s => s && s.classId === classIdFilter && !s.isAnswerKeyAccount);
       }
-      return this.state.students || [];
+      return (this.state.students || []).filter(s => s && !s.isAnswerKeyAccount);
     }
     const allowedClassIds = this.getTeacherAllowedClassIds(currentUser);
-    let filtered = (this.state.students || []).filter(s => s && allowedClassIds.includes(s.classId));
+    let filtered = (this.state.students || []).filter(s => s && allowedClassIds.includes(s.classId) && !s.isAnswerKeyAccount);
     if (filtered.length === 0 && (this.state.classes || []).length > 0) {
-      filtered = this.state.students || [];
+      filtered = (this.state.students || []).filter(s => s && !s.isAnswerKeyAccount);
     }
     if (classIdFilter && classIdFilter !== 'ALL') {
       filtered = filtered.filter(s => s && s.classId === classIdFilter);

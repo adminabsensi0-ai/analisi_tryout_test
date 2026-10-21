@@ -98,6 +98,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const [formNip, setFormNip] = useState('');
   const [formNisn, setFormNisn] = useState('');
   const [formNis, setFormNis] = useState('');
+  const [formIsAnswerKeyAccount, setFormIsAnswerKeyAccount] = useState(false);
   const [formGender, setFormGender] = useState<'L' | 'P'>('L');
   const [formBirthDate, setFormBirthDate] = useState('2008-05-14');
   const [formEmail, setFormEmail] = useState('');
@@ -411,6 +412,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setFormTargetScore(85);
     setFormEmail('');
     setFormPhone('');
+    setFormIsAnswerKeyAccount(false);
     setModalType('STUDENT_CREATE');
   };
 
@@ -426,6 +428,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setFormTargetScore(s.targetScore || 80);
     setFormEmail(s.email || '');
     setFormPhone(s.phone || '');
+    setFormIsAnswerKeyAccount(Boolean(s.isAnswerKeyAccount));
     setModalType('STUDENT_EDIT');
   };
 
@@ -446,7 +449,8 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
         birthDate: formBirthDate,
         email: formEmail.trim() || `${formNisn.trim()}@siswa.sch.id`,
         phone: formPhone.trim(),
-        targetScore: Number(formTargetScore) || 80
+        targetScore: Number(formTargetScore) || 80,
+        isAnswerKeyAccount: formIsAnswerKeyAccount
       };
 
       if (modalType === 'STUDENT_EDIT' && editingStudentId) {
@@ -1624,7 +1628,15 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                                 {s.nisn} <span className="text-slate-400 font-normal">({s.nis || 'NIS belum diset'})</span>
                               </td>
                               <td className="px-4 py-3 font-bold text-slate-900 dark:text-slate-100">
-                                {s.name}
+                                <div className="flex items-center gap-2">
+                                  <span>{s.name}</span>
+                                  {s.isAnswerKeyAccount && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shrink-0">
+                                      <Key className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                      <span>Akun Kunci</span>
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-4 py-3 text-center font-bold">
                                 {s.gender}
@@ -2925,6 +2937,25 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Opsi Khusus: Akun Kunci Jawaban Resmi */}
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl space-y-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formIsAnswerKeyAccount}
+                    onChange={e => setFormIsAnswerKeyAccount(e.target.checked)}
+                    className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                  />
+                  <span className="font-bold text-amber-900 dark:text-amber-200 text-xs flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Tetapkan sebagai Akun Kunci Jawaban Resmi</span>
+                  </span>
+                </label>
+                <p className="text-[10px] text-amber-800 dark:text-amber-300/80 leading-relaxed pl-6">
+                  Akun ini digunakan Guru untuk mengisi respon Google Form sebagai acuan Kunci Jawaban. Akun ini tidak akan dimasukkan ke dalam rapor atau analitik nilai siswa nyata.
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">

@@ -248,9 +248,72 @@ export class GoogleIntegrationService {
       };
     }
 
-    // Track duplicate NISNs in the current sheet batch
+    // 0. Pre-scan for Official Answer Key row (identified by isAnswerKeyAccount === true)
+    const allDbStudents = dbService.getStudents();
+    let detectedKeyRow: Record<string, string> | null = null;
+    let detectedKeyStudent: Student | null = null;
+    let answerKeyExtractedCount = 0;
+
+    for (const row of parsedRows) {
+      const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
+      if (!rawNisn) continue;
+      const matched = students.find(s => s.nisn === rawNisn) || allDbStudents.find(s => s.nisn === rawNisn);
+      if (matched?.isAnswerKeyAccount) {
+        detectedKeyRow = row;
+        detectedKeyStudent = matched;
+        break;
+      }
+    }
+
+    // If Official Answer Key row is detected, extract answers and update tryout/questions
+    if (detectedKeyRow && detectedKeyStudent) {
+      const updatedKeyMap: Record<string, string> = { ...(tryout.answerKey || {}) };
+
+      questions.forEach(q => {
+        const header = mappingConfig.questionMappings[q.uniqueCode];
+        if (header && detectedKeyRow![header] !== undefined) {
+          const rawKeyVal = detectedKeyRow![header].trim();
+          if (rawKeyVal) {
+            let extractedKey = rawKeyVal;
+            // Normalize multi-select checkboxes e.g. "A, C"
+            if (rawKeyVal.includes(',')) {
+              const parts = rawKeyVal.split(',').map(p => p.trim()).filter(Boolean);
+              const normalized = parts.map(p => {
+                const m = p.match(/^([A-Ea-e])[\.\)\s]/);
+                return m ? m[1].toUpperCase() : p.toUpperCase();
+              });
+              extractedKey = normalized.sort().join(', ');
+            } else {
+              const prefixMatch = rawKeyVal.match(/^([A-Ea-e])[\.\)\s]/);
+              if (prefixMatch) {
+                extractedKey = prefixMatch[1].toUpperCase();
+              } else if (['A', 'B', 'C', 'D', 'E'].includes(rawKeyVal.toUpperCase())) {
+                extractedKey = rawKeyVal.toUpperCase();
+              }
+            }
+
+            q.correctAnswer = extractedKey;
+            updatedKeyMap[q.id] = extractedKey;
+            answerKeyExtractedCount++;
+            dbService.updateQuestion(q.id, { correctAnswer: extractedKey });
+          }
+        }
+      });
+
+      dbService.updateTryout(tryout.id, { answerKey: updatedKeyMap });
+    }
+
+    // Filter out the answer key account row from student preview / score calculation
+    const studentRows = parsedRows.filter(row => {
+      const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
+      if (!rawNisn) return true;
+      const matched = students.find(s => s.nisn === rawNisn) || allDbStudents.find(s => s.nisn === rawNisn);
+      return !matched?.isAnswerKeyAccount;
+    });
+
+    // Track duplicate NISNs in the current sheet batch among real students
     const nisnOccurrences: Record<string, number> = {};
-    parsedRows.forEach(row => {
+    studentRows.forEach(row => {
       const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
       if (rawNisn) {
         nisnOccurrences[rawNisn] = (nisnOccurrences[rawNisn] || 0) + 1;
@@ -263,7 +326,7 @@ export class GoogleIntegrationService {
     let mismatchCount = 0;
     let duplicateCount = 0;
 
-    const previewItems: SheetImportPreviewItem[] = parsedRows.map((row, index) => {
+    const previewItems: SheetImportPreviewItem[] = studentRows.map((row, index) => {
       const rowNumber = index + 1;
       const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
 
@@ -278,8 +341,8 @@ export class GoogleIntegrationService {
       // Check NISN format (Indonesian standard: 10 digits numeric)
       const isFormatValid = /^\d{10}$/.test(rawNisn);
 
-      // Student existence
-      const matchedStudent = students.find(s => s.nisn === rawNisn);
+      // Student existence (check provided list or full database)
+      const matchedStudent = students.find(s => s.nisn === rawNisn) || allDbStudents.find(s => s.nisn === rawNisn);
       const isValidStudent = !!matchedStudent;
 
       // Duplicate in current sheet
@@ -303,12 +366,29 @@ export class GoogleIntegrationService {
             return;
           }
 
-          // Check if it starts with valid option letter: e.g. "A", "A. ...", "B)", etc.
+          const rawUpper = rawVal.toUpperCase();
+
+          // 1. Check if it's a valid option letter: e.g. "A", "A. ...", "B)", etc.
           const optionPrefixMatch = rawVal.match(/^([A-Ea-e])[\.\)\s]/);
           if (optionPrefixMatch) {
             studentAnswers[q.uniqueCode] = optionPrefixMatch[1].toUpperCase();
-          } else if (['A', 'B', 'C', 'D', 'E'].includes(rawVal.toUpperCase())) {
-            studentAnswers[q.uniqueCode] = rawVal.toUpperCase();
+          } else if (['A', 'B', 'C', 'D', 'E'].includes(rawUpper)) {
+            studentAnswers[q.uniqueCode] = rawUpper;
+          } else if (rawVal.includes(',')) {
+            // Checkbox multi-select (e.g. "A, C" or "A. Opsi 1, C. Opsi 2")
+            const parts = rawVal.split(',').map(p => p.trim()).filter(Boolean);
+            const normalizedParts = parts.map(p => {
+              const m = p.match(/^([A-Ea-e])[\.\)\s]/);
+              return m ? m[1].toUpperCase() : p.toUpperCase();
+            });
+            studentAnswers[q.uniqueCode] = normalizedParts.sort().join(', ');
+          } else if (['BENAR', 'SALAH', 'TRUE', 'FALSE'].includes(rawUpper)) {
+            // True / False type
+            studentAnswers[q.uniqueCode] = rawUpper;
+          } else if (q.options?.some(opt => opt.text.trim().toUpperCase() === rawUpper)) {
+            // Matched option text directly
+            const matchedOpt = q.options.find(opt => opt.text.trim().toUpperCase() === rawUpper);
+            studentAnswers[q.uniqueCode] = matchedOpt ? matchedOpt.key : rawVal;
           } else {
             // Malformed answer option (e.g. "INVALID_VAL", "123", "!@#$%")
             studentAnswers[q.uniqueCode] = '';
@@ -403,12 +483,15 @@ export class GoogleIntegrationService {
       mappingConfig,
       previewItems,
       summary: {
-        totalRows: parsedRows.length,
+        totalRows: studentRows.length,
         successCount,
         failedCount,
         mismatchCount,
         duplicateCount,
         errorDetails,
+        answerKeyDetected: !!detectedKeyStudent,
+        answerKeyStudentName: detectedKeyStudent?.name,
+        answerKeyExtractedCount,
       },
     };
   }
@@ -484,7 +567,7 @@ export class GoogleIntegrationService {
       // 2. Build Item Answer records adhering strictly to tryout.scoringConfig
       questions.forEach((q, qIdx) => {
         const studentAns = item.answers[q.uniqueCode] || '';
-        const isCorrect = !!studentAns && studentAns === q.correctAnswer;
+        const isCorrect = ScoringService.isAnswerMatching(studentAns, q.correctAnswer);
         const qWeight = tryout.scoringConfig.scoringType === 'CUSTOM_WEIGHT' ? (q.weight || 1) : 1;
 
         let ansScore = 0;
@@ -520,7 +603,7 @@ export class GoogleIntegrationService {
       const totalCorrect = Object.entries(item.answers).filter(
         ([code, ans]) => {
           const q = questions.find(itemQ => itemQ.uniqueCode === code);
-          return q && ans === q.correctAnswer;
+          return q && ScoringService.isAnswerMatching(ans, q.correctAnswer);
         }
       ).length;
 
