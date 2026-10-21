@@ -332,7 +332,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [editingExplanationId, setEditingExplanationId] = useState<string | null>(null);
   const [expTitle, setExpTitle] = useState('');
   const [expSubjectId, setExpSubjectId] = useState<string>('subj-mat');
-  const [expTryoutId, setExpTryoutId] = useState<string>('to-3');
+  const [expTryoutId, setExpTryoutId] = useState<string>('');
   const [expQuestionId, setExpQuestionId] = useState<string>('GENERAL');
   const [expContentText, setExpContentText] = useState('');
   const [expPdfUrl, setExpPdfUrl] = useState('');
@@ -925,16 +925,16 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   );
 
   // 2. Class Level Analytics
-  const activeAnalyticsClassId = (analyticsClassFilter !== 'ALL' ? analyticsClassFilter : classes[0]?.id) || 'c-xii-ipa1';
-  const classAnalyticsData = dbService.getClassAnalytics(activeAnalyticsClassId, selectedTryoutId, currentUser);
+  const activeAnalyticsClassId = (analyticsClassFilter !== 'ALL' ? analyticsClassFilter : classes[0]?.id) || '';
+  const classAnalyticsData = activeAnalyticsClassId ? dbService.getClassAnalytics(activeAnalyticsClassId, selectedTryoutId, currentUser) : null;
 
   // 3. Student Individual Analytics
-  const activeStudentIdForAnalytics = selectedStudentForAnalytics || students[0]?.id || 's-1';
-  const activeStudentTryoutId = studentTryoutFilter || selectedTryoutId || 'to-3';
-  const studentAnalyticsData = dbService.getStudentAnalytics(activeStudentIdForAnalytics, activeStudentTryoutId);
+  const activeStudentIdForAnalytics = selectedStudentForAnalytics || students[0]?.id || '';
+  const activeStudentTryoutId = studentTryoutFilter || selectedTryoutId || tryouts[0]?.id || '';
+  const studentAnalyticsData = (activeStudentIdForAnalytics && activeStudentTryoutId) ? dbService.getStudentAnalytics(activeStudentIdForAnalytics, activeStudentTryoutId) : null;
 
   // 4. Question Psychometric Item Analysis
-  const activePsychometricsTryoutId = psychometricsTryoutId || selectedTryoutId || 'to-3';
+  const activePsychometricsTryoutId = psychometricsTryoutId || selectedTryoutId || tryouts[0]?.id || '';
   const questionAnalysisList: QuestionAnalysisResult[] = dbService.getQuestionAnalysis(
     activePsychometricsTryoutId,
     selectedSubjectId,
@@ -3726,7 +3726,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     
                     const activeStudentId = selectedStudentForProgress && filteredStudents.some(s => s.id === selectedStudentForProgress)
                       ? selectedStudentForProgress
-                      : filteredStudents[0]?.id || students[0]?.id || 's-1';
+                      : filteredStudents[0]?.id || students[0]?.id || '';
 
                     const studentProg = dbService.getStudentProgress(activeStudentId);
                     const currentStudentObj = students.find(s => s.id === activeStudentId);
@@ -4707,7 +4707,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             setEditingExplanationId(null);
                             setExpTitle(`Pembahasan ${activeSubject?.name || 'Matematika'} — Solusi Mandiri`);
                             setExpSubjectId(selectedSubjectId !== 'ALL' ? selectedSubjectId : 'subj-mat');
-                            setExpTryoutId(selectedTryoutId !== 'ALL' ? selectedTryoutId : 'to-3');
+                            setExpTryoutId(selectedTryoutId !== 'ALL' ? selectedTryoutId : tryouts[0]?.id || '');
                             setExpQuestionId('GENERAL');
                             setExpContentText('');
                             setExpPdfUrl('');
@@ -5020,7 +5020,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                         setEditingExplanationId(exp.id);
                                         setExpTitle(exp.title);
                                         setExpSubjectId(exp.subjectId || selectedSubjectId || 'subj-mat');
-                                        setExpTryoutId(exp.tryoutId || selectedTryoutId || 'to-3');
+                                        setExpTryoutId(exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '');
                                         setExpQuestionId(exp.questionId || 'GENERAL');
                                         setExpContentText(exp.contentText);
                                         setExpPdfUrl(exp.pdfUrl || '');
@@ -5186,7 +5186,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                           setEditingExplanationId(exp.id);
                                           setExpTitle(exp.title);
                                           setExpSubjectId(exp.subjectId || selectedSubjectId || 'subj-mat');
-                                          setExpTryoutId(exp.tryoutId || selectedTryoutId || 'to-3');
+                                          setExpTryoutId(exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '');
                                           setExpQuestionId(exp.questionId || 'GENERAL');
                                           setExpContentText(exp.contentText);
                                           setExpPdfUrl(exp.pdfUrl || '');
@@ -5491,7 +5491,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       <button
                         onClick={() => {
                           const activeTo = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
-                          const sampleStudent = students[0] || { id: 's-1', name: 'Aditya Pratama', nisn: '0061234561', nis: '232412001', targetScore: 85, classId: 'c-xii-ipa1' };
+                          const sampleStudent = students[0];
+                          if (!sampleStudent) return;
                           const sampleScore = dbService.getScoresByStudent(sampleStudent.id).find(s => s.tryoutId === selectedTryoutId) || {
                             id: 'sc-1', responseId: 'resp-1', studentId: sampleStudent.id, tryoutId: selectedTryoutId,
                             subjectScores: {}, googleFormScore: 87.5, calculatedScore: 87.5, scoreDifference: 0,
