@@ -969,100 +969,103 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
         {/* TAB BUKU NILAI SISWA (GRADEBOOK MATRIX) */}
         {activeTab === 'GRADEBOOK' && (() => {
-          // List of Tryouts
-          const tryoutOptions = allTryouts.length > 0 ? allTryouts : [
-            { id: 'to-1', code: 'UH-2025-01', title: 'UH 1 — Matriks & Vektor' },
-            { id: 'to-2', code: 'PTS-2025-01', title: 'PTS Gasal 2025/2026' },
-            { id: 'to-3', code: 'TO-2026-03', title: 'Try Out Akbar SNBT 2026' },
-            { id: 'to-4', code: 'TO-2026-04', title: 'Try Out Simulasi Kelulusan' },
-          ];
+          // List of Tryouts — hanya pakai data nyata dari Supabase, tidak ada dummy
+          const tryoutOptions = allTryouts;
 
-          // List of Subjects
-          const subjectOptions = allSubjects.length > 0 ? allSubjects : [
-            { id: 'subj-mat', code: 'MAT', name: 'Matematika', passingGrade: 75 },
-            { id: 'subj-fis', code: 'FIS', name: 'Fisika', passingGrade: 70 },
-            { id: 'subj-bin', code: 'BIN', name: 'Bahasa Indonesia', passingGrade: 75 },
-            { id: 'subj-bing', code: 'BIG', name: 'Bahasa Inggris', passingGrade: 75 },
-          ];
+          // List of Subjects — hanya pakai data nyata
+          const subjectOptions = allSubjects;
 
-          // Helper to get score of a student for specific tryout & subject
-          const getStudentSubjectScore = (studentId: string, toId: string, subjId: string): number => {
+          // Jika belum ada tryout atau mapel, tampilkan empty state
+          if (tryoutOptions.length === 0 || subjectOptions.length === 0) {
+            return (
+              <div className="flex flex-col items-center justify-center py-20 text-center text-slate-500 dark:text-slate-400">
+                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                  <span className="text-3xl">📋</span>
+                </div>
+                <p className="font-semibold text-slate-700 dark:text-slate-300 mb-1">Belum Ada Data Buku Nilai</p>
+                <p className="text-xs max-w-sm">
+                  Buku nilai akan tersedia setelah Guru Mapel membuat paket tryout dan mengimpor hasil dari Google Sheet.
+                  Saat ini belum ada tryout atau mata pelajaran yang terdaftar.
+                </p>
+              </div>
+            );
+          }
+
+          // Helper to get score of a student for specific tryout & subject.
+          // Returns null jika belum ada data nyata (tidak ada fallback simulasi).
+          const getStudentSubjectScore = (studentId: string, toId: string, subjId: string): number | null => {
             const foundScore = allScores.find(sc => sc.studentId === studentId && sc.tryoutId === toId);
-            if (foundScore && foundScore.subjectScores && typeof foundScore.subjectScores[subjId] === 'number') {
+            if (!foundScore) return null;
+            if (foundScore.subjectScores && typeof foundScore.subjectScores[subjId] === 'number') {
               return foundScore.subjectScores[subjId];
             }
-            if (foundScore && subjId === 'subj-mat' && foundScore.calculatedScore) {
-              return foundScore.calculatedScore;
-            }
-
-            // Fallback realistic simulation
-            const sIdx = activeStudentList.findIndex(s => s.id === studentId);
-            const toIdx = tryoutOptions.findIndex(t => t.id === toId);
-            const base = 72 + ((sIdx * 7) % 21) + ((toIdx >= 0 ? toIdx : 0) * 4);
-            const subjOffset = subjId === 'subj-mat' ? 0 : subjId === 'subj-fis' ? -3 : subjId === 'subj-bin' ? 5 : 3;
-            return Math.min(98, Math.max(55, base + subjOffset));
+            // Fallback ke calculatedScore jika hanya ada 1 mapel
+            if (foundScore.calculatedScore) return foundScore.calculatedScore;
+            return null;
           };
 
-          // Get overall score for student in selected TO or across all TO
-          const getStudentOverallScore = (studentId: string): number => {
+          // Get overall score for student — returns null jika tidak ada data sama sekali
+          const getStudentOverallScore = (studentId: string): number | null => {
             if (gradebookTO !== 'ALL' && gradebookSubject !== 'ALL') {
               return getStudentSubjectScore(studentId, gradebookTO, gradebookSubject);
             }
             if (gradebookTO !== 'ALL') {
-              // Average across all subjects for this TO
-              const scores = subjectOptions.map(sub => getStudentSubjectScore(studentId, gradebookTO, sub.id));
+              const scores = subjectOptions.map(sub => getStudentSubjectScore(studentId, gradebookTO, sub.id)).filter((v): v is number => v !== null);
+              if (scores.length === 0) return null;
               return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
             }
             if (gradebookSubject !== 'ALL') {
-              // Average across all TOs for this Subject
-              const scores = tryoutOptions.map(t => getStudentSubjectScore(studentId, t.id, gradebookSubject));
+              const scores = tryoutOptions.map(t => getStudentSubjectScore(studentId, t.id, gradebookSubject)).filter((v): v is number => v !== null);
+              if (scores.length === 0) return null;
               return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
             }
             // All TO & All Subjects grand average
             const allVals: number[] = [];
             tryoutOptions.forEach(t => {
               subjectOptions.forEach(sub => {
-                allVals.push(getStudentSubjectScore(studentId, t.id, sub.id));
+                const v = getStudentSubjectScore(studentId, t.id, sub.id);
+                if (v !== null) allVals.push(v);
               });
             });
-            return Math.round((allVals.reduce((a, b) => a + b, 0) / (allVals.length || 1)) * 10) / 10;
+            if (allVals.length === 0) return null;
+            return Math.round((allVals.reduce((a, b) => a + b, 0) / allVals.length) * 10) / 10;
           };
 
           const activeKKM = gradebookSubject !== 'ALL'
             ? (subjectOptions.find(s => s.id === gradebookSubject)?.passingGrade || 75)
             : 75;
 
-          // Filter and Sort Students
+          // Filter and Sort Students — overall bisa null jika belum ada data
           const processedStudents = filteredStudents
             .map(student => {
               const overall = getStudentOverallScore(student.id);
-              const isPassing = overall >= activeKKM;
-              return { student, overall, isPassing };
+              const isPassing = overall !== null && overall >= activeKKM;
+              return { student, overall, isPassing, hasData: overall !== null };
             })
             .filter(item => {
-              if (gradebookStatusFilter === 'PASS') return item.isPassing;
-              if (gradebookStatusFilter === 'REMEDIAL') return !item.isPassing;
+              if (gradebookStatusFilter === 'PASS') return item.hasData && item.isPassing;
+              if (gradebookStatusFilter === 'REMEDIAL') return item.hasData && !item.isPassing;
               return true;
             })
             .sort((a, b) => {
-              if (gradebookSortBy === 'SCORE_DESC') return b.overall - a.overall;
-              if (gradebookSortBy === 'SCORE_ASC') return a.overall - b.overall;
+              if (gradebookSortBy === 'SCORE_DESC') return (b.overall ?? -1) - (a.overall ?? -1);
+              if (gradebookSortBy === 'SCORE_ASC') return (a.overall ?? 999) - (b.overall ?? 999);
               return a.student.name.localeCompare(b.student.name);
             });
 
-          // Class Statistics for current filter
-          const currentScores = processedStudents.map(p => p.overall);
+          // Class Statistics — hanya hitung dari siswa yang benar-benar punya data nyata
+          const currentScores = processedStudents.filter(p => p.hasData).map(p => p.overall as number);
           const highestScore = currentScores.length > 0 ? Math.max(...currentScores) : 0;
           const lowestScore = currentScores.length > 0 ? Math.min(...currentScores) : 0;
           const avgScore = currentScores.length > 0
             ? Math.round((currentScores.reduce((a, b) => a + b, 0) / currentScores.length) * 10) / 10
             : 0;
           const totalPassing = processedStudents.filter(p => p.isPassing).length;
-          const passPercentage = processedStudents.length > 0
-            ? Math.round((totalPassing / processedStudents.length) * 100)
+          const passPercentage = currentScores.length > 0
+            ? Math.round((totalPassing / currentScores.length) * 100)
             : 0;
 
-          // CSV Export Handler
+          // CSV Export Handler — hanya ekspor siswa yang punya data nyata
           const handleExportCSV = () => {
             let csv = '';
             if (gradebookTO !== 'ALL') {
@@ -1071,21 +1074,23 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
               csv += `NISN,Nama Siswa,${subjectOptions.map(s => s.name).join(',')},Rata-Rata,Status\n`;
               processedStudents.forEach(({ student }) => {
                 const subScores = subjectOptions.map(s => getStudentSubjectScore(student.id, gradebookTO, s.id));
-                const avg = (subScores.reduce((a, b) => a + b, 0) / subScores.length).toFixed(1);
-                const status = Number(avg) >= activeKKM ? 'TUNTAS' : 'REMEDIAL';
-                csv += `${student.nisn},"${student.name}",${subScores.join(',')},${avg},${status}\n`;
+                const realScores = subScores.filter((v): v is number => v !== null);
+                const avg = realScores.length > 0 ? (realScores.reduce((a, b) => a + b, 0) / realScores.length).toFixed(1) : '-';
+                const status = realScores.length > 0 ? (Number(avg) >= activeKKM ? 'TUNTAS' : 'REMEDIAL') : 'BELUM ADA DATA';
+                csv += `${student.nisn},"${student.name}",${subScores.map(v => v ?? '-').join(',')},${avg},${status}\n`;
               });
             } else {
               csv = `Buku Nilai Kelas ${assignedClass.name} - Semua Try Out\n`;
               csv += `NISN,Nama Siswa,${tryoutOptions.map(t => t.code || t.title).join(',')},Rata-Rata,Status\n`;
               processedStudents.forEach(({ student }) => {
                 const toScores = tryoutOptions.map(t => {
-                  const subScores = subjectOptions.map(s => getStudentSubjectScore(student.id, t.id, s.id));
-                  return (subScores.reduce((a, b) => a + b, 0) / subScores.length).toFixed(1);
+                  const subScores = subjectOptions.map(s => getStudentSubjectScore(student.id, t.id, s.id)).filter((v): v is number => v !== null);
+                  return subScores.length > 0 ? (subScores.reduce((a, b) => a + b, 0) / subScores.length).toFixed(1) : null;
                 });
-                const overallAvg = (toScores.map(Number).reduce((a, b) => a + b, 0) / toScores.length).toFixed(1);
-                const status = Number(overallAvg) >= activeKKM ? 'TUNTAS' : 'REMEDIAL';
-                csv += `${student.nisn},"${student.name}",${toScores.join(',')},${overallAvg},${status}\n`;
+                const realToScores = toScores.filter((v): v is string => v !== null).map(Number);
+                const overallAvg = realToScores.length > 0 ? (realToScores.reduce((a, b) => a + b, 0) / realToScores.length).toFixed(1) : '-';
+                const status = realToScores.length > 0 ? (Number(overallAvg) >= activeKKM ? 'TUNTAS' : 'REMEDIAL') : 'BELUM ADA DATA';
+                csv += `${student.nisn},"${student.name}",${toScores.map(v => v ?? '-').join(',')},${overallAvg},${status}\n`;
               });
             }
 
@@ -1330,11 +1335,11 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                                 <>
                                   {subjectOptions.map(sub => {
                                     const val = getStudentSubjectScore(student.id, gradebookTO, sub.id);
-                                    const pass = val >= (sub.passingGrade || 75);
+                                    const pass = val !== null && val >= (sub.passingGrade || 75);
                                     return (
                                       <td key={sub.id} className="px-3 py-3 text-center font-mono font-bold whitespace-nowrap">
-                                        <span className={`px-2 py-1 rounded-lg ${pass ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30'}`}>
-                                          {val.toFixed(1)}
+                                        <span className={`px-2 py-1 rounded-lg ${val === null ? 'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800' : pass ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30'}`}>
+                                          {val !== null ? val.toFixed(1) : '—'}
                                         </span>
                                       </td>
                                     );
@@ -1347,11 +1352,11 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                                 <>
                                   {tryoutOptions.map(toItem => {
                                     const val = getStudentSubjectScore(student.id, toItem.id, gradebookSubject);
-                                    const pass = val >= activeKKM;
+                                    const pass = val !== null && val >= activeKKM;
                                     return (
                                       <td key={toItem.id} className="px-3 py-3 text-center font-mono font-bold whitespace-nowrap">
-                                        <span className={`px-2 py-1 rounded-lg ${pass ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30'}`}>
-                                          {val.toFixed(1)}
+                                        <span className={`px-2 py-1 rounded-lg ${val === null ? 'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800' : pass ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30'}`}>
+                                          {val !== null ? val.toFixed(1) : '—'}
                                         </span>
                                       </td>
                                     );
@@ -1363,13 +1368,13 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                               {gradebookTO === 'ALL' && gradebookSubject === 'ALL' && (
                                 <>
                                   {subjectOptions.map(sub => {
-                                    const scores = tryoutOptions.map(t => getStudentSubjectScore(student.id, t.id, sub.id));
-                                    const avg = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
-                                    const pass = avg >= (sub.passingGrade || 75);
+                                    const scores = tryoutOptions.map(t => getStudentSubjectScore(student.id, t.id, sub.id)).filter((v): v is number => v !== null);
+                                    const avg = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null;
+                                    const pass = avg !== null && avg >= (sub.passingGrade || 75);
                                     return (
                                       <td key={sub.id} className="px-3 py-3 text-center font-mono font-bold whitespace-nowrap">
-                                        <span className={`px-2 py-1 rounded-lg ${pass ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30'}`}>
-                                          {avg.toFixed(1)}
+                                        <span className={`px-2 py-1 rounded-lg ${avg === null ? 'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800' : pass ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30'}`}>
+                                          {avg !== null ? avg.toFixed(1) : '—'}
                                         </span>
                                       </td>
                                     );
@@ -1380,25 +1385,29 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                               {/* Tampilan Nilai Kasus 4: 1 TO & 1 Mapel */}
                               {gradebookTO !== 'ALL' && gradebookSubject !== 'ALL' && (
                                 <td className="px-3 py-3 text-center font-mono font-bold whitespace-nowrap">
-                                  <span className={`px-2.5 py-1 rounded-lg text-sm ${isPassing ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30'}`}>
-                                    {overall.toFixed(1)}
+                                  <span className={`px-2.5 py-1 rounded-lg text-sm ${overall === null ? 'text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800' : isPassing ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30'}`}>
+                                    {overall !== null ? overall.toFixed(1) : '—'}
                                   </span>
                                 </td>
                               )}
 
                               {/* Kolom Rata-Rata / Skor Akhir */}
                               <td className="px-3 py-3 text-center font-mono font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800/60 rounded">
-                                {overall.toFixed(1)}
+                                {overall !== null ? overall.toFixed(1) : <span className="text-slate-400 font-normal text-xs">Belum ada data</span>}
                               </td>
 
                               {/* Status Badge */}
                               <td className="px-3 py-3 text-center whitespace-nowrap">
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
-                                  isPassing
+                                  !hasData
+                                    ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                    : isPassing
                                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                                     : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                                 }`}>
-                                  {isPassing ? (
+                                  {!hasData ? (
+                                    <span>BELUM ADA DATA</span>
+                                  ) : isPassing ? (
                                     <>
                                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                       <span>TUNTAS</span>
@@ -1501,24 +1510,25 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
                             {subjectOptions.map(sub => {
                               const scores = tryoutOptions.map(t => getStudentSubjectScore(selectedStudentDetail.id, t.id, sub.id));
-                              const avg = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
+                              const realScores = scores.filter((v): v is number => v !== null);
+                              const avg = realScores.length > 0 ? Math.round((realScores.reduce((a, b) => a + b, 0) / realScores.length) * 10) / 10 : null;
                               return (
                                 <tr key={sub.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                                   <td className="p-2.5 font-sans font-bold text-slate-900 dark:text-slate-100">
                                     {sub.name}
                                   </td>
                                   {scores.map((val, idx) => {
-                                    const pass = val >= (sub.passingGrade || 75);
+                                    const pass = val !== null && val >= (sub.passingGrade || 75);
                                     return (
                                       <td key={idx} className="p-2.5 text-center">
-                                        <span className={`px-2 py-0.5 rounded font-bold ${pass ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40' : 'text-rose-600 bg-rose-50 dark:bg-rose-950/40'}`}>
-                                          {val.toFixed(1)}
+                                        <span className={`px-2 py-0.5 rounded font-bold ${val === null ? 'text-slate-400 bg-slate-100 dark:bg-slate-800' : pass ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40' : 'text-rose-600 bg-rose-50 dark:bg-rose-950/40'}`}>
+                                          {val !== null ? val.toFixed(1) : '—'}
                                         </span>
                                       </td>
                                     );
                                   })}
                                   <td className="p-2.5 text-center font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800">
-                                    {avg.toFixed(1)}
+                                    {avg !== null ? avg.toFixed(1) : <span className="text-slate-400 font-normal text-xs">—</span>}
                                   </td>
                                 </tr>
                               );

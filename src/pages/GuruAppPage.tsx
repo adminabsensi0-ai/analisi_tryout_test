@@ -61,11 +61,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [activeRoleMode, setActiveRoleMode] = useState<'GURU_MAPEL' | 'WALI_KELAS'>(
     currentUser.role === 'WALI_KELAS' || teacherObj?.isWaliKelas ? 'WALI_KELAS' : 'GURU_MAPEL'
   );
-  const [waliNotes, setWaliNotes] = useState<Record<string, string>>({
-    's-1': 'Siswa sangat aktif dan menunjukkan peningkatan konsisten di TryOut.',
-    's-2': 'Pertahankan prestasi, fokus perbaikan pada pemahaman rumus kalkulus.',
-  });
-  const [selectedWaliStudentId, setSelectedWaliStudentId] = useState<string>('s-1');
+  const [waliNotes, setWaliNotes] = useState<Record<string, string>>({});
+  const [selectedWaliStudentId, setSelectedWaliStudentId] = useState<string>('');
 
   const [activeTab, setActiveTab] = useState<GuruTab>(
     currentUser.role === 'WALI_KELAS' || teacherObj?.isWaliKelas ? 'WALI_KELAS_PORTAL' : 'DASHBOARD'
@@ -89,8 +86,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   // Filter & Selection States
-  const [selectedTryoutId, setSelectedTryoutId] = useState('to-3');
-  const [selectedSubjectId, setSelectedSubjectId] = useState('subj-mat');
+  const [selectedTryoutId, setSelectedTryoutId] = useState('');
+  const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [classFilter, setClassFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [cognitiveFilter, setCognitiveFilter] = useState<string>('ALL');
@@ -415,9 +412,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   // Phase 14: Master Production Readiness Validation Test Suite State
   const [productionValidationResult, setProductionValidationResult] = useState<ProductionValidationSuiteResult | null>(null);
   const [progressSubTab, setProgressSubTab] = useState<'STUDENT' | 'CLASS' | 'SUBJECT'>('STUDENT');
-  const [selectedStudentForProgress, setSelectedStudentForProgress] = useState<string>('s-1');
-  const [selectedClassForProgress, setSelectedClassForProgress] = useState<string>('c-xii-ipa1');
-  const [selectedSubjectForProgress, setSelectedSubjectForProgress] = useState<string>('subj-mat');
+  const [selectedStudentForProgress, setSelectedStudentForProgress] = useState<string>('');
+  const [selectedClassForProgress, setSelectedClassForProgress] = useState<string>('ALL');
+  const [selectedSubjectForProgress, setSelectedSubjectForProgress] = useState<string>('');
 
   // Scoring Engine Test & Simulator States (Phase 8 Specification)
   const [scoringTestResult, setScoringTestResult] = useState<{
@@ -457,11 +454,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [analyticsGradeFilter, setAnalyticsGradeFilter] = useState('ALL');
   const [analyticsClassFilter, setAnalyticsClassFilter] = useState('ALL');
   const [studentClassFilter, setStudentClassFilter] = useState('ALL');
-  const [studentTryoutFilter, setStudentTryoutFilter] = useState('to-3');
+  const [studentTryoutFilter, setStudentTryoutFilter] = useState('');
   const [studentQuestionTab, setStudentQuestionTab] = useState<'ALL' | 'CORRECT' | 'INCORRECT'>('ALL');
-  const [psychometricsTryoutId, setPsychometricsTryoutId] = useState('to-3');
+  const [psychometricsTryoutId, setPsychometricsTryoutId] = useState('');
   const [psychometricsClassFilter, setPsychometricsClassFilter] = useState('ALL');
-  const [selectedStudentForAnalytics, setSelectedStudentForAnalytics] = useState<string>('s-1');
+  const [selectedStudentForAnalytics, setSelectedStudentForAnalytics] = useState<string>('');
   const [analyticsTestResult, setAnalyticsTestResult] = useState<AnalyticsTestSuiteResult | null>(null);
   const [benchmarkResult, setBenchmarkResult] = useState<any | null>(null);
   const [isBenchmarking, setIsBenchmarking] = useState(false);

@@ -18,7 +18,7 @@ export const StudentPortalPage: React.FC = () => {
   // Birthdate + NISN Verification State (Starts empty for privacy & real gatekeeping)
   const [birthDateInput, setBirthDateInput] = useState('');
   const [nisnInput, setNisnInput] = useState('');
-  const [selectedTryoutId, setSelectedTryoutId] = useState('to-3');
+  const [selectedTryoutId, setSelectedTryoutId] = useState('');
 
   // Verified Session & Data State
   const [verifiedStudent, setVerifiedStudent] = useState<Student | null>(null);
@@ -331,16 +331,11 @@ export const StudentPortalPage: React.FC = () => {
     date: p.date,
     score: p.score,
     classAverage: p.classAverage ?? 75.0,
-  })) || [
-    { code: 'TO-1', title: 'Try Out 1 — Tengah Ganjil', date: '12 Sep 2025', score: (verifiedStudent?.targetScore || 80) - 8, classAverage: 72.0 },
-    { code: 'TO-2', title: 'Try Out 2 — Persiapan SNBT 1', date: '17 Nov 2025', score: (verifiedStudent?.targetScore || 80) - 3, classAverage: 74.5 },
-    { code: 'TO-3', title: 'Try Out 3 — Persiapan SNBT 2', date: '12 Feb 2026', score: activeScore?.calculatedScore || 85, classAverage: 78.0 },
-    { code: 'TO-4', title: 'Try Out 4 — Intensif SNBT', date: '05 Apr 2026', score: verifiedStudent?.targetScore || 85, classAverage: 80.0 },
-  ];
+  })) || [];
 
   // DETERMINISTIC REAL CALCULATION: Compute per-subject scores for student
   const getSubjectScore = (subjId: string, tryoutIndex: number, tryoutCode: string): number => {
-    if (!verifiedStudent) return 75.0;
+    if (!verifiedStudent) return 0;
 
     const targetTryout = tryouts.find(t => t.code === tryoutCode || t.id === `to-${tryoutIndex + 1}`) || tryouts[tryoutIndex];
     if (targetTryout) {
@@ -366,7 +361,7 @@ export const StudentPortalPage: React.FC = () => {
       }
     }
 
-    return 75.0;
+    return 0;
   };
 
   // Build real subject recap matrix rows
