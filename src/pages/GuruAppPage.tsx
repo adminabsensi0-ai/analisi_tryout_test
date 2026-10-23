@@ -27,6 +27,7 @@ import {
   Material, Competency, ClassRoom, Student, CognitiveLevel, QuestionStatus,
   ColumnMappingConfig, SheetImportSummary, Score, AcademicYear
 } from '../types/database';
+import { generateUuid } from '../utils/idUtils';
 import { ResourceCard } from '../components/ResourceCard';
 import { ItemAnalysisVisualizer } from '../components/ItemAnalysisVisualizer';
 
@@ -155,7 +156,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     const selectedPkg = newToPackageId ? dbService.getExamPackageById(newToPackageId) : undefined;
 
     const newToObj: Tryout = {
-      id: `to-${Date.now()}`,
+      id: generateUuid(),
       code: createdCode,
       title: newToTitle.trim(),
       assessmentType: 'TRYOUT',
@@ -1507,89 +1508,91 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     </div>
                   </div>
 
-                  {/* ACTION ITEMS / EARLY WARNING SYSTEM WIDGET */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Warning 1: Soal Butuh Revisi */}
-                    <div className="bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-5 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                          <AlertTriangle className="w-4 h-4 text-amber-600" />
-                          <span>Perlu Perhatian</span>
-                        </span>
-                        <span className="text-xs font-mono font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full">
-                          Butir Soal
-                        </span>
+                  {/* ACTION ITEMS / EARLY WARNING SYSTEM WIDGET (Hanya tampil jika ada data nilai ujian) */}
+                  {scores.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Warning 1: Soal Butuh Revisi */}
+                      <div className="bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-5 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-600" />
+                            <span>Perlu Perhatian</span>
+                          </span>
+                          <span className="text-xs font-mono font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full">
+                            Butir Soal
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                          Evaluasi Butir Soal Terindikasi Buruk
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                          Terdapat butir soal dengan daya pembeda negatif atau distraktor tidak efektif pada paket Try Out aktif.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleTabChange('ANALYTICS')}
+                          className="w-full py-2 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/80 text-amber-800 dark:text-amber-200 text-xs font-bold rounded-xl border border-amber-200 dark:border-amber-800 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span>Buka Analisis Butir Soal</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                        Evaluasi Butir Soal Terindikasi Buruk
-                      </h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                        Terdapat butir soal dengan daya pembeda negatif atau distraktor tidak efektif pada paket Try Out aktif.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => handleTabChange('ANALYTICS')}
-                        className="w-full py-2 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/80 text-amber-800 dark:text-amber-200 text-xs font-bold rounded-xl border border-amber-200 dark:border-amber-800 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <span>Buka Analisis Butir Soal</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
 
-                    {/* Warning 2: Siswa Remedial */}
-                    <div className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/60 rounded-2xl p-5 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                          <Users className="w-4 h-4 text-rose-600" />
-                          <span>Pendampingan</span>
-                        </span>
-                        <span className="text-xs font-mono font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded-full">
-                          Remedial
-                        </span>
+                      {/* Warning 2: Siswa Remedial */}
+                      <div className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/60 rounded-2xl p-5 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                            <Users className="w-4 h-4 text-rose-600" />
+                            <span>Pendampingan</span>
+                          </span>
+                          <span className="text-xs font-mono font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded-full">
+                            Remedial
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                          Siswa Di Bawah KKM ({currentSubjectKKM} Poin)
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                          Pantau daftar siswa yang membutuhkan bimbingan remedial khusus pada kompetensi dasar yang diujikan.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleTabChange('PROGRESS_TRACKING')}
+                          className="w-full py-2 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/80 text-rose-800 dark:text-rose-200 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span>Cek Grafik &amp; Ketuntasan</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                        Siswa Di Bawah KKM ({currentSubjectKKM} Poin)
-                      </h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                        Pantau daftar siswa yang membutuhkan bimbingan remedial khusus pada kompetensi dasar yang diujikan.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => handleTabChange('PROGRESS_TRACKING')}
-                        className="w-full py-2 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/80 text-rose-800 dark:text-rose-200 text-xs font-bold rounded-xl border border-rose-200 dark:border-rose-800 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <span>Cek Grafik &amp; Ketuntasan</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
 
-                    {/* Warning 3: Pembahasan Soal */}
-                    <div className="bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/60 rounded-2xl p-5 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                          <BookOpen className="w-4 h-4 text-indigo-600" />
-                          <span>Materi &amp; Media</span>
-                        </span>
-                        <span className="text-xs font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 px-2 py-0.5 rounded-full">
-                          Published
-                        </span>
+                      {/* Warning 3: Pembahasan Soal */}
+                      <div className="bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/60 rounded-2xl p-5 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                            <BookOpen className="w-4 h-4 text-indigo-600" />
+                            <span>Materi &amp; Media</span>
+                          </span>
+                          <span className="text-xs font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 px-2 py-0.5 rounded-full">
+                            Published
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                          Publikasi Modul &amp; Solusi Video
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                          Siswa dapat mengakses modul pembahasan PDF dan pembahasan video YouTube setelah ujian selesai.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleTabChange('EXPLANATIONS')}
+                          className="w-full py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 text-indigo-800 dark:text-indigo-200 text-xs font-bold rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span>Kelola Link Pembahasan</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                        Publikasi Modul &amp; Solusi Video
-                      </h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                        Siswa dapat mengakses modul pembahasan PDF dan pembahasan video YouTube setelah ujian selesai.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => handleTabChange('EXPLANATIONS')}
-                        className="w-full py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 text-indigo-800 dark:text-indigo-200 text-xs font-bold rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <span>Kelola Link Pembahasan</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
                     </div>
-                  </div>
+                  )}
 
                   {/* QUICK HUB NAVIGATION CARDS */}
                   <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
@@ -1647,7 +1650,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           Grafik &amp; Perkembangan
                         </h4>
                         <p className="text-[11px] text-slate-500 leading-relaxed">
-                          Pantau laju pertumbuhan nilai TO 1-4 dan ketuntasan KKM.
+                          Pantau laju pertumbuhan nilai TO dan ketuntasan KKM.
                         </p>
                       </div>
 
@@ -1668,80 +1671,98 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     </div>
                   </div>
 
-                  {/* 2. KLASTER PERKEMBANGAN SISWA & EARLY WARNING SYSTEM */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Klaster Consistent Risers */}
-                    <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                          <ArrowUp className="w-4 h-4 text-emerald-600" />
-                          <span>Consistent Risers</span>
-                        </span>
-                        <span className="text-xs font-mono font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded">
-                          7 Siswa
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Siswa dengan grafik nilai yang selalu menanjak di seluruh TryOut.
-                      </p>
-                      <div className="space-y-1.5 pt-1">
-                        {students.slice(0, 3).map(s => (
-                          <div key={s.id} className="p-2 bg-slate-50 dark:bg-slate-950 rounded-lg text-xs flex items-center justify-between">
-                            <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
-                            <span className="font-mono text-emerald-600 font-bold">+12.5 Poin</span>
+                  {/* 2. KLASTER PERKEMBANGAN SISWA (Hanya aktif jika sudah ada data nilai riil) */}
+                  {scores.length > 0 && (() => {
+                    const passingStudents = filteredStudents.filter(s => {
+                      const studentScores = scores.filter(sc => sc.studentId === s.id);
+                      return studentScores.length > 0 && studentScores.every(sc => sc.calculatedScore >= currentSubjectKKM);
+                    });
+                    const needAttentionStudents = filteredStudents.filter(s => {
+                      const studentScores = scores.filter(sc => sc.studentId === s.id);
+                      return studentScores.length > 0 && studentScores.some(sc => sc.calculatedScore < currentSubjectKKM);
+                    });
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Klaster Consistent Risers */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                              <ArrowUp className="w-4 h-4 text-emerald-600" />
+                              <span>Tuntas Konsisten</span>
+                            </span>
+                            <span className="text-xs font-mono font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded">
+                              {passingStudents.length} Siswa
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Siswa tuntas konsisten mencapai batas KKM ({currentSubjectKKM} Poin).
+                          </p>
+                          <div className="space-y-1.5 pt-1">
+                            {passingStudents.slice(0, 3).map(s => (
+                              <div key={s.id} className="p-2 bg-slate-50 dark:bg-slate-950 rounded-lg text-xs flex items-center justify-between">
+                                <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
+                                <span className="font-mono text-emerald-600 font-bold">&ge; {currentSubjectKKM}</span>
+                              </div>
+                            ))}
+                            {passingStudents.length === 0 && (
+                              <div className="text-xs text-slate-400 italic py-1">Belum ada siswa di kategori ini.</div>
+                            )}
+                          </div>
+                        </div>
 
-                    {/* Klaster Steady Performers */}
-                    <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-indigo-600" />
-                          <span>Steady Performers</span>
-                        </span>
-                        <span className="text-xs font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 px-2 py-0.5 rounded">
-                          20 Siswa
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Siswa tuntas konsisten di atas KKM di seluruh ujian.
-                      </p>
-                      <div className="space-y-1.5 pt-1">
-                        {students.slice(3, 6).map(s => (
-                          <div key={s.id} className="p-2 bg-slate-50 dark:bg-slate-950 rounded-lg text-xs flex items-center justify-between">
-                            <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
-                            <span className="font-mono text-indigo-600 font-bold">Stabil &gt; 80</span>
+                        {/* Klaster Peserta Aktif */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                              <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                              <span>Peserta Ujian</span>
+                            </span>
+                            <span className="text-xs font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 px-2 py-0.5 rounded">
+                              {filteredStudents.filter(s => scores.some(sc => sc.studentId === s.id)).length} Siswa
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Siswa yang telah memiliki catatan pengerjaan ujian.
+                          </p>
+                          <div className="space-y-1.5 pt-1">
+                            {filteredStudents.filter(s => scores.some(sc => sc.studentId === s.id)).slice(0, 3).map(s => (
+                              <div key={s.id} className="p-2 bg-slate-50 dark:bg-slate-950 rounded-lg text-xs flex items-center justify-between">
+                                <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
+                                <span className="font-mono text-indigo-600 font-bold">Aktif</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
 
-                    {/* Klaster Need Attention / Alert Group */}
-                    <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-rose-200 dark:border-rose-900/60 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                          <AlertTriangle className="w-4 h-4 text-rose-600" />
-                          <span>Perlu Pendampingan</span>
-                        </span>
-                        <span className="text-xs font-mono font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded">
-                          5 Siswa
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Siswa belum tuntas KKM di &ge; 3 mata pelajaran.
-                      </p>
-                      <div className="space-y-1.5 pt-1">
-                        {students.slice(6, 8).map(s => (
-                          <div key={s.id} className="p-2 bg-rose-50/70 dark:bg-rose-950/30 rounded-lg text-xs flex items-center justify-between">
-                            <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
-                            <span className="font-mono text-rose-600 font-bold">Remedial 3 Mapel</span>
+                        {/* Klaster Need Attention / Alert Group */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-rose-200 dark:border-rose-900/60 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                              <AlertTriangle className="w-4 h-4 text-rose-600" />
+                              <span>Perlu Pendampingan</span>
+                            </span>
+                            <span className="text-xs font-mono font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded">
+                              {needAttentionStudents.length} Siswa
+                            </span>
                           </div>
-                        ))}
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Siswa dengan capaian di bawah batas KKM (&lt; {currentSubjectKKM} Poin).
+                          </p>
+                          <div className="space-y-1.5 pt-1">
+                            {needAttentionStudents.slice(0, 3).map(s => (
+                              <div key={s.id} className="p-2 bg-rose-50/70 dark:bg-rose-950/30 rounded-lg text-xs flex items-center justify-between">
+                                <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
+                                <span className="font-mono text-rose-600 font-bold">Remedial</span>
+                              </div>
+                            ))}
+                            {needAttentionStudents.length === 0 && (
+                              <div className="text-xs text-slate-400 italic py-1">Seluruh siswa telah mencapai KKM.</div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                 </div>
               )}
@@ -7608,61 +7629,40 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
       {/* ADD TRYOUT PACKAGE MODAL */}
       {showTryoutModal && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[92vh]">
+        <div
+          className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowTryoutModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col"
+            style={{ maxHeight: 'calc(100vh - 2rem)' }}
+            onClick={e => e.stopPropagation()}
+          >
 
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4 shrink-0">
-              <div className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-bold text-sm">
-                <Layers className="w-5 h-5" />
-                <span>Tambah Paket TryOut Baru</span>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-2xl bg-teal-600 text-white flex items-center justify-center shrink-0">
+                  <Layers className="w-4.5 h-4.5" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-tight">Tambah Paket TryOut Baru</h2>
+                  <p className="text-[11px] text-slate-400 font-mono">Isi detail paket, lalu simpan</p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setShowTryoutModal(false);
-                  setAnswerKeyUploadErrors([]);
-                  setAnswerKeyUploadSuccess(false);
-                }}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                onClick={() => setShowTryoutModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Scrollable Body */}
-            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5 text-xs">
+            {/* Scrollable Body — min-h-0 wajib agar flex-1 + overflow-y-auto bekerja di semua browser */}
+            <div className="overflow-y-auto flex-1 min-h-0 px-6 py-5 space-y-4 text-xs">
 
-              {/* ── Info Dasar ── */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                    Kode TryOut <span className="font-normal text-slate-400">(opsional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={newToCode}
-                    onChange={e => setNewToCode(e.target.value)}
-                    placeholder="Contoh: TO-2026-05"
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-1 focus:ring-teal-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                    Jumlah Soal <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={newToQuestionCount}
-                    onChange={e => handleQuestionCountChange(Number(e.target.value))}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500"
-                  >
-                    {[10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(n => (
-                      <option key={n} value={n}>{n} soal</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
+              {/* ── Kode & Judul ── */}
               <div>
                 <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
                   Nama / Judul Paket TryOut <span className="text-rose-500">*</span>
@@ -7672,106 +7672,116 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   value={newToTitle}
                   onChange={e => setNewToTitle(e.target.value)}
                   placeholder="Contoh: Try Out 5 — Evaluasi Pasca Mid Semester"
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
+                  autoFocus
                 />
               </div>
 
               <div>
                 <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                  Wadah / Paket Ujian Induk <span className="font-normal text-slate-400">(Sangat Disarankan agar Rapi)</span>
+                  Kode TryOut <span className="font-normal text-slate-400">(opsional — akan di-generate otomatis jika kosong)</span>
+                </label>
+                <input
+                  type="text"
+                  value={newToCode}
+                  onChange={e => setNewToCode(e.target.value)}
+                  placeholder="Contoh: TO-2026-05"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
+                />
+              </div>
+
+              {/* ── Wadah ── */}
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                  Wadah / Paket Ujian Induk <span className="font-normal text-slate-400">(Sangat Disarankan)</span>
                 </label>
                 <select
                   value={newToPackageId}
                   onChange={e => setNewToPackageId(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                 >
-                  <option value="">-- Pilih Wadah / Paket Ujian --</option>
+                  <option value="">-- Tidak Dimasukkan ke Wadah --</option>
                   {dbService.getExamPackages().map(pkg => (
                     <option key={pkg.id} value={pkg.id}>
                       {pkg.code} — {pkg.title}
                     </option>
                   ))}
                 </select>
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Memasukkan soal ke wadah memastikan link spreadsheet terkelompok dan hasil analisis hanya dapat diakses oleh kelas target wadah tersebut.
-                </span>
+                <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                  Memasukkan tryout ke wadah memastikan spreadsheet terkelompok dan analisis hanya dapat diakses oleh kelas target.
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* ── Link Google Form & Sheet ── */}
+              <div className="space-y-3">
                 <div>
                   <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                    Link Google Form <span className="font-normal text-slate-400">(untuk siswa)</span>
+                    Link Google Form <span className="text-rose-400">*</span> <span className="font-normal text-slate-400">(dibagikan ke siswa)</span>
                   </label>
                   <input
                     type="url"
                     value={newToGFormUrl}
                     onChange={e => setNewToGFormUrl(e.target.value)}
                     placeholder="https://forms.gle/..."
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                   />
                 </div>
                 <div>
                   <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                    Link Google Sheet <span className="font-normal text-slate-400">(respons)</span>
+                    Link Google Sheet <span className="text-rose-400">*</span> <span className="font-normal text-slate-400">(respons otomatis)</span>
                   </label>
                   <input
                     type="url"
                     value={newToGSheetUrl}
                     onChange={e => setNewToGSheetUrl(e.target.value)}
                     placeholder="https://docs.google.com/spreadsheets/d/..."
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                   />
                 </div>
               </div>
 
               {/* ── Panduan Kunci Jawaban Otomatis ── */}
-              <div className="p-4 bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-teal-950/40 dark:to-emerald-950/30 rounded-2xl border border-teal-200 dark:border-teal-800/80 space-y-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold shrink-0">
+              <div className="p-4 bg-teal-50 dark:bg-teal-950/30 rounded-2xl border border-teal-200 dark:border-teal-800/60 space-y-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0">
                     <Key className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-slate-900 dark:text-white text-xs">
-                      Kunci Jawaban Otomatis via Akun Resmi
-                    </h4>
-                    <p className="text-[11px] text-teal-700 dark:text-teal-300">
-                      Anda tidak perlu menginput atau mengunggah file Excel kunci jawaban secara manual.
-                    </p>
+                    <h4 className="font-bold text-teal-900 dark:text-teal-100 text-xs">Kunci Jawaban Terdeteksi Otomatis</h4>
+                    <p className="text-[10px] text-teal-700 dark:text-teal-400 leading-relaxed">Tidak perlu upload file Excel kunci jawaban secara manual.</p>
                   </div>
                 </div>
-
-                <div className="p-3 bg-white/80 dark:bg-slate-900/80 rounded-xl border border-teal-150 dark:border-teal-900/60 text-[11px] text-slate-600 dark:text-slate-300 space-y-1.5 leading-relaxed">
-                  <div className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-                    <span>Cara Kerja Sistem:</span>
-                  </div>
-                  <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px]">
-                    <li>Kerjakan Google Form ujian ini <strong>1 kali</strong> menggunakan <strong>NISN Akun Kunci Resmi</strong> yang telah didaftarkan Admin.</li>
-                    <li>Sistem akan mendeteksi respon akun tersebut dan secara otomatis menjadikannya Kunci Acuan untuk semua butir soal (PG, PG Kompleks, maupun Benar/Salah).</li>
-                    <li>Nilai Akun Kunci otomatis dikecualikan dari rapor dan statistik siswa nyata.</li>
-                  </ol>
-                </div>
+                <ol className="space-y-1.5 pl-1">
+                  {[
+                    'Guru mengerjakan Google Form ini 1 kali menggunakan NISN Akun Kunci Resmi yang didaftarkan Admin.',
+                    'Sistem mendeteksi respons akun tersebut dan menjadikannya Kunci Acuan untuk semua soal (PG, PG Kompleks, Benar/Salah).',
+                    'Nilai Akun Kunci dikecualikan otomatis dari laporan & statistik siswa nyata.',
+                  ].map((step, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[11px] text-teal-800 dark:text-teal-300">
+                      <span className="shrink-0 w-4 h-4 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-[9px] mt-0.5">{i + 1}</span>
+                      <span className="leading-relaxed">{step}</span>
+                    </li>
+                  ))}
+                </ol>
               </div>
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
-              <div className="text-[11px] text-teal-600 dark:text-teal-400 font-medium flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Kunci jawaban terdeteksi otomatis dari Google Sheet</span>
-              </div>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0 bg-slate-50/50 dark:bg-slate-900/50 rounded-b-3xl">
+              <p className="text-[11px] text-slate-400 hidden sm:block">Kolom bertanda <span className="text-rose-400 font-bold">*</span> wajib diisi</p>
+              <div className="flex items-center gap-2 ml-auto">
                 <button
                   type="button"
                   onClick={() => setShowTryoutModal(false)}
-                  className="px-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="button"
                   onClick={handleCreateTryoutPackage}
-                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                  disabled={!newToTitle.trim()}
+                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer flex items-center gap-1.5 transition-colors"
                 >
                   <Save className="w-4 h-4" />
                   <span>Simpan Paket TryOut</span>
