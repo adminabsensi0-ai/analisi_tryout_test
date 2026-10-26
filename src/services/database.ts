@@ -666,68 +666,27 @@ export class DatabaseService {
           });
         }
 
-        // Ensure answers and scores are hydrated if old storage is empty
-        if (!parsed.answers || parsed.answers.length === 0) {
-          parsed.answers = INITIAL_ANSWERS;
-        }
-        if (!parsed.scores || parsed.scores.length < INITIAL_SCORES.length) {
-          parsed.scores = INITIAL_SCORES;
-        }
-        if (!parsed.responses || parsed.responses.length < INITIAL_RESPONSES.length) {
-          parsed.responses = INITIAL_RESPONSES;
-        }
-
-        // Ensure examPackages exists or create initial "Arsip Paket Ujian Awal"
-        if (!parsed.examPackages || !Array.isArray(parsed.examPackages) || parsed.examPackages.length === 0) {
-          const allClasses = parsed.classes || INITIAL_CLASSES;
-          const allTryouts = parsed.tryouts || INITIAL_TRYOUTS;
-          const allTryoutSubjects = parsed.tryoutSubjects || INITIAL_TRYOUT_SUBJECTS;
-          
-          const archiveSubjects: ExamPackageSubject[] = allTryoutSubjects.map((tsub: any, idx: number) => {
-            const parentTo = allTryouts.find((t: any) => t.id === tsub.tryoutId);
-            return {
-              id: `pkg-sub-${idx + 1}`,
-              packageId: 'pkt-arsip-awal',
-              subjectId: tsub.subjectId,
-              googleFormUrl: tsub.googleFormUrl || parentTo?.googleFormUrl || '',
-              googleSheetUrl: parentTo?.googleSheetUrl || '',
-              answerKey: parentTo?.answerKey || [],
-              totalQuestions: tsub.totalQuestions || 40,
-              durationMinutes: tsub.durationMinutes || 60,
-              passingGrade: tsub.passingGrade || 75,
-              syncStatus: 'SYNCED',
-              lastUpdatedBy: 'Sistem (Migrasi Otomatis)',
-              updatedAt: new Date().toISOString()
-            };
-          });
-
-          parsed.examPackages = [{
-            id: 'pkt-arsip-awal',
-            code: 'PKT-ARSIP',
-            title: 'Arsip Paket Ujian Awal',
-            assessmentType: 'TRYOUT',
-            academicYearId: parsed.academicYears?.[0]?.id || '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1',
-            targetGrades: ['X', 'XI', 'XII', '7', '8', '9'],
-            targetClassIds: allClasses.map((c: any) => c.id),
-            startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-            endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
-            status: 'ACTIVE',
-            description: 'Paket Ujian otomatis untuk merangkum riwayat tryout dan analisis sebelumnya.',
-            subjects: archiveSubjects,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }];
-        }
-
-        // Ensure existing tryouts have targetClassIds and packageId
+        // Clean out legacy mock data if present in localStorage
+        const legacyMockToIds = new Set(['to-1', 'to-2', 'to-3', 'to-4']);
         if (parsed.tryouts && Array.isArray(parsed.tryouts)) {
-          const classIds = (parsed.classes || INITIAL_CLASSES).map((c: any) => c.id);
-          parsed.tryouts.forEach((t: any) => {
-            if (!t.packageId) t.packageId = 'pkt-arsip-awal';
-            if (!t.targetClassIds || t.targetClassIds.length === 0) {
-              t.targetClassIds = classIds;
-            }
-          });
+          parsed.tryouts = parsed.tryouts.filter((t: any) => !legacyMockToIds.has(t.id));
+        }
+        if (parsed.scores && Array.isArray(parsed.scores)) {
+          parsed.scores = parsed.scores.filter((s: any) => !legacyMockToIds.has(s.tryoutId) && !s.id.startsWith('sc-'));
+        }
+        if (parsed.responses && Array.isArray(parsed.responses)) {
+          parsed.responses = parsed.responses.filter((r: any) => !legacyMockToIds.has(r.tryoutId) && !r.id.startsWith('resp-'));
+        }
+        if (parsed.answers && Array.isArray(parsed.answers)) {
+          parsed.answers = parsed.answers.filter((a: any) => !legacyMockToIds.has(a.tryoutId) && !a.id.startsWith('ans-'));
+        }
+        if (parsed.questions && Array.isArray(parsed.questions)) {
+          parsed.questions = parsed.questions.filter((q: any) => !q.uniqueCode?.startsWith('MAT-TO03-'));
+        }
+        if (parsed.examPackages && Array.isArray(parsed.examPackages)) {
+          parsed.examPackages = parsed.examPackages.filter((p: any) => p.id !== 'pkt-arsip-awal');
+        } else {
+          parsed.examPackages = [];
         }
 
         return parsed;
@@ -747,56 +706,19 @@ export class DatabaseService {
       teacherSubjects: INITIAL_TEACHER_SUBJECTS,
       materials: INITIAL_MATERIALS,
       competencies: INITIAL_COMPETENCIES,
-      examPackages: [
-        {
-          id: 'pkt-arsip-awal',
-          code: 'PKT-ARSIP',
-          title: 'Arsip Paket Ujian Awal',
-          assessmentType: 'TRYOUT',
-          academicYearId: INITIAL_ACADEMIC_YEARS[0]?.id || '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1',
-          targetGrades: ['X', 'XI', 'XII', '7', '8', '9'],
-          targetClassIds: INITIAL_CLASSES.map(c => c.id),
-          startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-          endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'ACTIVE',
-          description: 'Paket Ujian otomatis untuk merangkum riwayat tryout dan analisis sebelumnya.',
-          subjects: INITIAL_TRYOUT_SUBJECTS.map((tsub, idx) => {
-            const parentTo = INITIAL_TRYOUTS.find(t => t.id === tsub.tryoutId);
-            return {
-              id: `pkg-sub-${idx + 1}`,
-              packageId: 'pkt-arsip-awal',
-              subjectId: tsub.subjectId,
-              googleFormUrl: tsub.googleFormUrl || parentTo?.googleFormUrl || '',
-              googleSheetUrl: parentTo?.googleSheetUrl || '',
-              answerKey: parentTo?.answerKey || [],
-              totalQuestions: tsub.totalQuestions || 40,
-              durationMinutes: tsub.durationMinutes || 60,
-              passingGrade: tsub.passingGrade || 75,
-              syncStatus: 'SYNCED',
-              lastUpdatedBy: 'Sistem (Migrasi Otomatis)',
-              updatedAt: new Date().toISOString()
-            };
-          }),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
-      ],
-      tryouts: INITIAL_TRYOUTS.map(t => ({
-        ...t,
-        packageId: 'pkt-arsip-awal',
-        targetClassIds: INITIAL_CLASSES.map(c => c.id)
-      })),
-      tryoutSubjects: INITIAL_TRYOUT_SUBJECTS,
-      questions: INITIAL_QUESTIONS,
-      tryoutQuestions: INITIAL_TRYOUT_QUESTIONS,
+      examPackages: [],
+      tryouts: [],
+      tryoutSubjects: [],
+      questions: [],
+      tryoutQuestions: [],
       googleForms: [],
-      responses: INITIAL_RESPONSES,
-      answers: INITIAL_ANSWERS,
-      scores: INITIAL_SCORES,
+      responses: [],
+      answers: [],
+      scores: [],
       questionAnalysis: [],
-      explanations: INITIAL_EXPLANATIONS,
+      explanations: [],
       reports: [],
-      auditLogs: INITIAL_AUDIT_LOGS,
+      auditLogs: [],
     };
     return defaultState;
   }

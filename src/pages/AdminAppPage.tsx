@@ -435,8 +435,27 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const handleSaveStudent = (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (!formName.trim() || !formNisn.trim() || !formSelectedClassId) {
-        triggerToast('Lengkapi Nama, NISN, dan Kelas Siswa.', 'error');
+      if (!formName.trim() || !formNisn.trim()) {
+        triggerToast('Lengkapi Nama dan NISN Siswa.', 'error');
+        return;
+      }
+
+      let classIdToUse = formSelectedClassId;
+
+      // Jika akun kunci jawaban dan belum memilih kelas atau belum ada kelas sama sekali
+      if (formIsAnswerKeyAccount && (!classIdToUse || classes.length === 0)) {
+        let keyClass = classes.find(c => c.name.toLowerCase().includes('kunci') || c.name.toLowerCase().includes('master'));
+        if (!keyClass) {
+          const defaultAy = academicYears.find(ay => ay.isActive) || academicYears[0];
+          keyClass = dbService.addClass({
+            name: 'Kunci Jawaban',
+            gradeLevel: 'XII',
+            academicYearId: defaultAy?.id || '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1'
+          }, currentUser);
+        }
+        classIdToUse = keyClass.id;
+      } else if (!classIdToUse) {
+        triggerToast('Pilih Kelas untuk Siswa.', 'error');
         return;
       }
 
@@ -445,7 +464,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
         nis: formNis.trim(),
         name: formName.trim(),
         gender: formGender,
-        classId: formSelectedClassId,
+        classId: classIdToUse,
         birthDate: formBirthDate,
         email: formEmail.trim() || `${formNisn.trim()}@siswa.sch.id`,
         phone: formPhone.trim(),
@@ -455,10 +474,10 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
 
       if (modalType === 'STUDENT_EDIT' && editingStudentId) {
         dbService.updateStudent(editingStudentId, studentPayload, currentUser);
-        triggerToast(`Data siswa '${formName}' berhasil diperbarui.`);
+        triggerToast(`Data ${formIsAnswerKeyAccount ? 'akun kunci' : 'siswa'} '${formName}' berhasil diperbarui.`);
       } else {
         dbService.addStudent(studentPayload, currentUser);
-        triggerToast(`Siswa '${formName}' berhasil ditambahkan.`);
+        triggerToast(`${formIsAnswerKeyAccount ? 'Akun kunci jawaban' : 'Siswa'} '${formName}' berhasil ditambahkan.`);
       }
 
       closeModal();
@@ -2841,74 +2860,89 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
       {/* MODAL 4: CREATE / EDIT SINGLE STUDENT */}
       {/* =================================----------------------------- */}
       {(modalType === 'STUDENT_CREATE' || modalType === 'STUDENT_EDIT') && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                {modalType === 'STUDENT_EDIT' ? 'Edit Data Siswa & Nomor NIS' : 'Tambah Siswa Baru (Manual)'}
-              </h3>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+        <div
+          className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+          onClick={closeModal}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col"
+            style={{ maxHeight: 'calc(100vh - 2rem)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-6 py-4 shrink-0">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  {modalType === 'STUDENT_EDIT' ? 'Edit Data Siswa' : 'Tambah Siswa Baru'}
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Kolom bertanda <span className="text-rose-500 font-bold">*</span> wajib diisi</p>
+              </div>
+              <button onClick={closeModal} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveStudent} className="space-y-3 text-xs">
+            {/* Scrollable Body */}
+            <form onSubmit={handleSaveStudent} className="overflow-y-auto flex-1 min-h-0 px-6 py-5 space-y-4 text-xs">
+
+              {/* NISN & NIS */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    NISN Siswa <span className="text-rose-500">*</span>
+                    NISN <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formNisn}
                     onChange={e => setFormNisn(e.target.value)}
                     placeholder="0061234561"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
                     required
+                    autoFocus
                   />
                 </div>
-
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    NIS Lokal Sekolah
+                    NIS Lokal <span className="font-normal text-slate-400">(opsional)</span>
                   </label>
                   <input
                     type="text"
                     value={formNis}
                     onChange={e => setFormNis(e.target.value)}
                     placeholder="Contoh: 1090"
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
                   />
                 </div>
               </div>
 
+              {/* Nama */}
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Nama Lengkap Siswa <span className="text-rose-500">*</span>
+                  Nama Lengkap <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={formName}
                   onChange={e => setFormName(e.target.value)}
                   placeholder="Ahmad Fauzi"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-bold"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
                   required
                 />
               </div>
 
+              {/* JK & Tgl Lahir */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Jenis Kelamin</label>
                   <select
                     value={formGender}
                     onChange={e => setFormGender(e.target.value as any)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
                   >
                     <option value="L">Laki-Laki (L)</option>
                     <option value="P">Perempuan (P)</option>
                   </select>
                 </div>
-
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Tanggal Lahir <span className="text-rose-500">*</span>
@@ -2917,61 +2951,86 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                     type="date"
                     value={formBirthDate}
                     onChange={e => setFormBirthDate(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-mono"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
                     required
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Pilih Kelas</label>
+              {/* Akun Kunci Jawaban (Diletakkan sebelum kelas agar interaksi dinamis) */}
+              <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/70 rounded-2xl space-y-2">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formIsAnswerKeyAccount}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setFormIsAnswerKeyAccount(checked);
+                      if (checked && (!formName || formName === 'Ahmad Fauzi')) {
+                        setFormName('Akun Kunci Jawaban');
+                      }
+                    }}
+                    className="w-4 h-4 mt-0.5 text-amber-600 rounded focus:ring-amber-500 cursor-pointer shrink-0"
+                  />
+                  <div>
+                    <span className="font-bold text-amber-900 dark:text-amber-200 text-xs flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                      Tetapkan sebagai Akun Kunci Jawaban Resmi
+                    </span>
+                    <p className="text-[10px] text-amber-800 dark:text-amber-300/80 leading-relaxed mt-1">
+                      Centang ini jika akun dibuat untuk Guru mengisi 1 kali Google Form sebagai respon Kunci Acuan. Akun ini otomatis dikecualikan dari rapor dan statistik siswa nyata.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Kelas */}
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Kelas Roster {formIsAnswerKeyAccount ? <span className="font-normal text-amber-600 dark:text-amber-400">(Opsional untuk Akun Kunci — otomatis ke kelas 'Kunci Jawaban')</span> : <span className="text-rose-500">*</span>}
+                </label>
+                {classes.length === 0 ? (
+                  formIsAnswerKeyAccount ? (
+                    <div className="w-full px-3 py-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-emerald-700 dark:text-emerald-300 text-[11px] flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                      <span>Sistem otomatis membuat kelas penampung <strong>'Kunci Jawaban'</strong> saat disimpan.</span>
+                    </div>
+                  ) : (
+                    <div className="w-full px-3 py-2.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 rounded-xl text-rose-700 dark:text-rose-300 text-[11px] leading-relaxed">
+                      ⚠️ Belum ada kelas yang terdaftar. Tambahkan kelas terlebih dahulu di tab <strong>Kelas</strong>.
+                    </div>
+                  )
+                ) : (
                   <select
                     value={formSelectedClassId}
                     onChange={e => setFormSelectedClassId(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-slate-900 dark:text-slate-100"
-                    required
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                    required={!formIsAnswerKeyAccount}
                   >
+                    <option value="">{formIsAnswerKeyAccount ? '-- Otomatis Kelas Kunci Jawaban --' : '-- Pilih Kelas --'}</option>
                     {classes.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
-                </div>
+                )}
               </div>
 
-              {/* Opsi Khusus: Akun Kunci Jawaban Resmi */}
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl space-y-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formIsAnswerKeyAccount}
-                    onChange={e => setFormIsAnswerKeyAccount(e.target.checked)}
-                    className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
-                  />
-                  <span className="font-bold text-amber-900 dark:text-amber-200 text-xs flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                    <span>Tetapkan sebagai Akun Kunci Jawaban Resmi</span>
-                  </span>
-                </label>
-                <p className="text-[10px] text-amber-800 dark:text-amber-300/80 leading-relaxed pl-6">
-                  Akun ini digunakan Guru untuk mengisi respon Google Form sebagai acuan Kunci Jawaban. Akun ini tidak akan dimasukkan ke dalam rapor atau analitik nilai siswa nyata.
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              {/* Footer */}
+              <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-800 gap-2">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold cursor-pointer"
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-semibold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold cursor-pointer flex items-center gap-1.5"
+                  disabled={!formIsAnswerKeyAccount && (classes.length === 0 || !formSelectedClassId)}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl font-semibold cursor-pointer flex items-center gap-1.5 transition-colors shadow-sm"
                 >
                   <Check className="w-4 h-4" />
-                  <span>{modalType === 'STUDENT_EDIT' ? 'Simpan Perubahan' : 'Simpan Siswa'}</span>
+                  <span>{modalType === 'STUDENT_EDIT' ? 'Simpan Perubahan' : (formIsAnswerKeyAccount ? 'Simpan Akun Kunci' : 'Simpan Siswa')}</span>
                 </button>
               </div>
             </form>

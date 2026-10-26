@@ -722,11 +722,29 @@ class SupabaseDbService {
       }
 
       const payload = toSupabaseStudent(student, classId);
-      const { data: res, error } = await supabase
+      let { data: res, error } = await supabase
         .from('students')
         .upsert(payload, { onConflict: 'nisn' })
         .select('id')
         .single();
+
+      // Fallback jika kolom is_answer_key_account belum ditambahkan lewat migrasi 007
+      if (error && (error.message?.includes('is_answer_key_account') || (error as any).details?.includes('is_answer_key_account'))) {
+        this.log('syncStudent: kolom is_answer_key_account belum ada di database, mencoba upsert tanpa kolom tersebut...', 'warn');
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.is_answer_key_account;
+        const retry = await supabase
+          .from('students')
+          .upsert(fallbackPayload, { onConflict: 'nisn' })
+          .select('id')
+          .single();
+        if (!retry.error) {
+          res = retry.data;
+          error = null;
+        } else {
+          error = retry.error;
+        }
+      }
 
       if (error) {
         this.log('syncStudent error: ' + error.message, 'warn');
