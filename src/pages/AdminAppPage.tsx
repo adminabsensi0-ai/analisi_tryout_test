@@ -5,7 +5,7 @@ import {
   AlertCircle, ShieldAlert, Search, Trash2, Edit3,
   Layers, ChevronLeft, ChevronRight, Check, AlertTriangle,
   FileSpreadsheet, Sparkles, Download, Upload, UserPlus,
-  Award, FileText, ArrowRight, FolderKanban, ChevronDown, ChevronUp, Cloud
+  Award, FileText, ArrowRight, FolderKanban, ChevronDown, ChevronUp, Cloud, Key
 } from 'lucide-react';
 import { dbService } from '../services/database';
 import {
