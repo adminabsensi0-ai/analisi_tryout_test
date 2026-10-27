@@ -57,7 +57,7 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
   });
 
   const overallAvg = subjectRecapRows.length > 0
-    ? Math.round((subjectRecapRows.reduce((a, b) => a + b, 0) / subjectRecapRows.length) * 10) / 10
+    ? Math.round((subjectRecapRows.reduce((acc, r) => acc + (r.avgScore || 0), 0) / subjectRecapRows.length) * 10) / 10
     : 0;
 
   const totalPassed = subjectRecapRows.filter(r => r.isPassing).length;

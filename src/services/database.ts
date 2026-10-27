@@ -2032,8 +2032,54 @@ export class DatabaseService {
     this.persistState();
   }
 
-  // -------------------------------------------------------------
-  // PHASE 10 — EXPLANATION SYSTEM API
+  /**
+   * Menyimpan nilai Try Out Eksternal (rekap skor per siswa dan nilai per mata pelajaran)
+   */
+  public saveExternalScores(
+    tryoutId: string,
+    newScores: Score[],
+    currentUser?: any
+  ): { savedCount: number; updatedCount: number } {
+    const studentTryoutKeys = new Set(newScores.map(s => `${s.studentId}___${s.tryoutId}`));
+    const scoreIdsToRemove = new Set(newScores.map(s => s.id));
+
+    let updatedCount = 0;
+    let savedCount = 0;
+
+    newScores.forEach(s => {
+      const exists = this.state.scores.some(old => old.studentId === s.studentId && old.tryoutId === s.tryoutId);
+      if (exists) {
+        updatedCount++;
+      } else {
+        savedCount++;
+      }
+    });
+
+    this.state.scores = [
+      ...this.state.scores.filter(
+        s => !studentTryoutKeys.has(`${s.studentId}___${s.tryoutId}`) && !scoreIdsToRemove.has(s.id)
+      ),
+      ...newScores,
+    ];
+
+    // Rebuild cache index
+    this.scoresByTryout.set(
+      tryoutId,
+      this.state.scores.filter(s => s.tryoutId === tryoutId)
+    );
+
+    if (currentUser) {
+      this.logAudit(
+        currentUser,
+        'IMPORT_EXTERNAL_SCORES',
+        `TRYOUT:${tryoutId}`,
+        `Impor ${newScores.length} nilai try out eksternal (${savedCount} baru, ${updatedCount} diperbarui).`
+      );
+    }
+
+    this.persistState();
+    return { savedCount, updatedCount };
+  }
   // -------------------------------------------------------------
   public getExplanations(): Explanation[] { return this.state.explanations; }
 

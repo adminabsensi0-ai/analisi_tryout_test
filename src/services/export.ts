@@ -174,7 +174,7 @@ export class ExportService {
     const tryoutTitleShort = tryout.title.length > 20 ? tryout.title.slice(0, 20) + '..' : tryout.title;
     doc.text(`:  ${tryout.code} - ${tryoutTitleShort}`, col2ValueX, yPos + 6.5);
     doc.text(`:  ${schoolInfo.academicYear}`, col2ValueX, yPos + 13);
-    doc.text(`:  ${tryout.date || new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}`, col2ValueX, yPos + 19.5);
+    doc.text(`:  ${(tryout as any).date || (tryout.startDate ? new Date(tryout.startDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }))}`, col2ValueX, yPos + 19.5);
     doc.setFontSize(8); // restore
 
     // 3. EXECUTIVE METRICS CARDS (Skor Akhir, Peringkat Kelas, Peringkat Angkatan, Rerata Kelas)
@@ -277,8 +277,8 @@ export class ExportService {
     doc.setDrawColor(226, 232, 240);
     doc.rect(leftMargin, yPos, contentWidth, 10, 'S');
 
-    const totalSoal = score.totalCorrect + score.totalIncorrect + score.totalUnanswered;
-    const akurasiPct = totalSoal > 0 ? ((score.totalCorrect / totalSoal) * 100).toFixed(1) : '0.0';
+    const totalSoal = (score.totalCorrect ?? 0) + (score.totalIncorrect ?? 0) + (score.totalUnanswered ?? 0);
+    const akurasiPct = totalSoal > 0 ? (((score.totalCorrect ?? 0) / totalSoal) * 100).toFixed(1) : '0.0';
 
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
@@ -1000,7 +1000,7 @@ export class ExportService {
       doc.text(`${std?.nisn || s.studentId.slice(0, 10)}`, 28, yPos + 5);
       doc.text(`${(std?.name || 'Siswa Assessment').slice(0, 28)}`, 60, yPos + 5);
       doc.text(`${s.calculatedScore.toFixed(1)}`, 128, yPos + 5);
-      doc.text(`${s.googleFormScore.toFixed(1)}`, 150, yPos + 5);
+      doc.text(`${(s.googleFormScore ?? 0).toFixed(1)}`, 150, yPos + 5);
       doc.text(`${s.scoringStatus}`, 170, yPos + 5);
 
       doc.setDrawColor(241, 245, 249);
@@ -1127,8 +1127,8 @@ export class ExportService {
         'Nama Siswa': std?.name || 'Siswa Assessment',
         'Kelas': cls?.name || 'XII IPA 1',
         'Skor Terhitung (DB)': Number(s.calculatedScore.toFixed(2)),
-        'Skor Google Form': Number(s.googleFormScore.toFixed(2)),
-        'Selisih Absolut': Number(s.scoreDifference.toFixed(2)),
+        'Skor Google Form': Number((s.googleFormScore ?? 0).toFixed(2)),
+        'Selisih Absolut': Number((s.scoreDifference ?? 0).toFixed(2)),
         'Status Scoring': s.scoringStatus,
         'Jumlah Benar': s.totalCorrect,
         'Jumlah Salah': s.totalIncorrect,

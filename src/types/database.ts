@@ -33,10 +33,21 @@ export type DiscriminationCategory =
   | 'CUKUP'        // 0.20 <= D < 0.30
   | 'BURUK';       // D < 0.20
 
-/** Status informatif analisis soal (untuk UI) */
-export type QuestionInformativeStatus = 'Mudah' | 'Sedang' | 'Sulit';
-export type QuestionDiscriminationStatus = 'Daya Beda Baik' | 'Daya Beda Sedang' | 'Daya Beda Rendah';
-export type QuestionReviewRecommendation = 'Perlu Ditinjau' | 'Valid / Layak Digunakan';
+/** Status informatif analisis soal (untuk UI) - Mendukung Bahasa Indonesia dan Internasional */
+export type QuestionInformativeStatus = 'Mudah' | 'Sedang' | 'Sulit' | 'Easy' | 'Medium' | 'Difficult';
+export type QuestionDiscriminationStatus =
+  | 'Daya Beda Baik'
+  | 'Daya Beda Sedang'
+  | 'Daya Beda Rendah'
+  | 'Good Discrimination'
+  | 'Moderate Discrimination'
+  | 'Poor Discrimination'
+  | 'Low Discrimination';
+export type QuestionReviewRecommendation =
+  | 'Perlu Ditinjau'
+  | 'Valid / Layak Digunakan'
+  | 'Needs Review'
+  | 'Good / Valid Question';
 
 export interface User {
   id: string;
@@ -206,6 +217,13 @@ export interface Tryout {
   answerKey?: string[];
   packageId?: string;
   targetClassIds?: string[];
+  /** Menandakan Try Out diselenggarakan oleh pihak eksternal (rekap nilai, bukan butir soal) */
+  isExternal?: boolean;
+  source?: 'INTERNAL' | 'EXTERNAL';
+  /** Daftar nama atau kode mata pelajaran/subtes untuk Try Out eksternal */
+  externalSubjects?: string[];
+  /** Skala penilaian: SCALE_100 (0-100) atau SCALE_UTBK (200-1000) */
+  externalScoreScale?: 'SCALE_100' | 'SCALE_UTBK' | 'CUSTOM';
 }
 
 export interface TryoutSubject {
@@ -281,17 +299,17 @@ export interface Answer {
 
 export interface Score {
   id: string;
-  responseId: string;
+  responseId?: string;
   studentId: string;
   tryoutId: string;
   subjectScores: Record<string, number>; // subjectId -> score
-  googleFormScore: number;
+  googleFormScore?: number;
   calculatedScore: number;
-  scoreDifference: number;
-  scoringStatus: ScoringStatus;
-  totalCorrect: number;
-  totalIncorrect: number;
-  totalUnanswered: number;
+  scoreDifference?: number;
+  scoringStatus?: ScoringStatus;
+  totalCorrect?: number;
+  totalIncorrect?: number;
+  totalUnanswered?: number;
   createdAt: string;
 }
 

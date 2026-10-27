@@ -267,7 +267,7 @@ export class GoogleIntegrationService {
 
     // If Official Answer Key row is detected, extract answers and update tryout/questions
     if (detectedKeyRow && detectedKeyStudent) {
-      const updatedKeyMap: Record<string, string> = { ...(tryout.answerKey || {}) };
+      const updatedKeyMap: Record<string, string> = { ...((tryout.answerKey as unknown as Record<string, string>) || {}) };
 
       questions.forEach(q => {
         const header = mappingConfig.questionMappings[q.uniqueCode];
@@ -295,12 +295,12 @@ export class GoogleIntegrationService {
             q.correctAnswer = extractedKey;
             updatedKeyMap[q.id] = extractedKey;
             answerKeyExtractedCount++;
-            dbService.updateQuestion(q.id, { correctAnswer: extractedKey });
+            dbService.updateQuestion(q.id, { correctAnswer: extractedKey }, null);
           }
         }
       });
 
-      dbService.updateTryout(tryout.id, { answerKey: updatedKeyMap });
+      dbService.updateTryout(tryout.id, { answerKey: updatedKeyMap as unknown as string[] }, null);
     }
 
     // Filter out the answer key account row from student preview / score calculation
@@ -1026,42 +1026,4 @@ export class GoogleIntegrationService {
 
   // ─── Auto-Sync Helpers (Feature: Poll Google Sheet CSV every 5 min) ──────────
 
-  /**
-   * Extract the spreadsheet ID from a full Google Sheets URL.
-   * Supports formats:
-   *   https://docs.google.com/spreadsheets/d/1ABC123DEF456/edit#gid=0
-   *   https://docs.google.com/spreadsheets/d/1ABC123DEF456/edit
-   *   https://docs.google.com/spreadsheets/d/1ABC123DEF456/
-   */
-  public static extractSheetId(sheetUrl: string): string | null {
-    const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-    return match ? match[1] : null;
-  }
-
-  /**
-   * Build the public CSV export URL for a given sheet ID.
-   * Requires the sheet to be shared as "Anyone with link can view".
-   */
-  public static buildCsvExportUrl(sheetId: string): string {
-    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
-  }
-
-  /**
-   * Fetch the raw CSV text from a Google Sheets URL.
-   * Throws an error with a user-friendly message if the sheet is inaccessible.
-   */
-  public static async fetchSheetCsv(sheetUrl: string): Promise<string> {
-    const sheetId = this.extractSheetId(sheetUrl);
-    if (!sheetId) {
-      throw new Error('URL Google Sheet tidak valid. Pastikan format URL benar.');
-    }
-    const csvUrl = this.buildCsvExportUrl(sheetId);
-    const response = await fetch(csvUrl);
-    if (!response.ok) {
-      throw new Error(
-        `Gagal mengambil data Sheet (${response.status}). Pastikan Sheet dibagikan sebagai "Anyone with link can view".`
-      );
-    }
-    return response.text();
-  }
 }

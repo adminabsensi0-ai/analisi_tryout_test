@@ -1,6 +1,7 @@
 import {
   Question, QuestionAnalysis, Score, Student, Competency, Material,
-  ClassRoom, Tryout, AcademicYear, Answer, Response, Subject
+  ClassRoom, Tryout, AcademicYear, Answer, Response, Subject,
+  ScoringStatus, QuestionInformativeStatus, QuestionDiscriminationStatus
 } from '../types/database';
 
 export interface DistractorOptionStat {
@@ -336,7 +337,7 @@ export class AnalyticsService {
 
       // Difficulty Index p = correct / total
       const difficultyIndex = totalRespondents > 0 ? Math.round((correctCount / totalRespondents) * 100) / 100 : 0;
-      let informativeStatus: 'Easy' | 'Medium' | 'Difficult' = 'Medium';
+      let informativeStatus: QuestionInformativeStatus = 'Medium';
       let difficultyCategory: QuestionAnalysis['difficultyCategory'] = 'SEDANG';
 
       if (difficultyIndex > 0.70) {
@@ -355,7 +356,7 @@ export class AnalyticsService {
       const pLower = lowerCorrect / groupSize;
       const discriminationIndex = totalRespondents > 0 ? Math.round((pUpper - pLower) * 100) / 100 : 0;
 
-      let discriminationStatus: 'Good Discrimination' | 'Moderate Discrimination' | 'Low Discrimination' = 'Low Discrimination';
+      let discriminationStatus: QuestionDiscriminationStatus = 'Low Discrimination';
       let discriminationCategory: QuestionAnalysis['discriminationCategory'] = 'CUKUP';
 
       if (discriminationIndex >= 0.30) {
@@ -620,7 +621,7 @@ export class AnalyticsService {
       studentId: student.id,
       studentName: student.name,
       nisn: student.nisn,
-      nis: student.nis,
+      nis: student.nis || '',
       classId: student.classId,
       className: classRoom?.name || 'Kelas',
       gradeLevel: classRoom?.gradeLevel || 'XII',
@@ -809,7 +810,7 @@ export class AnalyticsService {
           score: sc.calculatedScore,
           targetScore: target,
           attainmentPercentage: attainmentPct,
-          status: sc.scoringStatus,
+          status: sc.scoringStatus || 'MATCH' as ScoringStatus,
           isTargetAttained: sc.calculatedScore >= target,
         };
       })

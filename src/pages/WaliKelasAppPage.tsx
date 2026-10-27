@@ -69,7 +69,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
   const teacherObj = teachers.find(t =>
     (t.userId && t.userId === currentUser.id) ||
     (t.email && currentUser.email && t.email.toLowerCase() === currentUser.email.toLowerCase()) ||
-    (t.nip && currentUser.nip && t.nip === currentUser.nip)
+    (t.nip && (currentUser as any).nip && t.nip === (currentUser as any).nip)
   );
 
   // Resolve assigned class properly without hardcoding
@@ -474,7 +474,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
               sc.tryoutId === to.id && 
               activeStudentList.some(s => s.id === sc.studentId)
             );
-            const totalScore = scoresForTO.reduce((sum, sc) => sum + (Number(sc.score) || 0), 0);
+            const totalScore = scoresForTO.reduce((sum, sc) => sum + (Number(sc.calculatedScore) || 0), 0);
             const avgScore = scoresForTO.length > 0 ? (totalScore / scoresForTO.length) : null;
             return {
               tryout: to,
@@ -491,22 +491,32 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
             const toAvgs = allTryouts.map(to => {
               const scores = allScores.filter(sc => 
                 sc.tryoutId === to.id && 
-                sc.subjectId === sub.id && 
                 activeStudentList.some(s => s.id === sc.studentId)
               );
-              const avg = scores.length > 0 ? (scores.reduce((a, b) => a + (Number(b.score) || 0), 0) / scores.length) : null;
-              const passCount = scores.filter(s => (Number(s.score) || 0) >= subKKM).length;
-              const failCount = scores.filter(s => (Number(s.score) || 0) < subKKM).length;
+              const getScoreForSubject = (sc: typeof scores[0]) => {
+                if (sc.subjectScores && sc.subjectScores[sub.id] !== undefined) {
+                  return Number(sc.subjectScores[sub.id]) || 0;
+                }
+                return Number(sc.calculatedScore) || 0;
+              };
+              const avg = scores.length > 0 ? (scores.reduce((a, b) => a + getScoreForSubject(b), 0) / scores.length) : null;
+              const passCount = scores.filter(s => getScoreForSubject(s) >= subKKM).length;
+              const failCount = scores.filter(s => getScoreForSubject(s) < subKKM).length;
               return { tryoutId: to.id, avg, passCount, failCount, total: scores.length };
             });
 
             // Overall pass/fail for this subject
             const allSubjScores = allScores.filter(sc => 
-              sc.subjectId === sub.id && 
               activeStudentList.some(s => s.id === sc.studentId)
             );
-            const overallPass = allSubjScores.filter(s => (Number(s.score) || 0) >= subKKM).length;
-            const overallFail = allSubjScores.filter(s => (Number(s.score) || 0) < subKKM).length;
+            const getScoreForSubjectGlobal = (sc: Score) => {
+              if (sc.subjectScores && sc.subjectScores[sub.id] !== undefined) {
+                return Number(sc.subjectScores[sub.id]) || 0;
+              }
+              return Number(sc.calculatedScore) || 0;
+            };
+            const overallPass = allSubjScores.filter(s => getScoreForSubjectGlobal(s) >= subKKM).length;
+            const overallFail = allSubjScores.filter(s => getScoreForSubjectGlobal(s) < subKKM).length;
 
             return {
               subject: sub,

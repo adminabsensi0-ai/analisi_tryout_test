@@ -1179,7 +1179,7 @@ class SupabaseDbService {
     // 4. Users + Teachers (paired)
     for (const t of state.teachers) {
       const user = state.users.find(u => u.id === t.userId || u.email.toLowerCase() === (t.email || '').toLowerCase());
-      await attempt(`Teacher ${t.nip}`, () => this.syncTeacher(t, user));
+      await attempt(`Teacher ${t.nip}`, async () => { await this.syncTeacher(t, user); });
     }
 
     // 4b. Re-link homeroom between classes and teachers in Supabase

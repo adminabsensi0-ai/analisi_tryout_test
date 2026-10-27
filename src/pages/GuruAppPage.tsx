@@ -30,6 +30,8 @@ import {
 import { generateUuid } from '../utils/idUtils';
 import { ResourceCard } from '../components/ResourceCard';
 import { ItemAnalysisVisualizer } from '../components/ItemAnalysisVisualizer';
+import { ExternalTryoutService } from '../services/externalTryout';
+import { ExternalTryoutUploadModal } from '../components/guru/ExternalTryoutUploadModal';
 
 interface GuruAppPageProps {
   currentUser: User;
@@ -145,6 +147,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [newToGFormUrl, setNewToGFormUrl] = useState('');
   const [newToGSheetUrl, setNewToGSheetUrl] = useState('');
   const [newToPackageId, setNewToPackageId] = useState('');
+  const [newToEntryMode, setNewToEntryMode] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
+  const [newToExternalSubjects, setNewToExternalSubjects] = useState<string[]>(['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris']);
+  const [newToCustomSubjectInput, setNewToCustomSubjectInput] = useState('');
+  const [newToTargetClasses, setNewToTargetClasses] = useState<string[]>([]);
+
+  // State untuk modal upload nilai TO eksternal
+  const [uploadExternalTo, setUploadExternalTo] = useState<Tryout | null>(null);
 
   const handleCreateTryoutPackage = () => {
     if (!newToTitle.trim()) {
@@ -154,6 +163,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     const nextIdx = tryouts.length + 1;
     const createdCode = newToCode.trim() || `TO-2026-0${nextIdx}`;
     const selectedPkg = newToPackageId ? dbService.getExamPackageById(newToPackageId) : undefined;
+    const isExternal = newToEntryMode === 'EXTERNAL';
 
     const newToObj: Tryout = {
       id: generateUuid(),
@@ -164,6 +174,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       startDate: new Date().toISOString(),
       endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'ACTIVE',
+      isExternal,
+      source: isExternal ? 'EXTERNAL' : 'INTERNAL',
+      externalSubjects: isExternal
+        ? (newToExternalSubjects.length > 0 ? newToExternalSubjects : ['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris'])
+        : undefined,
+      externalScoreScale: 'SCALE_100',
       scoringConfig: {
         scoringType: 'EQUAL_WEIGHT',
         maxScore: 100,
@@ -173,19 +189,19 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         allowNegativeMarking: false,
         passingGrade: 75,
       },
-      googleFormUrl: newToGFormUrl.trim() || 'https://forms.google.com/sample',
-      googleSheetUrl: newToGSheetUrl.trim() || 'https://docs.google.com/spreadsheets/d/sample/edit',
-      description: `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.${
-        selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''
-      }`,
+      googleFormUrl: isExternal ? undefined : (newToGFormUrl.trim() || 'https://forms.google.com/sample'),
+      googleSheetUrl: isExternal ? undefined : (newToGSheetUrl.trim() || 'https://docs.google.com/spreadsheets/d/sample/edit'),
+      description: isExternal
+        ? `Try Out Eksternal ${createdCode} (Rekap Nilai).${selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''}`
+        : `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.${selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''}`,
       packageId: selectedPkg?.id,
-      targetClassIds: selectedPkg?.targetClassIds,
+      targetClassIds: newToTargetClasses.length > 0 ? newToTargetClasses : selectedPkg?.targetClassIds,
     };
 
     dbService.saveTryout(newToObj);
 
-    // Jika dimasukkan ke wadah tertentu, sinkronkan juga link sheet ke dalam paket tersebut
-    if (selectedPkg && newToGSheetUrl.trim()) {
+    // Jika dimasukkan ke wadah tertentu, sinkronkan juga link sheet ke dalam paket tersebut (hanya untuk internal)
+    if (!isExternal && selectedPkg && newToGSheetUrl.trim()) {
       const allowedSubs = dbService.getTeacherAllowedSubjectIds(currentUser);
       if (allowedSubs.length > 0) {
         dbService.updateExamPackageSubject(
@@ -208,11 +224,21 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setNewToGFormUrl('');
     setNewToGSheetUrl('');
     setNewToPackageId('');
-    triggerToast(
-      `Paket TryOut '${newToObj.title}' berhasil ditambahkan${
-        selectedPkg ? ` ke dalam wadah '${selectedPkg.title}'` : ''
-      }! Kunci jawaban akan otomatis terdeteksi dari Google Sheet.`
-    );
+    setNewToEntryMode('INTERNAL');
+    setNewToTargetClasses([]);
+    setNewToExternalSubjects(['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris']);
+
+    if (isExternal) {
+      triggerToast(
+        `Try Out Eksternal '${newToObj.title}' berhasil ditambahkan! Silakan unduh template Excel atau unggah rekap nilai.`
+      );
+    } else {
+      triggerToast(
+        `Paket TryOut '${newToObj.title}' berhasil ditambahkan${
+          selectedPkg ? ` ke dalam wadah '${selectedPkg.title}'` : ''
+        }! Kunci jawaban akan otomatis terdeteksi dari Google Sheet.`
+      );
+    }
   };
 
 
@@ -1794,9 +1820,16 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     {tryouts.map(to => (
                       <div key={to.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-2xs space-y-3 transition-colors">
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950 border border-teal-200 dark:border-teal-800 px-2.5 py-0.5 rounded-lg">
-                            {to.code}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950 border border-teal-200 dark:border-teal-800 px-2.5 py-0.5 rounded-lg">
+                              {to.code}
+                            </span>
+                            {to.isExternal && (
+                              <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 px-2 py-0.5 rounded-md">
+                                TO Eksternal
+                              </span>
+                            )}
+                          </div>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-md font-mono uppercase border ${
                               to.status === 'ACTIVE'
@@ -1818,140 +1851,213 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </div>
                         </div>
 
-                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                          <div className="flex items-center gap-2 text-xs">
-                            <a
-                              href={to.googleFormUrl || 'https://forms.google.com'}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex-1 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center justify-center gap-1.5 transition-colors"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                              <span>Google Form Soal</span>
-                            </a>
-                            <a
-                              href={to.googleSheetUrl || 'https://docs.google.com'}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex-1 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-1.5 transition-colors"
-                            >
-                              <FileSpreadsheet className="w-3.5 h-3.5" />
-                              <span>Google Sheet Respons</span>
-                            </a>
-                          </div>
+                        {to.isExternal ? (
+                          /* ── KONTEN KARTU TRYOUT EKSTERNAL ── */
+                          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                            {/* Mapel list */}
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Mata Pelajaran:</span>
+                              <div className="flex flex-wrap items-center gap-1">
+                                {(to.externalSubjects && to.externalSubjects.length > 0
+                                  ? to.externalSubjects
+                                  : ['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris']
+                                ).map((subj, sIdx) => (
+                                  <span
+                                    key={sIdx}
+                                    className="text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded-md"
+                                  >
+                                    {subj}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
 
-                          {/* Answer Key Status Badge */}
-                          <div className={`flex items-center justify-between px-3 py-2 rounded-xl border text-[11px] font-semibold ${
-                            to.answerKey && to.answerKey.filter(a => a !== '').length > 0
-                              ? 'bg-teal-50 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300'
-                              : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
-                          }`}>
-                            <div className="flex items-center gap-1.5">
-                              <Key className="w-3.5 h-3.5 shrink-0" />
-                              <span>Kunci Jawaban:</span>
-                              {to.answerKey && to.answerKey.filter(a => a !== '').length > 0 ? (
-                                <span className="font-bold">
-                                  {to.answerKey.filter(a => a !== '').length}/{to.answerKey.length} soal terisi
-                                </span>
-                              ) : (
-                                <span className="font-bold">Belum diisi</span>
+                            {/* Status Nilai Terisi */}
+                            {(() => {
+                              const extScores = dbService.getScoresByTryout(to.id);
+                              const avg = extScores.length > 0
+                                ? Math.round((extScores.reduce((a, b) => a + b.calculatedScore, 0) / extScores.length) * 10) / 10
+                                : 0;
+                              return (
+                                <div className="flex items-center justify-between p-2.5 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl border border-indigo-200/60 dark:border-indigo-800/60 text-xs">
+                                  <div className="flex items-center gap-1.5 text-indigo-900 dark:text-indigo-200 font-bold">
+                                    <Users className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                    <span>{extScores.length} Siswa Terdaftar Nilai</span>
+                                  </div>
+                                  {extScores.length > 0 && (
+                                    <span className="text-[11px] font-mono font-bold text-indigo-700 dark:text-indigo-300">
+                                      Rata-rata: {avg}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
+                            {/* Action Buttons: Download Template & Upload Nilai */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  try {
+                                    ExternalTryoutService.downloadTemplate(to, classes, dbService.getStudents(), dbService.getSubjects());
+                                    triggerToast(`Template Excel untuk '${to.code}' berhasil diunduh.`);
+                                  } catch (err: any) {
+                                    triggerToast(`Gagal unduh template: ${err.message}`);
+                                  }
+                                }}
+                                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                              >
+                                <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                <span>Unduh Template Excel</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setUploadExternalTo(to)}
+                                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                <span>Upload / Update Nilai</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* ── KONTEN KARTU TRYOUT INTERNAL ── */
+                          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                            <div className="flex items-center gap-2 text-xs">
+                              <a
+                                href={to.googleFormUrl || 'https://forms.google.com'}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center justify-center gap-1.5 transition-colors"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>Google Form Soal</span>
+                              </a>
+                              <a
+                                href={to.googleSheetUrl || 'https://docs.google.com'}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-1.5 transition-colors"
+                              >
+                                <FileSpreadsheet className="w-3.5 h-3.5" />
+                                <span>Google Sheet Respons</span>
+                              </a>
+                            </div>
+
+                            {/* Answer Key Status Badge */}
+                            <div className={`flex items-center justify-between px-3 py-2 rounded-xl border text-[11px] font-semibold ${
+                              to.answerKey && to.answerKey.filter(a => a !== '').length > 0
+                                ? 'bg-teal-50 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300'
+                                : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+                            }`}>
+                              <div className="flex items-center gap-1.5">
+                                <Key className="w-3.5 h-3.5 shrink-0" />
+                                <span>Kunci Jawaban:</span>
+                                {to.answerKey && to.answerKey.filter(a => a !== '').length > 0 ? (
+                                  <span className="font-bold">
+                                    {to.answerKey.filter(a => a !== '').length}/{to.answerKey.length} soal terisi
+                                  </span>
+                                ) : (
+                                  <span className="font-bold">Belum diisi</span>
+                                )}
+                              </div>
+                              {(!to.answerKey || to.answerKey.filter(a => a !== '').length === 0) && (
+                                <span className="text-[10px] text-amber-600 dark:text-amber-400">Skor otomatis tidak aktif</span>
                               )}
                             </div>
-                            {(!to.answerKey || to.answerKey.filter(a => a !== '').length === 0) && (
-                              <span className="text-[10px] text-amber-600 dark:text-amber-400">Skor otomatis tidak aktif</span>
-                            )}
-                          </div>
 
-                          {/* ── Sinkronkan Google Sheet Button + Live Status ── */}
-                          {(() => {
-                            const syncState = sheetSyncStatus[to.id];
-                            const isSyncing = syncState?.status === 'syncing';
-                            const minutesAgo = syncState?.lastSyncAt
-                              ? Math.round((Date.now() - syncState.lastSyncAt.getTime()) / 60000)
-                              : null;
-                            return (
-                              <div className="space-y-1.5">
-                                <button
-                                  type="button"
-                                  disabled={isSyncing}
-                                  onClick={() => syncTryoutFromSheet(to)}
-                                  className={`w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-2xs cursor-pointer`}
-                                >
-                                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                                  <span>{isSyncing ? 'Sedang sinkronisasi...' : 'Sinkronkan Data Google Sheet (Siswa Susulan)'}</span>
-                                </button>
+                            {/* ── Sinkronkan Google Sheet Button + Live Status ── */}
+                            {(() => {
+                              const syncState = sheetSyncStatus[to.id];
+                              const isSyncing = syncState?.status === 'syncing';
+                              const minutesAgo = syncState?.lastSyncAt
+                                ? Math.round((Date.now() - syncState.lastSyncAt.getTime()) / 60000)
+                                : null;
+                              return (
+                                <div className="space-y-1.5">
+                                  <button
+                                    type="button"
+                                    disabled={isSyncing}
+                                    onClick={() => syncTryoutFromSheet(to)}
+                                    className={`w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-2xs cursor-pointer`}
+                                  >
+                                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                    <span>{isSyncing ? 'Sedang sinkronisasi...' : 'Sinkronkan Data Google Sheet (Siswa Susulan)'}</span>
+                                  </button>
 
-                                {/* Sync status indicator */}
-                                {!syncState || syncState.status === 'idle' ? (
-                                  <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">Belum disinkronkan</p>
-                                ) : syncState.status === 'syncing' ? (
-                                  <p className="text-[10px] text-teal-600 dark:text-teal-400 text-center animate-pulse">Mengambil data dari Google Sheet...</p>
-                                ) : syncState.status === 'success' ? (
-                                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 text-center flex items-center justify-center gap-1">
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>
-                                      Terakhir sinkron:{' '}
-                                      {minutesAgo === 0 ? 'baru saja' : `${minutesAgo} menit lalu`}
-                                      {syncState.newCount > 0 && (
-                                        <> · <span className="font-bold">{syncState.newCount} data baru</span></>
-                                      )}
-                                    </span>
-                                  </p>
-                                ) : syncState.status === 'error' ? (
-                                  <p className="text-[10px] text-amber-600 dark:text-amber-400 text-center flex items-center justify-center gap-1">
-                                    <AlertTriangle className="w-3 h-3 shrink-0" />
-                                    <span className="truncate" title={syncState.errorMsg}>{syncState.errorMsg}</span>
-                                  </p>
-                                ) : null}
-                              </div>
-                            );
-                          })()}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedTryoutId(to.id);
-                              handleTabChange('EXPLANATIONS');
-                            }}
-                            className="w-full bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold text-xs py-2 rounded-xl transition-colors flex items-center justify-center gap-2 border border-indigo-200 dark:border-indigo-800 cursor-pointer shadow-2xs"
-                          >
-                            <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                            <span>Kelola Link Pembahasan (PDF &amp; YouTube)</span>
-                          </button>
-
-                          {/* Selection Mode for Score Source */}
-                          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                            <div className="flex items-center space-x-1.5">
-                              <span className="text-slate-500 dark:text-slate-400 font-semibold text-[11px]">Acuan Nilai:</span>
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                                to.scoringConfig?.scoreSource === 'CUSTOM_ENGINE'
-                                  ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                                  : 'bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
-                              }`}>
-                                {to.scoringConfig?.scoreSource === 'CUSTOM_ENGINE' ? 'Aturan Sekolah' : 'Kuis Google Form'}
-                              </span>
-                            </div>
+                                  {/* Sync status indicator */}
+                                  {!syncState || syncState.status === 'idle' ? (
+                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">Belum disinkronkan</p>
+                                  ) : syncState.status === 'syncing' ? (
+                                    <p className="text-[10px] text-teal-600 dark:text-teal-400 text-center animate-pulse">Mengambil data dari Google Sheet...</p>
+                                  ) : syncState.status === 'success' ? (
+                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 text-center flex items-center justify-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      <span>
+                                        Terakhir sinkron:{' '}
+                                        {minutesAgo === 0 ? 'baru saja' : `${minutesAgo} menit lalu`}
+                                        {syncState.newCount > 0 && (
+                                          <> · <span className="font-bold">{syncState.newCount} data baru</span></>
+                                        )}
+                                      </span>
+                                    </p>
+                                  ) : syncState.status === 'error' ? (
+                                    <p className="text-[10px] text-amber-600 dark:text-amber-400 text-center flex items-center justify-center gap-1">
+                                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                                      <span className="truncate" title={syncState.errorMsg}>{syncState.errorMsg}</span>
+                                    </p>
+                                  ) : null}
+                                </div>
+                              );
+                            })()}
 
                             <button
                               type="button"
                               onClick={() => {
-                                const currentSrc = to.scoringConfig?.scoreSource || 'GOOGLE_FORM';
-                                const newSrc: 'CUSTOM_ENGINE' | 'GOOGLE_FORM' = currentSrc === 'CUSTOM_ENGINE' ? 'GOOGLE_FORM' : 'CUSTOM_ENGINE';
-                                const updatedConfig = {
-                                  ...to.scoringConfig,
-                                  scoreSource: newSrc
-                                };
-                                dbService.updateTryoutScoringConfig(to.id, updatedConfig, currentUser);
-                                setTryouts(dbService.getTryouts());
-                                triggerToast(`Mode Acuan Nilai Paket ${to.code} diubah ke: ${newSrc === 'CUSTOM_ENGINE' ? 'Aturan Penilaian Sekolah' : 'Nilai Langsung Google Form'}`);
+                                setSelectedTryoutId(to.id);
+                                handleTabChange('EXPLANATIONS');
                               }}
-                              className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 cursor-pointer flex items-center space-x-1 border border-indigo-200 dark:border-indigo-800/80 px-2.5 py-1 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/40 hover:bg-indigo-100 transition-colors"
+                              className="w-full bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold text-xs py-2 rounded-xl transition-colors flex items-center justify-center gap-2 border border-indigo-200 dark:border-indigo-800 cursor-pointer shadow-2xs"
                             >
-                              <Sliders className="w-3 h-3" />
-                              <span>Ubah Acuan Nilai</span>
+                              <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                              <span>Kelola Link Pembahasan (PDF &amp; YouTube)</span>
                             </button>
+
+                            {/* Selection Mode for Score Source */}
+                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-slate-500 dark:text-slate-400 font-semibold text-[11px]">Acuan Nilai:</span>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                                  to.scoringConfig?.scoreSource === 'CUSTOM_ENGINE'
+                                    ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                                    : 'bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
+                                }`}>
+                                  {to.scoringConfig?.scoreSource === 'CUSTOM_ENGINE' ? 'Aturan Sekolah' : 'Kuis Google Form'}
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentSrc = to.scoringConfig?.scoreSource || 'GOOGLE_FORM';
+                                  const newSrc: 'CUSTOM_ENGINE' | 'GOOGLE_FORM' = currentSrc === 'CUSTOM_ENGINE' ? 'GOOGLE_FORM' : 'CUSTOM_ENGINE';
+                                  const updatedConfig = {
+                                    ...to.scoringConfig,
+                                    scoreSource: newSrc
+                                  };
+                                  dbService.updateTryoutScoringConfig(to.id, updatedConfig, currentUser);
+                                  setTryouts(dbService.getTryouts());
+                                  triggerToast(`Mode Acuan Nilai Paket ${to.code} diubah ke: ${newSrc === 'CUSTOM_ENGINE' ? 'Aturan Penilaian Sekolah' : 'Nilai Langsung Google Form'}`);
+                                }}
+                                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 cursor-pointer flex items-center space-x-1 border border-indigo-200 dark:border-indigo-800/80 px-2.5 py-1 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/40 hover:bg-indigo-100 transition-colors"
+                              >
+                                <Sliders className="w-3 h-3" />
+                                <span>Ubah Acuan Nilai</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -4123,7 +4229,16 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                       selectedClassObj.name,
                                       activeSubject?.name || 'Mata Pelajaran',
                                       classProg.studentCount,
-                                      classProg.points
+                                      classProg.points.map(pt => ({
+                                        tryoutCode: pt.tryoutCode,
+                                        tryoutTitle: (pt as any).tryoutTitle || pt.tryoutCode,
+                                        averageScore: pt.averageScore,
+                                        medianScore: (pt as any).medianScore ?? pt.averageScore,
+                                        highestScore: (pt as any).highestScore ?? pt.averageScore,
+                                        lowestScore: (pt as any).lowestScore ?? pt.averageScore,
+                                        passingCount: (pt as any).passingCount ?? 0,
+                                        passingRatePct: pt.passingRatePct,
+                                      }))
                                     );
                                     triggerToast(`Laporan tren progres kelas ${selectedClassObj.name} berhasil diunduh!`);
                                   }
@@ -4317,7 +4432,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     ExportService.exportSubjectProgressExcel(
                                       activeSubjectObj.name,
                                       activeSubjectObj.code,
-                                      subjProg.points
+                                      subjProg.points.map(pt => ({
+                                        tryoutCode: pt.tryoutCode,
+                                        tryoutTitle: pt.tryoutCode,
+                                        averageScore: pt.averageScore,
+                                      }))
                                     );
                                     triggerToast(`Laporan tren progres mapel ${activeSubjectObj.name} berhasil diunduh!`);
                                   }
@@ -6940,7 +7059,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     {score.calculatedScore}
                                   </td>
                                   <td className="p-3 font-mono font-bold text-amber-700 dark:text-amber-400">
-                                    {score.scoreDifference.toFixed(2)}
+                                    {(score.scoreDifference ?? 0).toFixed(2)}
                                   </td>
                                   <td className="p-3">
                                     <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
@@ -7662,6 +7781,39 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
             {/* Scrollable Body — min-h-0 wajib agar flex-1 + overflow-y-auto bekerja di semua browser */}
             <div className="overflow-y-auto flex-1 min-h-0 px-6 py-5 space-y-4 text-xs">
 
+              {/* ── Pilihan Tipe Try Out ── */}
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
+                  Tipe / Sumber Penyelenggaraan Try Out <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setNewToEntryMode('INTERNAL')}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      newToEntryMode === 'INTERNAL'
+                        ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>TO Internal (Google Form)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewToEntryMode('EXTERNAL')}
+                    className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      newToEntryMode === 'EXTERNAL'
+                        ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>TO Eksternal (Rekap Nilai Excel)</span>
+                  </button>
+                </div>
+              </div>
+
               {/* ── Kode & Judul ── */}
               <div>
                 <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
@@ -7671,7 +7823,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   type="text"
                   value={newToTitle}
                   onChange={e => setNewToTitle(e.target.value)}
-                  placeholder="Contoh: Try Out 5 — Evaluasi Pasca Mid Semester"
+                  placeholder={
+                    newToEntryMode === 'EXTERNAL'
+                      ? 'Contoh: Try Out Akbar UTBK Bimbingan Belajar X'
+                      : 'Contoh: Try Out 5 — Evaluasi Pasca Mid Semester'
+                  }
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                   autoFocus
                 />
@@ -7685,7 +7841,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   type="text"
                   value={newToCode}
                   onChange={e => setNewToCode(e.target.value)}
-                  placeholder="Contoh: TO-2026-05"
+                  placeholder={newToEntryMode === 'EXTERNAL' ? 'Contoh: TO-EKS-01' : 'Contoh: TO-2026-05'}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                 />
               </div>
@@ -7708,62 +7864,193 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   ))}
                 </select>
                 <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
-                  Memasukkan tryout ke wadah memastikan spreadsheet terkelompok dan analisis hanya dapat diakses oleh kelas target.
+                  Memasukkan tryout ke wadah memastikan data terkelompok dan terhubung langsung ke laporan wali kelas.
                 </p>
               </div>
 
-              {/* ── Link Google Form & Sheet ── */}
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                    Link Google Form <span className="text-rose-400">*</span> <span className="font-normal text-slate-400">(dibagikan ke siswa)</span>
-                  </label>
-                  <input
-                    type="url"
-                    value={newToGFormUrl}
-                    onChange={e => setNewToGFormUrl(e.target.value)}
-                    placeholder="https://forms.gle/..."
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                    Link Google Sheet <span className="text-rose-400">*</span> <span className="font-normal text-slate-400">(respons otomatis)</span>
-                  </label>
-                  <input
-                    type="url"
-                    value={newToGSheetUrl}
-                    onChange={e => setNewToGSheetUrl(e.target.value)}
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
-                  />
-                </div>
-              </div>
+              {/* ── FORM KHUSUS TRYOUT INTERNAL (GOOGLE FORM) ── */}
+              {newToEntryMode === 'INTERNAL' ? (
+                <>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                        Link Google Form <span className="text-rose-400">*</span> <span className="font-normal text-slate-400">(dibagikan ke siswa)</span>
+                      </label>
+                      <input
+                        type="url"
+                        value={newToGFormUrl}
+                        onChange={e => setNewToGFormUrl(e.target.value)}
+                        placeholder="https://forms.gle/..."
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                        Link Google Sheet <span className="text-rose-400">*</span> <span className="font-normal text-slate-400">(respons otomatis)</span>
+                      </label>
+                      <input
+                        type="url"
+                        value={newToGSheetUrl}
+                        onChange={e => setNewToGSheetUrl(e.target.value)}
+                        placeholder="https://docs.google.com/spreadsheets/d/..."
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
+                      />
+                    </div>
+                  </div>
 
-              {/* ── Panduan Kunci Jawaban Otomatis ── */}
-              <div className="p-4 bg-teal-50 dark:bg-teal-950/30 rounded-2xl border border-teal-200 dark:border-teal-800/60 space-y-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0">
-                    <Key className="w-4 h-4" />
+                  <div className="p-4 bg-teal-50 dark:bg-teal-950/30 rounded-2xl border border-teal-200 dark:border-teal-800/60 space-y-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0">
+                        <Key className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-teal-900 dark:text-teal-100 text-xs">Kunci Jawaban Terdeteksi Otomatis</h4>
+                        <p className="text-[10px] text-teal-700 dark:text-teal-400 leading-relaxed">Tidak perlu upload file Excel kunci jawaban secara manual.</p>
+                      </div>
+                    </div>
+                    <ol className="space-y-1.5 pl-1">
+                      {[
+                        'Guru mengerjakan Google Form ini 1 kali menggunakan NISN Akun Kunci Resmi yang didaftarkan Admin.',
+                        'Sistem mendeteksi respons akun tersebut dan menjadikannya Kunci Acuan untuk semua butir soal.',
+                        'Nilai Akun Kunci dikecualikan otomatis dari laporan & statistik siswa nyata.',
+                      ].map((step, i) => (
+                        <li key={i} className="flex items-start gap-2 text-[11px] text-teal-800 dark:text-teal-300">
+                          <span className="shrink-0 w-4 h-4 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-[9px] mt-0.5">{i + 1}</span>
+                          <span className="leading-relaxed">{step}</span>
+                        </li>
+                      ))}
+                    </ol>
                   </div>
+                </>
+              ) : (
+                /* ── FORM KHUSUS TRYOUT EKSTERNAL (REKAP EXCEL) ── */
+                <div className="space-y-4">
+                  {/* Pilihan Target Kelas */}
                   <div>
-                    <h4 className="font-bold text-teal-900 dark:text-teal-100 text-xs">Kunci Jawaban Terdeteksi Otomatis</h4>
-                    <p className="text-[10px] text-teal-700 dark:text-teal-400 leading-relaxed">Tidak perlu upload file Excel kunci jawaban secara manual.</p>
+                    <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                      Target Kelas Peserta <span className="font-normal text-slate-400">(Pilih satu atau lebih)</span>
+                    </label>
+                    <div className="flex flex-wrap gap-2 p-2 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 max-h-32 overflow-y-auto">
+                      {classes.map(c => {
+                        const isChecked = newToTargetClasses.includes(c.id);
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              if (isChecked) {
+                                setNewToTargetClasses(newToTargetClasses.filter(id => id !== c.id));
+                              } else {
+                                setNewToTargetClasses([...newToTargetClasses, c.id]);
+                              }
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                              isChecked
+                                ? 'bg-indigo-600 text-white border-indigo-700'
+                                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            {c.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      {newToTargetClasses.length === 0 ? 'Semua kelas akan dimasukkan ke dalam template.' : `${newToTargetClasses.length} kelas dipilih.`}
+                    </p>
+                  </div>
+
+                  {/* Mata Pelajaran / Subtes */}
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                      Mata Pelajaran / Subtes yang Diujikan <span className="text-rose-500">*</span>
+                    </label>
+                    <p className="text-[10px] text-slate-400 mb-2">
+                      Kolom-kolom ini akan menjadi kolom nilai pada template Excel (.xlsx).
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {newToExternalSubjects.map((subj, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-semibold"
+                        >
+                          {subj}
+                          <button
+                            type="button"
+                            onClick={() => setNewToExternalSubjects(newToExternalSubjects.filter((_, i) => i !== idx))}
+                            className="hover:text-rose-500 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Quick Add Presets & Custom Input */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newToCustomSubjectInput}
+                        onChange={e => setNewToCustomSubjectInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && newToCustomSubjectInput.trim()) {
+                            e.preventDefault();
+                            if (!newToExternalSubjects.includes(newToCustomSubjectInput.trim())) {
+                              setNewToExternalSubjects([...newToExternalSubjects, newToCustomSubjectInput.trim()]);
+                            }
+                            setNewToCustomSubjectInput('');
+                          }
+                        }}
+                        placeholder="Ketik nama mapel/subtes lalu tekan Tambah (mis: Penalaran Umum)"
+                        className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-slate-900 dark:text-white text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newToCustomSubjectInput.trim() && !newToExternalSubjects.includes(newToCustomSubjectInput.trim())) {
+                            setNewToExternalSubjects([...newToExternalSubjects, newToCustomSubjectInput.trim()]);
+                            setNewToCustomSubjectInput('');
+                          }
+                        }}
+                        className="px-3 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs rounded-xl transition-colors cursor-pointer shrink-0"
+                      >
+                        + Tambah
+                      </button>
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="flex items-center gap-1.5 mt-2 text-[10px] text-slate-400">
+                      <span>Rekomendasi Cepat:</span>
+                      <button
+                        type="button"
+                        onClick={() => setNewToExternalSubjects(['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris'])}
+                        className="text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      >
+                        Mapel Pokok
+                      </button>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={() => setNewToExternalSubjects(['Penalaran Umum', 'Pengetahuan Kuantitatif', 'Pemahaman Bacaan', 'Literasi B. Indonesia', 'Literasi B. Inggris', 'Penalaran Matematika'])}
+                        className="text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      >
+                        Subtes UTBK/SNBT
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Panduan Alur Template */}
+                  <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 rounded-2xl border border-indigo-200 dark:border-indigo-800/60 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <h4 className="font-bold text-indigo-900 dark:text-indigo-100 text-xs">Alur Otomatis Template Excel</h4>
+                    </div>
+                    <p className="text-[11px] text-indigo-800/90 dark:text-indigo-300/90 leading-relaxed">
+                      Setelah paket ini disimpan, Anda dapat langsung mengklik tombol <strong>"Unduh Template Excel"</strong> pada kartu try out. File sudah memuat nama &amp; NISN seluruh siswa yang terdaftar, siap diisikan nilai per mata pelajaran dan diunggah kembali!
+                    </p>
                   </div>
                 </div>
-                <ol className="space-y-1.5 pl-1">
-                  {[
-                    'Guru mengerjakan Google Form ini 1 kali menggunakan NISN Akun Kunci Resmi yang didaftarkan Admin.',
-                    'Sistem mendeteksi respons akun tersebut dan menjadikannya Kunci Acuan untuk semua soal (PG, PG Kompleks, Benar/Salah).',
-                    'Nilai Akun Kunci dikecualikan otomatis dari laporan & statistik siswa nyata.',
-                  ].map((step, i) => (
-                    <li key={i} className="flex items-start gap-2 text-[11px] text-teal-800 dark:text-teal-300">
-                      <span className="shrink-0 w-4 h-4 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-[9px] mt-0.5">{i + 1}</span>
-                      <span className="leading-relaxed">{step}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
+              )}
             </div>
 
             {/* Footer */}
@@ -7900,6 +8187,25 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
             </div>
           </div>
         </div>
+      )}
+
+      {/* EXTERNAL TRYOUT EXCEL UPLOAD MODAL */}
+      {uploadExternalTo && (
+        <ExternalTryoutUploadModal
+          isOpen={!!uploadExternalTo}
+          onClose={() => setUploadExternalTo(null)}
+          tryout={uploadExternalTo}
+          allStudents={dbService.getStudents()}
+          allClasses={classes}
+          allSubjects={dbService.getSubjects()}
+          dbService={dbService}
+          currentUser={currentUser}
+          onSuccess={() => {
+            setTryouts(dbService.getTryouts());
+            refreshData();
+          }}
+          onToast={(msg) => triggerToast(msg)}
+        />
       )}
     </div>
   );

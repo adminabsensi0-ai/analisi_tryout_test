@@ -249,7 +249,7 @@ export const StudentPortalPage: React.FC = () => {
       }
       // 2. Tie-breaker 1: totalCorrect desc
       if (b.totalCorrect !== a.totalCorrect) {
-        return b.totalCorrect - a.totalCorrect;
+        return (b.totalCorrect ?? 0) - (a.totalCorrect ?? 0);
       }
       // 3. Tie-breaker 2: Math correct count desc
       const bMath = getMathCorrectCount(b.studentId, tryoutId);
