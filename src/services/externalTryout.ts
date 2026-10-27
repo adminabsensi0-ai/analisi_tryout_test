@@ -56,9 +56,15 @@ export class ExternalTryoutService {
 
     // 2. Tentukan daftar mata pelajaran
     let subjectNames: string[] = [];
-    if (tryout.externalSubjects && tryout.externalSubjects.length > 0) {
+    if (tryout.externalSubjectIds && tryout.externalSubjectIds.length > 0) {
+      subjectNames = tryout.externalSubjectIds
+        .map(id => allSubjects.find(s => s.id === id)?.name)
+        .filter(Boolean) as string[];
+    }
+    if (subjectNames.length === 0 && tryout.externalSubjects && tryout.externalSubjects.length > 0) {
       subjectNames = tryout.externalSubjects;
-    } else {
+    }
+    if (subjectNames.length === 0) {
       // Default: ambil nama-nama mapel aktif di sekolah
       subjectNames = allSubjects.slice(0, 5).map(s => s.name);
       if (subjectNames.length === 0) {

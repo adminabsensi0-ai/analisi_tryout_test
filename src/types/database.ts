@@ -217,11 +217,15 @@ export interface Tryout {
   answerKey?: string[];
   packageId?: string;
   targetClassIds?: string[];
+  /** Mata pelajaran acuan untuk Try Out internal (Google Form) */
+  subjectId?: string;
   /** Menandakan Try Out diselenggarakan oleh pihak eksternal (rekap nilai, bukan butir soal) */
   isExternal?: boolean;
   source?: 'INTERNAL' | 'EXTERNAL';
   /** Daftar nama atau kode mata pelajaran/subtes untuk Try Out eksternal */
   externalSubjects?: string[];
+  /** Daftar ID mata pelajaran resmi untuk Try Out eksternal */
+  externalSubjectIds?: string[];
   /** Skala penilaian: SCALE_100 (0-100) atau SCALE_UTBK (200-1000) */
   externalScoreScale?: 'SCALE_100' | 'SCALE_UTBK' | 'CUSTOM';
 }

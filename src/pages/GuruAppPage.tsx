@@ -148,8 +148,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [newToGSheetUrl, setNewToGSheetUrl] = useState('');
   const [newToPackageId, setNewToPackageId] = useState('');
   const [newToEntryMode, setNewToEntryMode] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
-  const [newToExternalSubjects, setNewToExternalSubjects] = useState<string[]>(['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris']);
-  const [newToCustomSubjectInput, setNewToCustomSubjectInput] = useState('');
+  const [newToSubjectId, setNewToSubjectId] = useState('');
+  const [newToExternalSubjectIds, setNewToExternalSubjectIds] = useState<string[]>([]);
   const [newToTargetClasses, setNewToTargetClasses] = useState<string[]>([]);
 
   // State untuk modal upload nilai TO eksternal
@@ -165,6 +165,17 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     const selectedPkg = newToPackageId ? dbService.getExamPackageById(newToPackageId) : undefined;
     const isExternal = newToEntryMode === 'EXTERNAL';
 
+    // Mapel untuk internal
+    const internalSubjectId = isExternal ? undefined : (newToSubjectId || permittedSubjects[0]?.id || subjects[0]?.id);
+
+    // Mapel untuk eksternal dari master Admin
+    const selectedExtSubjectIds = isExternal
+      ? (newToExternalSubjectIds.length > 0 ? newToExternalSubjectIds : subjects.map(s => s.id))
+      : undefined;
+    const selectedExtSubjectNames = selectedExtSubjectIds
+      ? selectedExtSubjectIds.map(id => subjects.find(s => s.id === id)?.name).filter(Boolean) as string[]
+      : undefined;
+
     const newToObj: Tryout = {
       id: generateUuid(),
       code: createdCode,
@@ -174,11 +185,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       startDate: new Date().toISOString(),
       endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'ACTIVE',
+      subjectId: internalSubjectId,
       isExternal,
       source: isExternal ? 'EXTERNAL' : 'INTERNAL',
-      externalSubjects: isExternal
-        ? (newToExternalSubjects.length > 0 ? newToExternalSubjects : ['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris'])
-        : undefined,
+      externalSubjectIds: selectedExtSubjectIds,
+      externalSubjects: selectedExtSubjectNames,
       externalScoreScale: 'SCALE_100',
       scoringConfig: {
         scoringType: 'EQUAL_WEIGHT',
@@ -201,20 +212,17 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     dbService.saveTryout(newToObj);
 
     // Jika dimasukkan ke wadah tertentu, sinkronkan juga link sheet ke dalam paket tersebut (hanya untuk internal)
-    if (!isExternal && selectedPkg && newToGSheetUrl.trim()) {
-      const allowedSubs = dbService.getTeacherAllowedSubjectIds(currentUser);
-      if (allowedSubs.length > 0) {
-        dbService.updateExamPackageSubject(
-          selectedPkg.id,
-          allowedSubs[0],
-          {
-            googleSheetUrl: newToGSheetUrl.trim(),
-            googleFormUrl: newToGFormUrl.trim(),
-            syncStatus: 'SYNCED',
-          },
-          currentUser
-        );
-      }
+    if (!isExternal && selectedPkg && newToGSheetUrl.trim() && internalSubjectId) {
+      dbService.updateExamPackageSubject(
+        selectedPkg.id,
+        internalSubjectId,
+        {
+          googleSheetUrl: newToGSheetUrl.trim(),
+          googleFormUrl: newToGFormUrl.trim(),
+          syncStatus: 'SYNCED',
+        },
+        currentUser
+      );
     }
 
     setTryouts(dbService.getTryouts());
@@ -224,9 +232,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setNewToGFormUrl('');
     setNewToGSheetUrl('');
     setNewToPackageId('');
+    setNewToSubjectId('');
     setNewToEntryMode('INTERNAL');
     setNewToTargetClasses([]);
-    setNewToExternalSubjects(['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris']);
+    setNewToExternalSubjectIds([]);
 
     if (isExternal) {
       triggerToast(
@@ -517,10 +526,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       const { headers, rows } = GoogleIntegrationService.parseRawSheetText(csvText);
       if (rows.length === 0) throw new Error('Sheet kosong atau tidak ada baris data.');
 
-      // 3. Find the subject for this tryout (use permitted subjects or fall back to all subjects)
+      // 3. Find the subject for this tryout (use tryout.subjectId, or permitted subjects, or fall back to all subjects)
       const allSubjectsNow = dbService.getSubjects();
       const permittedSubjectsNow = allSubjectsNow.filter(s => allowedSubjectIds.includes(s.id));
-      const tryoutSubject = permittedSubjectsNow[0] || allSubjectsNow[0];
+      const tryoutSubject = (tryout.subjectId ? allSubjectsNow.find(s => s.id === tryout.subjectId) : null) || permittedSubjectsNow[0] || allSubjectsNow[0];
       if (!tryoutSubject) throw new Error('Mata pelajaran tidak ditemukan untuk sinkronisasi.');
 
       // 4. Detect column mappings using unique question codes
@@ -1808,7 +1817,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     </div>
 
                     <button
-                      onClick={() => setShowTryoutModal(true)}
+                      onClick={() => {
+                        setNewToSubjectId(permittedSubjects[0]?.id || subjects[0]?.id || '');
+                        setNewToExternalSubjectIds(subjects.map(s => s.id));
+                        setShowTryoutModal(true);
+                      }}
                       className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-colors cursor-pointer shrink-0"
                     >
                       <Plus className="w-4 h-4" />
@@ -1858,9 +1871,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             <div className="space-y-1">
                               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Mata Pelajaran:</span>
                               <div className="flex flex-wrap items-center gap-1">
-                                {(to.externalSubjects && to.externalSubjects.length > 0
-                                  ? to.externalSubjects
-                                  : ['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris']
+                                {(to.externalSubjectIds && to.externalSubjectIds.length > 0
+                                  ? to.externalSubjectIds.map(id => subjects.find(s => s.id === id)?.name).filter(Boolean) as string[]
+                                  : (to.externalSubjects && to.externalSubjects.length > 0
+                                    ? to.externalSubjects
+                                    : subjects.slice(0, 5).map(s => s.name))
                                 ).map((subj, sIdx) => (
                                   <span
                                     key={sIdx}
@@ -1924,6 +1939,22 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         ) : (
                           /* ── KONTEN KARTU TRYOUT INTERNAL ── */
                           <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                            {to.subjectId && (() => {
+                              const sObj = subjects.find(s => s.id === to.subjectId);
+                              return (
+                                <div className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-200/60 dark:border-slate-800/60 text-xs">
+                                  <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-medium">
+                                    <BookOpen className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                    <span>{sObj?.name || 'Mata Pelajaran'}</span>
+                                  </div>
+                                  {sObj && (
+                                    <span className="text-[10px] font-mono font-bold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/80 px-2 py-0.5 rounded border border-teal-200 dark:border-teal-800">
+                                      KKM: {sObj.passingGrade}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             <div className="flex items-center gap-2 text-xs">
                               <a
                                 href={to.googleFormUrl || 'https://forms.google.com'}
@@ -7872,6 +7903,27 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
               {newToEntryMode === 'INTERNAL' ? (
                 <>
                   <div className="space-y-3">
+                    {/* Pilihan Mata Pelajaran Acuan dari Master Admin */}
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                        Mata Pelajaran Ujian <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={newToSubjectId || (permittedSubjects.length > 0 ? permittedSubjects[0]?.id : subjects[0]?.id) || ''}
+                        onChange={e => setNewToSubjectId(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
+                      >
+                        {(permittedSubjects.length > 0 ? permittedSubjects : subjects).map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.code}) — KKM: {s.passingGrade}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                        Data resmi dari Master Admin sebagai acuan bank soal, kunci jawaban, dan integrasi capaian KKM.
+                      </p>
+                    </div>
+
                     <div>
                       <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
                         Link Google Form <span className="text-rose-400">*</span> <span className="font-normal text-slate-400">(dibagikan ke siswa)</span>
@@ -7960,83 +8012,72 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     </p>
                   </div>
 
-                  {/* Mata Pelajaran / Subtes */}
+                  {/* Mata Pelajaran Resmi dari Master Admin (Multi-select Checklist) */}
                   <div>
-                    <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                      Mata Pelajaran / Subtes yang Diujikan <span className="text-rose-500">*</span>
-                    </label>
-                    <p className="text-[10px] text-slate-400 mb-2">
-                      Kolom-kolom ini akan menjadi kolom nilai pada template Excel (.xlsx).
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {newToExternalSubjects.map((subj, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-semibold"
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-slate-700 dark:text-slate-300 font-bold">
+                        Mata Pelajaran yang Diujikan <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNewToExternalSubjectIds(subjects.map(s => s.id))}
+                          className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                         >
-                          {subj}
-                          <button
-                            type="button"
-                            onClick={() => setNewToExternalSubjects(newToExternalSubjects.filter((_, i) => i !== idx))}
-                            className="hover:text-rose-500 cursor-pointer"
+                          Pilih Semua
+                        </button>
+                        <span className="text-slate-300 dark:text-slate-700">•</span>
+                        <button
+                          type="button"
+                          onClick={() => setNewToExternalSubjectIds([])}
+                          className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                        >
+                          Hapus Pilihan
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mb-2.5">
+                      Centang mata pelajaran resmi dari Master Admin yang ada di lembar nilai. Kolom template Excel otomatis disesuaikan dengan mapel yang dicentang.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 max-h-48 overflow-y-auto">
+                      {subjects.map(s => {
+                        const isChecked = newToExternalSubjectIds.includes(s.id);
+                        return (
+                          <label
+                            key={s.id}
+                            className={`flex items-center gap-2.5 p-2 rounded-xl border text-xs cursor-pointer transition-colors ${
+                              isChecked
+                                ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-semibold'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                            }`}
                           >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={e => {
+                                if (e.target.checked) {
+                                  setNewToExternalSubjectIds([...newToExternalSubjectIds, s.id]);
+                                } else {
+                                  setNewToExternalSubjectIds(newToExternalSubjectIds.filter(id => id !== s.id));
+                                }
+                              }}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                            />
+                            <span className="truncate flex-1">{s.name}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 font-mono text-slate-500 dark:text-slate-400">
+                              {s.code}
+                            </span>
+                          </label>
+                        );
+                      })}
                     </div>
 
-                    {/* Quick Add Presets & Custom Input */}
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newToCustomSubjectInput}
-                        onChange={e => setNewToCustomSubjectInput(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && newToCustomSubjectInput.trim()) {
-                            e.preventDefault();
-                            if (!newToExternalSubjects.includes(newToCustomSubjectInput.trim())) {
-                              setNewToExternalSubjects([...newToExternalSubjects, newToCustomSubjectInput.trim()]);
-                            }
-                            setNewToCustomSubjectInput('');
-                          }
-                        }}
-                        placeholder="Ketik nama mapel/subtes lalu tekan Tambah (mis: Penalaran Umum)"
-                        className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-slate-900 dark:text-white text-xs"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (newToCustomSubjectInput.trim() && !newToExternalSubjects.includes(newToCustomSubjectInput.trim())) {
-                            setNewToExternalSubjects([...newToExternalSubjects, newToCustomSubjectInput.trim()]);
-                            setNewToCustomSubjectInput('');
-                          }
-                        }}
-                        className="px-3 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs rounded-xl transition-colors cursor-pointer shrink-0"
-                      >
-                        + Tambah
-                      </button>
-                    </div>
-
-                    {/* Quick Presets */}
-                    <div className="flex items-center gap-1.5 mt-2 text-[10px] text-slate-400">
-                      <span>Rekomendasi Cepat:</span>
-                      <button
-                        type="button"
-                        onClick={() => setNewToExternalSubjects(['Matematika', 'Bahasa Indonesia', 'Bahasa Inggris'])}
-                        className="text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                      >
-                        Mapel Pokok
-                      </button>
-                      <span>•</span>
-                      <button
-                        type="button"
-                        onClick={() => setNewToExternalSubjects(['Penalaran Umum', 'Pengetahuan Kuantitatif', 'Pemahaman Bacaan', 'Literasi B. Indonesia', 'Literasi B. Inggris', 'Penalaran Matematika'])}
-                        className="text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                      >
-                        Subtes UTBK/SNBT
-                      </button>
-                    </div>
+                    {newToExternalSubjectIds.length === 0 && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5 font-medium">
+                        ⚠️ Pilihlah minimal 1 mata pelajaran agar template Excel memiliki kolom nilai.
+                      </p>
+                    )}
                   </div>
 
                   {/* Panduan Alur Template */}
