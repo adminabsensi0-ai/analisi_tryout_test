@@ -19,6 +19,7 @@ import { isSupabaseConfigured } from './lib/supabase';
 function AppContent() {
   const [currentPath, setCurrentPath] = useState<string>(window.location.pathname);
   const [currentUser, setCurrentUser] = useState<User | null>(authService.getCurrentUser());
+  const [isStaffLoginOpen, setIsStaffLoginOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -127,6 +128,12 @@ function AppContent() {
         currentPath={activeRoute}
         onNavigate={navigateTo}
         onLogout={handleLogout}
+        onOpenStaffLogin={() => {
+          if (activeRoute !== '/login') {
+            navigateTo('/login');
+          }
+          setIsStaffLoginOpen(true);
+        }}
       />
 
       {/* Mode indicator banner — tampil hanya di development */}
@@ -143,7 +150,13 @@ function AppContent() {
       <main className={activeRoute === '/admin' || activeRoute === '/guru' ? "flex-1 overflow-hidden flex flex-col min-h-0" : isDashboardRoute ? "flex-1 flex flex-col min-h-0 overflow-y-auto" : "flex-grow"}>
         {activeRoute === '/login' && (
           <ErrorBoundary>
-            <LoginPage onLoginSuccess={handleLoginSuccess} onNavigate={navigateTo} returnTo={returnToQuery} />
+            <LoginPage
+              onLoginSuccess={handleLoginSuccess}
+              onNavigate={navigateTo}
+              returnTo={returnToQuery}
+              isStaffModalOpen={isStaffLoginOpen}
+              setIsStaffModalOpen={setIsStaffLoginOpen}
+            />
           </ErrorBoundary>
         )}
 

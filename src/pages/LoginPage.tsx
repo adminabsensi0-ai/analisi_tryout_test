@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LogIn, Lock, ShieldAlert, GraduationCap,
   CheckCircle2, RefreshCw, Award, Search, Calendar, UserCheck,
-  Eye, EyeOff
+  Eye, EyeOff, X
 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { dbService } from '../services/database';
@@ -12,12 +12,29 @@ interface LoginPageProps {
   onLoginSuccess: (user: User) => void;
   onNavigate?: (path: string) => void;
   returnTo?: string;
+  isStaffModalOpen?: boolean;
+  setIsStaffModalOpen?: (open: boolean) => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate, returnTo }) => {
-  const [activeTab, setActiveTab] = useState<'STAFF_LOGIN' | 'STUDENT_LOOKUP'>('STAFF_LOGIN');
-  
-  // Staff Login State (Default empty for clean manual entry)
+export const LoginPage: React.FC<LoginPageProps> = ({
+  onLoginSuccess,
+  onNavigate,
+  returnTo,
+  isStaffModalOpen: externalStaffModalOpen,
+  setIsStaffModalOpen: externalSetIsStaffModalOpen,
+}) => {
+  const [internalStaffModalOpen, setInternalStaffModalOpen] = useState(!!returnTo);
+
+  const isStaffModalOpen = externalStaffModalOpen !== undefined ? externalStaffModalOpen : internalStaffModalOpen;
+  const setStaffModalOpen = externalSetIsStaffModalOpen || setInternalStaffModalOpen;
+
+  useEffect(() => {
+    if (returnTo) {
+      setStaffModalOpen(true);
+    }
+  }, [returnTo]);
+
+  // Staff Login State
   const [nip, setNip] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -40,6 +57,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
       const session = await authService.login(nip, password);
       setSuccessNotice(`Autentikasi Berhasil! Mengalihkan ke panel ${session.user.role}...`);
       setTimeout(() => {
+        setStaffModalOpen(false);
         onLoginSuccess(session.user);
       }, 350);
     } catch (err: any) {
@@ -76,11 +94,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
       {/* Ambient Background Glow Accent */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="relative max-w-md w-full bg-white dark:bg-slate-900/90 backdrop-blur-xl rounded-2xl shadow-xl dark:shadow-2xl dark:shadow-indigo-950/50 overflow-hidden border border-slate-200 dark:border-slate-800 transition-colors">
+      {/* Main Student Card (100% Focused on Students) */}
+      <div className="relative max-w-md w-full bg-white dark:bg-slate-900/90 backdrop-blur-xl rounded-3xl shadow-xl dark:shadow-2xl dark:shadow-indigo-950/50 overflow-hidden border border-slate-200 dark:border-slate-800 transition-colors">
         
         {/* Header Portal */}
         <div className="bg-slate-50 dark:bg-slate-950 p-6 text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-800 text-center transition-colors">
-          <div className="w-12 h-12 bg-indigo-600 rounded-xl mx-auto flex items-center justify-center text-white mb-3 shadow-md shadow-indigo-600/20">
+          <div className="w-12 h-12 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-white mb-3 shadow-md shadow-indigo-600/20">
             <GraduationCap className="w-7 h-7" />
           </div>
           <h2 className="text-2xl font-black tracking-wider text-slate-900 dark:text-white">
@@ -93,59 +112,142 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
             Wadah Informasi Kemampuan dan Analisis Nilai
           </p>
 
-          {returnTo && (
-            <div className="mt-3 p-2 bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 rounded-lg text-[11px] text-indigo-700 dark:text-indigo-300">
-              Akses tujuan: <span className="font-mono font-semibold">{returnTo}</span>. Silakan autentikasi terlebih dahulu.
-            </div>
-          )}
-
-          {/* Unified Tab Switcher */}
-          <div className="mt-5 p-1 bg-slate-200/80 dark:bg-slate-900 border border-slate-300/80 dark:border-slate-800 rounded-xl flex items-center text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setActiveTab('STAFF_LOGIN')}
-              className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                activeTab === 'STAFF_LOGIN'
-                  ? 'bg-indigo-600 text-white shadow-sm font-bold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-300/40 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>Login Guru &amp; Admin</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('STUDENT_LOOKUP')}
-              className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                activeTab === 'STUDENT_LOOKUP'
-                  ? 'bg-indigo-600 text-white shadow-sm font-bold'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-300/40 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <Award className="w-3.5 h-3.5 text-amber-500 dark:text-amber-300" />
-              <span>Portal Hasil Siswa</span>
-            </button>
+          <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/80 rounded-full text-xs font-bold text-amber-800 dark:text-amber-300">
+            <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span>Portal Mandiri Siswa</span>
           </div>
         </div>
 
-        {/* Tab Body */}
+        {/* Student Form Body */}
         <div className="p-6 space-y-5 bg-white dark:bg-slate-900">
-          {activeTab === 'STAFF_LOGIN' ? (
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed text-center">
+            Masukkan Tanggal Lahir dan NISN Anda untuk memverifikasi identitas dan membuka Rapor Try Out Mandiri.
+          </p>
+
+          <form onSubmit={handleStudentLookup} className="space-y-4">
             <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Tanggal Lahir Siswa
+              </label>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={birthDate}
+                  onChange={e => setBirthDate(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors scheme-dark"
+                  required
+                />
+                <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                NISN Siswa (Nomor Induk Siswa Nasional)
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={nisn}
+                  onChange={e => setNisn(e.target.value)}
+                  placeholder="10 digit NISN, contoh: 0061234561"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+                  required
+                />
+                <UserCheck className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              </div>
+            </div>
+
+            {studentError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 text-xs rounded-xl flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+                <span>{studentError}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer border border-indigo-400/30"
+            >
+              <Search className="w-4 h-4" />
+              <span>Verifikasi &amp; Buka Hasil Siswa</span>
+            </button>
+          </form>
+
+          {/* Secondary Entry for Teachers & Admins */}
+          <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Bapak/Ibu Guru atau Administrator Sekolah?{' '}
+              <button
+                type="button"
+                onClick={() => setStaffModalOpen(true)}
+                className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer inline-flex items-center gap-1 ml-1"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Masuk di sini</span>
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Staff Login Modal (Pop-up Guru & Admin) */}
+      {isStaffModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setStaffModalOpen(false)}
+        >
+          <div
+            className="relative max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/20">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Akses Masuk Staf &amp; Guru
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Panel Guru Mata Pelajaran, Wali Kelas, &amp; Admin
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStaffModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="Tutup"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {returnTo && (
+                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 rounded-xl text-[11px] text-indigo-700 dark:text-indigo-300">
+                  Akses tujuan: <span className="font-mono font-semibold">{returnTo}</span>. Silakan autentikasi staf terlebih dahulu.
+                </div>
+              )}
+
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    NIP Kedinasan
+                    NIP Kedinasan / Username
                   </label>
                   <div className="relative">
                     <input
                       type="text"
                       value={nip}
                       onChange={e => setNip(e.target.value)}
-                      placeholder="Masukkan NIP kedinasan atau nama pengguna..."
+                      placeholder="Masukkan NIP kedinasan atau username..."
                       className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
                       required
+                      autoFocus
                     />
                     <UserCheck className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                   </div>
@@ -190,84 +292,37 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                   </div>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-60 text-white font-semibold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer border border-indigo-400/30"
-                >
-                  {loading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Memproses Autentikasi...</span>
-                    </>
-                  ) : (
-                    <>
-                      <LogIn className="w-4 h-4" />
-                      <span>Masuk Sistem Staf</span>
-                    </>
-                  )}
-                </button>
+                <div className="pt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStaffModalOpen(false)}
+                    className="flex-1 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-60 text-white font-semibold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer border border-indigo-400/30"
+                  >
+                    {loading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Memproses...</span>
+                      </>
+                    ) : (
+                      <>
+                        <LogIn className="w-4 h-4" />
+                        <span>Masuk Sistem</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </form>
             </div>
-          ) : (
-            <div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
-                Masukkan Tanggal Lahir dan NISN Siswa Anda untuk memverifikasi identitas dan membuka Rapor Try Out Mandiri.
-              </p>
-
-              <form onSubmit={handleStudentLookup} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Tanggal Lahir Siswa
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      value={birthDate}
-                      onChange={e => setBirthDate(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors scheme-dark"
-                      required
-                    />
-                    <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    NISN Siswa (Nomor Induk Siswa Nasional)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={nisn}
-                      onChange={e => setNisn(e.target.value)}
-                      placeholder="10 digit NISN, contoh: 0061234561"
-                      className="w-full pl-9 pr-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
-                      required
-                    />
-                    <UserCheck className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  </div>
-                </div>
-
-                {studentError && (
-                  <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 text-xs rounded-xl flex items-start gap-2.5">
-                    <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
-                    <span>{studentError}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer border border-indigo-400/30"
-                >
-                  <Search className="w-4 h-4" />
-                  <span>Verifikasi &amp; Buka Hasil Siswa</span>
-                </button>
-              </form>
-            </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

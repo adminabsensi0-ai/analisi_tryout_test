@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   GraduationCap, Sun, Moon, ShieldCheck, BookOpen, School, Menu, X,
-  ChevronDown, Check, ArrowRightLeft, Sparkles
+  ChevronDown, Check, ArrowRightLeft, Sparkles, Lock
 } from 'lucide-react';
 import { User } from '../types/database';
 import { useTheme } from '../context/ThemeContext';
@@ -12,6 +12,7 @@ interface NavbarProps {
   currentPath: string;
   onNavigate: (path: string) => void;
   onLogout: () => void;
+  onOpenStaffLogin?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -19,6 +20,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentPath,
   onNavigate,
   onLogout,
+  onOpenStaffLogin,
 }) => {
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -279,15 +281,40 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 bg-slate-50 dark:bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="font-medium text-slate-700 dark:text-slate-300">Portal Aktif</span>
+              <div className="flex items-center gap-2.5">
+                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 bg-slate-50 dark:bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="font-medium text-slate-700 dark:text-slate-300">Portal Aktif</span>
+                </div>
+
+                {onOpenStaffLogin && (
+                  <button
+                    type="button"
+                    onClick={onOpenStaffLogin}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-sm shadow-indigo-600/20 cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Akses Guru &amp; Admin</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
 
           {/* Mobile Right Bar (Theme Toggle & Menu Button) */}
           <div className="flex md:hidden items-center gap-2">
+            {!currentUser && onOpenStaffLogin && (
+              <button
+                type="button"
+                onClick={onOpenStaffLogin}
+                className="px-2.5 py-1.5 bg-indigo-600 active:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs"
+                title="Akses Masuk Guru & Admin"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Staf</span>
+              </button>
+            )}
+
             <button
               onClick={toggleTheme}
               type="button"
