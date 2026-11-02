@@ -759,11 +759,11 @@ export class DatabaseService {
 
   public getSchoolProfile(): SchoolProfile {
     return this.state.schoolProfile || {
-      name: 'SMA NEGERI 1 UTAMA',
-      subHeader: 'SISTEM ASESMEN & ANALISIS TRY OUT TERPADU (STANDAR KURIKULUM NASIONAL)',
-      address: 'Jl. Pendidikan No. 45, Jakarta · Akreditasi A · NPSN: 20103450',
-      principalName: 'Drs. Supriyadi, M.Pd.',
-      principalNip: '196803121994031002',
+      name: 'NAMA SEKOLAH ANDA',
+      subHeader: 'SISTEM ASESMEN & ANALISIS TRY OUT TERPADU',
+      address: 'Alamat Sekolah · Kota · Akreditasi · NPSN',
+      principalName: 'Nama Kepala Sekolah',
+      principalNip: '-',
       academicYear: '2025/2026 (Semester Genap)',
     };
   }

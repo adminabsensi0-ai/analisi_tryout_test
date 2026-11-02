@@ -334,7 +334,7 @@ class AuthService {
         id: 'u-admin',
         email: 'admin@sekolah.sch.id',
         role: 'ADMIN',
-        name: 'Drs. Supriyadi, M.Pd (Administrator Cadangan)',
+        name: 'Administrator Cadangan',
         password: 'password123',
         createdAt: new Date().toISOString(),
       };

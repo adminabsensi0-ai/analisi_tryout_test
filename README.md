@@ -6,7 +6,6 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-4.3.3-38B2AC?style=flat&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat&logo=supabase&logoColor=white)](https://supabase.com/)
-[![Google Gemini](https://img.shields.io/badge/Google_Gemini-2.5_Flash-8E75B2?style=flat&logo=google&logoColor=white)](https://ai.google.dev/)
 
 ---
 
@@ -17,7 +16,6 @@
 - Perhitungan skor deterministik dengan deteksi **Scoring Mismatch** (tanpa silent overwrite).
 - Analisis psikometri butir soal otomatis: **Tingkat Kesukaran ($p$-value)**, **Daya Pembeda ($D$-value)**, dan **Efektivitas Pengecoh (Distraktor)**.
 - Pemetaan daya serap **Kompetensi Dasar (KD)** per siswa dan per kelas.
-- Rekomendasi diagnostik belajar berbasis **Google Gemini AI**.
 - Portal hasil mandiri bagi siswa dengan autentikasi **Tanggal Lahir + NISN**.
 - Ekspor laporan resmi dalam format **PDF Rapor Siswa** dan **Buku Kerja Excel (7 Sheet)**.
 
@@ -42,7 +40,6 @@ Aplikasi memiliki pembagian peran yang terisolasi secara ketat:
 - **Node.js** versi 18.x atau lebih baru
 - **npm** atau **bun** / **yarn** / **pnpm**
 - Akun [Supabase](https://supabase.com/) (gratis, untuk database produksi)
-- Akun [Google AI Studio](https://aistudio.google.com/) (gratis, untuk Gemini API)
 
 ### 2. Kloning & Instalasi Dependensi
 ```bash
@@ -59,9 +56,6 @@ cp .env.example .env.local
 
 Isi variabel di dalam `.env.local`:
 ```env
-# Google Gemini AI (Wajib untuk diagnosa belajar AI)
-VITE_GEMINI_API_KEY=AIzaSy...
-
 # Supabase (Wajib untuk mode Produksi)
 VITE_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOi...
@@ -71,7 +65,7 @@ VITE_APP_NAME=Analisis Ujian Sekolah
 VITE_APP_URL=http://localhost:3000
 ```
 
-> **Catatan Mode Demo:** Jika `VITE_SUPABASE_URL` belum diisi, aplikasi akan otomatis berjalan dalam **Mode Demo Offline** menggunakan penyimpanan lokal browser (`localStorage`) dengan data benih awal SMAN 1 Utama.
+> **Catatan Mode Demo:** Jika `VITE_SUPABASE_URL` belum diisi, aplikasi akan otomatis berjalan dalam **Mode Demo Offline** menggunakan penyimpanan lokal browser (`localStorage`) dengan data bawaan.
 
 ### 4. Menjalankan Server Pengembangan
 ```bash
@@ -100,15 +94,17 @@ Aplikasi ini dioptimalkan untuk di-deploy di **Vercel**:
 1. Buat akun di [Vercel](https://vercel.com/) dan hubungkan dengan repository GitHub Anda.
 2. Pilih project `analisis-ujian`, pilih framework preset **Vite**.
 3. Tambahkan Environment Variables di Vercel Dashboard:
-   - `VITE_GEMINI_API_KEY`
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
 4. Klik **Deploy**. Setiap push ke cabang `main` akan otomatis memicu deployment baru.
 
+> 📖 **Panduan Lengkap untuk Sekolah Baru:**  
+> Untuk panduan detail langkah demi langkah setup Supabase & Vercel bagi sekolah lain, lihat [docs/PANDUAN_DEPLOYMENT_SEKOLAH_BARU.md](docs/PANDUAN_DEPLOYMENT_SEKOLAH_BARU.md).
+
 ### 2. Konfigurasi Domain Kustom Sekolah
-Untuk menggunakan domain sekolah (misal: `tryout.sman1utama.sch.id`):
+Untuk menggunakan domain sekolah (misal: `tryout.sekolahanda.sch.id`):
 1. Masuk ke Vercel Project > **Settings** > **Domains**.
-2. Masukkan subdomain yang diinginkan (misal `tryout.sman1utama.sch.id`).
+2. Masukkan subdomain yang diinginkan (misal `tryout.sekolahanda.sch.id`).
 3. Tambahkan CNAME record pada DNS Manager sekolah:
    - **Type:** `CNAME`
    - **Name:** `tryout`
@@ -166,7 +162,6 @@ analisis-ujian/
 │   │   ├── auth.ts            # Layanan autentikasi aman & sesi
 │   │   ├── database.ts        # Layer akses data (localStorage / Supabase)
 │   │   ├── export.ts          # Generator PDF rapor & Excel 7 sheet
-│   │   ├── gemini.ts          # Integrasi diagnostik kecerdasan buatan AI
 │   │   ├── googleIntegration.ts # Pipeline parsing & validasi Google Sheets
 │   │   └── scoring.ts         # Engine kalkulasi skor & negative marking
 │   ├── types/
