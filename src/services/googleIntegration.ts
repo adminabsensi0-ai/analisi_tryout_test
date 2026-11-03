@@ -31,10 +31,20 @@ export class GoogleIntegrationService {
   }
 
   /**
+   * Extract Google Spreadsheet GID (Tab ID) if present in URL
+   */
+  public static extractGid(sheetUrl: string): string | null {
+    if (!sheetUrl) return null;
+    const match = sheetUrl.match(/[#&?]gid=([0-9]+)/);
+    return match ? match[1] : null;
+  }
+
+  /**
    * Build Google Visualization API export CSV URL (works for any sheet with public view access)
    */
-  public static buildCsvExportUrl(sheetId: string): string {
-    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
+  public static buildCsvExportUrl(sheetId: string, gid?: string | null): string {
+    const base = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
+    return gid ? `${base}&gid=${gid}` : base;
   }
 
   /**
@@ -45,7 +55,8 @@ export class GoogleIntegrationService {
     if (!sheetId) {
       throw new Error('URL Google Sheet tidak valid. Pastikan format tautan Google Spreadsheet benar.');
     }
-    const csvUrl = this.buildCsvExportUrl(sheetId);
+    const gid = this.extractGid(sheetUrl);
+    const csvUrl = this.buildCsvExportUrl(sheetId, gid);
     const response = await fetch(csvUrl);
     if (!response.ok) {
       throw new Error(`Gagal mengunduh data Sheet (${response.status} ${response.statusText}). Pastikan hak akses Sheet adalah "Siapa saja yang memiliki link dapat melihat (Viewer)".`);
@@ -55,6 +66,124 @@ export class GoogleIntegrationService {
       throw new Error('Lembar kerja Google Sheet kosong atau tidak memiliki baris data.');
     }
     return text;
+  }
+
+  /**
+   * Cek apakah suatu kolom merupakan metadata / identitas siswa (Bagian 1 Google Form).
+   * Kolom metadata TIDAK boleh dijadikan butir soal.
+   */
+  public static isMetadataHeader(header: string): boolean {
+    const lower = (header || '').trim().toLowerCase();
+    if (!lower) return true;
+
+    // 1. Timestamp / Waktu
+    if (lower.includes('timestamp') || lower.includes('waktu') || lower.includes('tanggal') || lower === 'date') {
+      return true;
+    }
+    // 2. Email / Akun
+    if (lower.includes('email') || lower.includes('username') || lower.includes('surel')) {
+      return true;
+    }
+    // 3. NISN / NIS
+    if (lower === 'nisn' || lower.includes('nisn') || lower === 'nis' || lower.includes('nomor induk') || lower.includes('no induk')) {
+      return true;
+    }
+    // 4. Nama Siswa
+    if (lower === 'nama' || lower.includes('nama lengkap') || lower.includes('nama siswa') || lower.includes('nama peserta') || lower === 'name' || lower === 'full name') {
+      return true;
+    }
+    // 5. Kelas / Rombel / Absen
+    if (lower === 'kelas' || lower.includes('rombel') || lower.includes('absen') || lower.includes('jurusan')) {
+      return true;
+    }
+    // 6. Skor Google Form
+    if (lower === 'skor' || lower === 'score' || lower.includes('total point') || lower.includes('poin') || lower === 'nilai') {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Mengambil seluruh kolom yang merupakan Murni Butir Soal (Bagian 2 Google Form).
+   */
+  public static getQuestionHeaders(headers: string[]): string[] {
+    return headers.filter(h => !this.isMetadataHeader(h));
+  }
+
+  /**
+   * Auto-Bootstrap Butir Soal:
+   * Jika bank soal di database untuk mapel ini masih kosong (misal sekolah baru setup),
+   * otomatis buat butir soal dari kolom Bagian 2 Google Form.
+   */
+  public static ensureQuestionsExist(
+    subject: Subject,
+    headers: string[],
+    answerKeyRow?: Record<string, string> | null,
+    currentUser?: User | null
+  ): Question[] {
+    const existingQuestions = dbService.getQuestions().filter(q => q.subjectId === subject.id);
+    const questionHeaders = this.getQuestionHeaders(headers);
+
+    if (existingQuestions.length > 0 && existingQuestions.length >= questionHeaders.length) {
+      return existingQuestions;
+    }
+
+    const firstMaterial = dbService.getMaterials().find(m => m.subjectId === subject.id);
+    const firstCompetency = dbService.getCompetencies().find(c => c.subjectId === subject.id);
+    const materialId = firstMaterial?.id || `mat-${subject.id}-default`;
+    const competencyId = firstCompetency?.id || `comp-${subject.id}-default`;
+
+    const resultQuestions: Question[] = [...existingQuestions];
+
+    questionHeaders.forEach((headerText, idx) => {
+      const qNum = idx + 1;
+      const already = resultQuestions.find(q => q.questionNumber === qNum);
+      if (already) return;
+
+      const uniqueCode = `${subject.code || 'SOAL'}-Q${String(qNum).padStart(3, '0')}`;
+      
+      let defaultCorrect = 'A';
+      if (answerKeyRow && answerKeyRow[headerText] !== undefined) {
+        const rawAns = answerKeyRow[headerText].trim();
+        const prefixMatch = rawAns.match(/^([A-Ea-e])[\.\)\s]/);
+        if (prefixMatch) {
+          defaultCorrect = prefixMatch[1].toUpperCase();
+        } else if (['A', 'B', 'C', 'D', 'E'].includes(rawAns.toUpperCase())) {
+          defaultCorrect = rawAns.toUpperCase();
+        } else if (rawAns) {
+          defaultCorrect = rawAns;
+        }
+      }
+
+      const cleanText = headerText.trim() || `Butir Soal Nomor ${qNum}`;
+
+      const newQ = dbService.addQuestion(
+        {
+          uniqueCode,
+          questionNumber: qNum,
+          questionText: cleanText,
+          subjectId: subject.id,
+          materialId,
+          competencyId,
+          correctAnswer: defaultCorrect,
+          options: [
+            { key: 'A', text: 'Pilihan A' },
+            { key: 'B', text: 'Pilihan B' },
+            { key: 'C', text: 'Pilihan C' },
+            { key: 'D', text: 'Pilihan D' },
+            { key: 'E', text: 'Pilihan E' },
+          ],
+          weight: 1,
+          cognitiveLevel: 'C2',
+          status: 'ACTIVE',
+        },
+        currentUser
+      );
+      resultQuestions.push(newQ);
+    });
+
+    return resultQuestions.sort((a, b) => (a.questionNumber || 0) - (b.questionNumber || 0));
   }
 
   /**
@@ -133,15 +262,18 @@ export class GoogleIntegrationService {
         return lower.includes('timestamp') || lower.includes('waktu') || lower.includes('tanggal');
       });
 
-    // Map each question by uniqueCode (NOT by column position)
+    // Ambil kolom-kolom murni pertanyaan (Bagian 2 Google Form)
+    const questionHeaders = this.getQuestionHeaders(headers);
+
+    // Map each question by uniqueCode (with Positional Fallback for unnumbered headers)
     const questionMappings: Record<string, string> = {
       ...(customOverrides?.questionMappings || {}),
     };
 
-    questions.forEach(q => {
+    questions.forEach((q, idx) => {
       if (questionMappings[q.uniqueCode]) return;
 
-      // Find column header containing the unique code (case-insensitive)
+      // 1. Prioritas Utama: Cari column header yang cocok dengan uniqueCode atau pola penomoran
       const matchingHeader = headers.find(h => {
         const lowerH = h.toLowerCase();
         const lowerCode = q.uniqueCode.toLowerCase();
@@ -158,6 +290,9 @@ export class GoogleIntegrationService {
 
       if (matchingHeader) {
         questionMappings[q.uniqueCode] = matchingHeader;
+      } else if (questionHeaders[idx]) {
+        // 2. Positional Fallback: Jika judul pertanyaan bebas tanpa nomor, petakan berurutan dari Bagian 2
+        questionMappings[q.uniqueCode] = questionHeaders[idx];
       }
     });
 
@@ -300,7 +435,17 @@ export class GoogleIntegrationService {
         }
       });
 
-      dbService.updateTryout(tryout.id, { answerKey: updatedKeyMap as unknown as string[] }, null);
+      // Simpan kunci jawaban dalam format array per nomor soal (Index 0 = Soal 1)
+      const maxQNum = Math.max(...questions.map(q => q.questionNumber || 1), questions.length, 1);
+      const answerKeyArr: string[] = new Array(maxQNum).fill('');
+      questions.forEach(q => {
+        const qIdx = (q.questionNumber || 1) - 1;
+        if (q.correctAnswer && qIdx >= 0 && qIdx < answerKeyArr.length) {
+          answerKeyArr[qIdx] = q.correctAnswer;
+        }
+      });
+
+      dbService.updateTryout(tryout.id, { answerKey: answerKeyArr }, null);
     }
 
     // Filter out the answer key account row from student preview / score calculation

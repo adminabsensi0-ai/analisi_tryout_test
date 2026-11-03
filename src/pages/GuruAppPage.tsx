@@ -532,11 +532,36 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       const tryoutSubject = (tryout.subjectId ? allSubjectsNow.find(s => s.id === tryout.subjectId) : null) || permittedSubjectsNow[0] || allSubjectsNow[0];
       if (!tryoutSubject) throw new Error('Mata pelajaran tidak ditemukan untuk sinkronisasi.');
 
-      // 4. Detect column mappings using unique question codes
-      const tryoutQuestions = dbService.getQuestions().filter(q => q.subjectId === tryoutSubject.id);
+      // 4. Deteksi baris akun kunci jawaban jika ada
+      const allDbStudents = dbService.getStudents();
+      const detectedKeyRow = rows.find(r => {
+        const rowVals = Object.entries(r);
+        const nisnEntry = rowVals.find(([k]) => {
+          const lk = k.toLowerCase();
+          return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk');
+        });
+        const nisnVal = nisnEntry ? nisnEntry[1]?.trim() : '';
+        if (!nisnVal) return false;
+        const st = allDbStudents.find(s => s.nisn === nisnVal);
+        return st?.isAnswerKeyAccount;
+      });
+
+      // 5. Pastikan butir soal ada di database (Auto-Bootstrap jika belum ada soal untuk mapel ini)
+      let tryoutQuestions = dbService.getQuestions().filter(q => q.subjectId === tryoutSubject.id);
+      if (tryoutQuestions.length === 0) {
+        tryoutQuestions = GoogleIntegrationService.ensureQuestionsExist(
+          tryoutSubject,
+          headers,
+          detectedKeyRow,
+          currentUser
+        );
+        setQuestions(dbService.getQuestions());
+      }
+
+      // 6. Detect column mappings menggunakan unique question code & positional fallback
       const mappingConfig = GoogleIntegrationService.detectColumnMappings(headers, tryoutQuestions);
 
-      // 5. Validate rows — produces previewItems with VALID / WARNING_MISMATCH / ERROR status
+      // 7. Validate rows — produces previewItems with VALID / WARNING_MISMATCH / ERROR status
       const allStudentsNow = dbService.getStudents();
       const allScoresNow = dbService.getScores();
       const validationResult = GoogleIntegrationService.validateSheetImportDetailed(
@@ -551,6 +576,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
       if (validationResult.summary.answerKeyDetected) {
         triggerToast(`Kunci Jawaban Resmi diperbarui dari respon "${validationResult.summary.answerKeyStudentName}" (${validationResult.summary.answerKeyExtractedCount} butir soal).`);
+        setTryouts(dbService.getTryouts());
       }
 
       const importableItems = validationResult.previewItems.filter(
@@ -563,10 +589,14 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           ...prev,
           [tryout.id]: { lastSyncAt: new Date(), status: 'success', newCount: 0, errorMsg: '' },
         }));
+        setTryouts(dbService.getTryouts());
+        if (validationResult.summary.answerKeyDetected) {
+          triggerToast(`Kunci Jawaban resmi tersimpan (${validationResult.summary.answerKeyExtractedCount} soal). Menunggu respon siswa nyata untuk analisis.`);
+        }
         return;
       }
 
-      // 6. Idempotent import — same pipeline as handleConfirmImport
+      // 8. Idempotent import — same pipeline as handleConfirmImport
       const result = GoogleIntegrationService.executeIdempotentImport(
         tryout,
         tryoutSubject,
@@ -579,7 +609,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         }
       );
 
-      // 7. Update sync status and refresh dashboard
+      // 9. Update sync status and refresh dashboard
       setSheetSyncStatus(prev => ({
         ...prev,
         [tryout.id]: {
@@ -589,6 +619,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           errorMsg: '',
         },
       }));
+      setTryouts(dbService.getTryouts());
       refreshData();
     } catch (err: any) {
       setSheetSyncStatus(prev => ({
@@ -1006,7 +1037,30 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setParsedHeaders(parseRes.headers);
     setParsedRows(parseRes.rows);
 
-    const relevantQuestions = questions.filter(q => q.subjectId === selectedSubjectId);
+    let relevantQuestions = questions.filter(q => q.subjectId === selectedSubjectId);
+    if (relevantQuestions.length === 0 && activeSubject) {
+      const allDbStudents = dbService.getStudents();
+      const detectedKeyRow = parseRes.rows.find(r => {
+        const rowVals = Object.entries(r);
+        const nisnEntry = rowVals.find(([k]) => {
+          const lk = k.toLowerCase();
+          return lk === 'nisn' || lk.includes('nisn');
+        });
+        const nisnVal = nisnEntry ? nisnEntry[1]?.trim() : '';
+        if (!nisnVal) return false;
+        const st = allDbStudents.find(s => s.nisn === nisnVal);
+        return st?.isAnswerKeyAccount;
+      });
+
+      relevantQuestions = GoogleIntegrationService.ensureQuestionsExist(
+        activeSubject,
+        parseRes.headers,
+        detectedKeyRow,
+        currentUser
+      );
+      setQuestions(dbService.getQuestions());
+    }
+
     const detectedMappings = GoogleIntegrationService.detectColumnMappings(parseRes.headers, relevantQuestions);
     setColumnMappings(detectedMappings);
     setImportStage('MAPPING');
@@ -1262,6 +1316,27 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
               }`}
             >
               {tryouts.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleTabChange('QUESTION_BANK')}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+              activeTab === 'QUESTION_BANK'
+                ? 'bg-teal-600 text-white font-semibold shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <div className="flex items-center space-x-2.5">
+              <HelpCircle className={`w-4 h-4 ${activeTab === 'QUESTION_BANK' ? 'text-white' : 'text-slate-400'}`} />
+              <span>Bank Soal</span>
+            </div>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                activeTab === 'QUESTION_BANK' ? 'bg-teal-700 text-white' : 'bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              {questions.length}
             </span>
           </button>
 
