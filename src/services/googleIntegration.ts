@@ -178,7 +178,7 @@ export class GoogleIntegrationService {
           cognitiveLevel: 'C2',
           status: 'ACTIVE',
         },
-        currentUser
+        null // System action: bypass teacher subject restriction during automated ingestion
       );
       resultQuestions.push(newQ);
     });
