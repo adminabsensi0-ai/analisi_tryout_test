@@ -546,9 +546,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         return st?.isAnswerKeyAccount;
       });
 
-      // 5. Pastikan butir soal ada di database (Auto-Bootstrap jika belum ada soal untuk mapel ini)
+      // 5. Pastikan butir soal ada di database (Auto-Bootstrap jika belum ada soal atau belum lengkap)
+      const detectedQuestionHeaders = GoogleIntegrationService.getQuestionHeaders(headers);
       let tryoutQuestions = dbService.getQuestions().filter(q => q.subjectId === tryoutSubject.id);
-      if (tryoutQuestions.length === 0) {
+      const hasBogusQuestions = tryoutQuestions.some(q => GoogleIntegrationService.isMetadataHeader(q.questionText));
+
+      if (tryoutQuestions.length === 0 || tryoutQuestions.length < detectedQuestionHeaders.length || hasBogusQuestions) {
         tryoutQuestions = GoogleIntegrationService.ensureQuestionsExist(
           tryoutSubject,
           headers,

@@ -73,31 +73,95 @@ export class GoogleIntegrationService {
    * Kolom metadata TIDAK boleh dijadikan butir soal.
    */
   public static isMetadataHeader(header: string): boolean {
-    const lower = (header || '').trim().toLowerCase();
-    if (!lower) return true;
+    const raw = (header || '').trim();
+    if (!raw) return true;
 
-    // 1. Timestamp / Waktu
-    if (lower.includes('timestamp') || lower.includes('waktu') || lower.includes('tanggal') || lower === 'date') {
+    // Header yang merupakan kalimat tanya panjang atau bertanda tanya pasti soal (Bagian 2)
+    if (raw.endsWith('?') || raw.includes('?') || raw.length > 75) {
+      return false;
+    }
+
+    const lower = raw.toLowerCase();
+
+    // Pertanyaan yang diawali kata tanya umum bahasa Indonesia pasti soal
+    const questionStarters = ['apakah', 'siapakah', 'berapakah', 'manakah', 'bagaimanakah', 'sebutkan', 'jelaskan', 'tentukan', 'hitunglah', 'perhatikan'];
+    if (questionStarters.some(starter => lower.startsWith(starter + ' '))) {
+      return false;
+    }
+
+    // 1. Timestamp / Waktu pengiriman
+    if (lower.includes('timestamp') || lower === 'waktu' || lower.startsWith('waktu ') || lower === 'tanggal' || lower === 'date' || lower === 'time') {
       return true;
     }
-    // 2. Email / Akun
-    if (lower.includes('email') || lower.includes('username') || lower.includes('surel')) {
+    // 2. Email / Username / Akun
+    if (lower.includes('email') || lower.includes('username') || lower.includes('surel') || lower === 'akun') {
       return true;
     }
-    // 3. NISN / NIS
-    if (lower === 'nisn' || lower.includes('nisn') || lower === 'nis' || lower.includes('nomor induk') || lower.includes('no induk')) {
+    // 3. NISN / NIS / Nomor Induk / Nomor Peserta
+    if (
+      lower === 'nisn' ||
+      lower.includes('nisn') ||
+      lower === 'nis' ||
+      lower.includes('nomor induk') ||
+      lower.includes('no induk') ||
+      lower.includes('nomor peserta') ||
+      lower.includes('no peserta') ||
+      lower.includes('nomor ujian') ||
+      lower.includes('no ujian')
+    ) {
       return true;
     }
-    // 4. Nama Siswa
-    if (lower === 'nama' || lower.includes('nama lengkap') || lower.includes('nama siswa') || lower.includes('nama peserta') || lower === 'name' || lower === 'full name') {
+    // 4. Nama Siswa / Peserta
+    if (
+      lower === 'nama' ||
+      lower.includes('nama lengkap') ||
+      lower.includes('nama siswa') ||
+      lower.includes('nama peserta') ||
+      lower === 'name' ||
+      lower === 'full name' ||
+      lower === 'identitas' ||
+      lower.includes('data diri')
+    ) {
       return true;
     }
-    // 5. Kelas / Rombel / Absen
-    if (lower === 'kelas' || lower.includes('rombel') || lower.includes('absen') || lower.includes('jurusan')) {
+    // 5. Kelas / Rombel / Absen / Jurusan / Peminatan
+    if (
+      lower === 'kelas' ||
+      lower.startsWith('kelas ') ||
+      lower.includes('rombel') ||
+      lower.includes('absen') ||
+      lower.includes('jurusan') ||
+      lower.includes('peminatan') ||
+      lower.includes('program keahlian')
+    ) {
       return true;
     }
     // 6. Skor Google Form
-    if (lower === 'skor' || lower === 'score' || lower.includes('total point') || lower.includes('poin') || lower === 'nilai') {
+    if (
+      lower === 'skor' ||
+      lower === 'score' ||
+      lower.includes('total point') ||
+      lower.startsWith('skor ') ||
+      lower === 'nilai' ||
+      lower === 'poin'
+    ) {
+      return true;
+    }
+    // 7. Token / Password / Ruang / Sesi / Sekolah
+    if (
+      lower.includes('token') ||
+      lower.includes('password') ||
+      lower.includes('kode ujian') ||
+      lower === 'ruang' ||
+      lower.includes('ruang ujian') ||
+      lower.startsWith('ruang ') ||
+      lower === 'sesi' ||
+      lower.includes('sesi ujian') ||
+      lower.startsWith('sesi ') ||
+      lower === 'sekolah' ||
+      lower.includes('asal sekolah') ||
+      lower.includes('nama sekolah')
+    ) {
       return true;
     }
 
@@ -108,13 +172,13 @@ export class GoogleIntegrationService {
    * Mengambil seluruh kolom yang merupakan Murni Butir Soal (Bagian 2 Google Form).
    */
   public static getQuestionHeaders(headers: string[]): string[] {
-    return headers.filter(h => !this.isMetadataHeader(h));
+    return headers.filter(h => h && h.trim().length > 0 && !this.isMetadataHeader(h));
   }
 
   /**
    * Auto-Bootstrap Butir Soal:
-   * Jika bank soal di database untuk mapel ini masih kosong (misal sekolah baru setup),
-   * otomatis buat butir soal dari kolom Bagian 2 Google Form.
+   * Jika bank soal di database untuk mapel ini masih kosong atau kurang lengkap,
+   * otomatis buat/perbarui butir soal dari kolom Bagian 2 Google Form.
    */
   public static ensureQuestionsExist(
     subject: Subject,
@@ -122,27 +186,31 @@ export class GoogleIntegrationService {
     answerKeyRow?: Record<string, string> | null,
     currentUser?: User | null
   ): Question[] {
-    const existingQuestions = dbService.getQuestions().filter(q => q.subjectId === subject.id);
     const questionHeaders = this.getQuestionHeaders(headers);
-
-    if (existingQuestions.length > 0 && existingQuestions.length >= questionHeaders.length) {
-      return existingQuestions;
+    if (questionHeaders.length === 0) {
+      return dbService.getQuestions().filter(q => q.subjectId === subject.id);
     }
+
+    // 1. Bersihkan soal bogus yang tidak sengaja terbuat dari header metadata Bagian 1 sebelumnya
+    const currentSubjectQuestions = dbService.getQuestions().filter(q => q.subjectId === subject.id);
+    const bogusQuestions = currentSubjectQuestions.filter(q => this.isMetadataHeader(q.questionText));
+    if (bogusQuestions.length > 0) {
+      dbService.deleteQuestionsBatch(bogusQuestions.map(q => q.id), null);
+    }
+
+    const remainingQuestions = dbService.getQuestions().filter(q => q.subjectId === subject.id);
 
     const firstMaterial = dbService.getMaterials().find(m => m.subjectId === subject.id);
     const firstCompetency = dbService.getCompetencies().find(c => c.subjectId === subject.id);
     const materialId = firstMaterial?.id || `mat-${subject.id}-default`;
     const competencyId = firstCompetency?.id || `comp-${subject.id}-default`;
 
-    const resultQuestions: Question[] = [...existingQuestions];
+    const resultQuestions: Question[] = [];
 
     questionHeaders.forEach((headerText, idx) => {
       const qNum = idx + 1;
-      const already = resultQuestions.find(q => q.questionNumber === qNum);
-      if (already) return;
+      const cleanText = headerText.trim() || `Butir Soal Nomor ${qNum}`;
 
-      const uniqueCode = `${subject.code || 'SOAL'}-Q${String(qNum).padStart(3, '0')}`;
-      
       let defaultCorrect = 'A';
       if (answerKeyRow && answerKeyRow[headerText] !== undefined) {
         const rawAns = answerKeyRow[headerText].trim();
@@ -151,64 +219,123 @@ export class GoogleIntegrationService {
           defaultCorrect = prefixMatch[1].toUpperCase();
         } else if (['A', 'B', 'C', 'D', 'E'].includes(rawAns.toUpperCase())) {
           defaultCorrect = rawAns.toUpperCase();
+        } else if (rawAns.includes(',')) {
+          // PG Kompleks / Kotak centang
+          const parts = rawAns.split(',').map(p => p.trim()).filter(Boolean);
+          const normalized = parts.map(p => {
+            const m = p.match(/^([A-Ea-e])[\.\)\s]/);
+            return m ? m[1].toUpperCase() : p;
+          });
+          defaultCorrect = normalized.sort().join(', ');
         } else if (rawAns) {
           defaultCorrect = rawAns;
         }
       }
 
-      const cleanText = headerText.trim() || `Butir Soal Nomor ${qNum}`;
-
-      const newQ = dbService.addQuestion(
-        {
-          uniqueCode,
-          questionNumber: qNum,
-          questionText: cleanText,
-          subjectId: subject.id,
-          materialId,
-          competencyId,
-          correctAnswer: defaultCorrect,
-          options: [
-            { key: 'A', text: 'Pilihan A' },
-            { key: 'B', text: 'Pilihan B' },
-            { key: 'C', text: 'Pilihan C' },
-            { key: 'D', text: 'Pilihan D' },
-            { key: 'E', text: 'Pilihan E' },
-          ],
-          weight: 1,
-          cognitiveLevel: 'C2',
-          status: 'ACTIVE',
-        },
-        null // System action: bypass teacher subject restriction during automated ingestion
-      );
-      resultQuestions.push(newQ);
+      const existing = remainingQuestions.find(q => q.questionNumber === qNum);
+      if (existing) {
+        const updates: Partial<Question> = {};
+        if (!existing.questionText || existing.questionText.startsWith('Butir Soal Nomor') || existing.questionText !== cleanText) {
+          updates.questionText = cleanText;
+        }
+        if (answerKeyRow && defaultCorrect && existing.correctAnswer !== defaultCorrect) {
+          updates.correctAnswer = defaultCorrect;
+        }
+        if (Object.keys(updates).length > 0) {
+          dbService.updateQuestion(existing.id, updates, null);
+        }
+        resultQuestions.push({ ...existing, ...updates });
+      } else {
+        const uniqueCode = `${subject.code || 'SOAL'}-Q${String(qNum).padStart(3, '0')}`;
+        const newQ = dbService.addQuestion(
+          {
+            uniqueCode,
+            questionNumber: qNum,
+            questionText: cleanText,
+            subjectId: subject.id,
+            materialId,
+            competencyId,
+            correctAnswer: defaultCorrect,
+            options: [
+              { key: 'A', text: 'Pilihan A' },
+              { key: 'B', text: 'Pilihan B' },
+              { key: 'C', text: 'Pilihan C' },
+              { key: 'D', text: 'Pilihan D' },
+              { key: 'E', text: 'Pilihan E' },
+            ],
+            weight: 1,
+            cognitiveLevel: 'C2',
+            status: 'ACTIVE',
+          },
+          null // System action: bypass teacher subject restriction during automated ingestion
+        );
+        resultQuestions.push(newQ);
+      }
     });
 
     return resultQuestions.sort((a, b) => (a.questionNumber || 0) - (b.questionNumber || 0));
   }
 
   /**
-   * 1. PARSE: Parse raw CSV / Tab-separated text from Google Sheets export or copy-paste
+   * 1. PARSE: Parse raw CSV / Tab-separated text adhering strictly to RFC 4180
+   * (Handles commas inside quotes, multiline text inside quotes, quotes escaping)
    */
   public static parseRawSheetText(rawText: string): ParseResult {
-    const lines = rawText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
-    if (lines.length === 0) return { headers: [], rows: [] };
+    if (!rawText || !rawText.trim()) return { headers: [], rows: [] };
 
-    // Detect delimiter (Tab or Comma or Semicolon)
-    const firstLine = lines[0];
-    let delimiter = '\t';
-    if (firstLine.includes('\t')) {
-      delimiter = '\t';
-    } else if (firstLine.includes(',')) {
-      delimiter = ',';
-    } else if (firstLine.includes(';')) {
-      delimiter = ';';
+    // Deteksi apakah format TSV (tab) atau CSV (koma)
+    const isTsv = rawText.includes('\t') && (!rawText.includes(',') || rawText.indexOf('\t') < rawText.indexOf(','));
+    const delimiter = isTsv ? '\t' : ',';
+
+    const parsedMatrix: string[][] = [];
+    let currentRow: string[] = [];
+    let currentCell = '';
+    let insideQuotes = false;
+
+    for (let i = 0; i < rawText.length; i++) {
+      const char = rawText[i];
+      const nextChar = rawText[i + 1];
+
+      if (char === '"') {
+        if (insideQuotes && nextChar === '"') {
+          // Escaped quote: ""
+          currentCell += '"';
+          i++;
+        } else {
+          insideQuotes = !insideQuotes;
+        }
+      } else if (char === delimiter && !insideQuotes) {
+        currentRow.push(currentCell.trim().replace(/^"|"$/g, ''));
+        currentCell = '';
+      } else if ((char === '\r' || char === '\n') && !insideQuotes) {
+        if (char === '\r' && nextChar === '\n') {
+          i++; // Skip \n
+        }
+        currentRow.push(currentCell.trim().replace(/^"|"$/g, ''));
+        currentCell = '';
+        if (currentRow.some(c => c.length > 0)) {
+          parsedMatrix.push(currentRow);
+        }
+        currentRow = [];
+      } else {
+        currentCell += char;
+      }
     }
 
-    const headers = firstLine.split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
+    if (currentCell.length > 0 || currentRow.length > 0) {
+      currentRow.push(currentCell.trim().replace(/^"|"$/g, ''));
+      if (currentRow.some(c => c.length > 0)) {
+        parsedMatrix.push(currentRow);
+      }
+    }
+
+    if (parsedMatrix.length === 0) return { headers: [], rows: [] };
+
+    const headers = parsedMatrix[0];
     const rows: Record<string, string>[] = [];
 
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^"|"$/g, ''));
+    for (let r = 1; r < parsedMatrix.length; r++) {
+      const cols = parsedMatrix[r];
       const rowObj: Record<string, string> = {};
       headers.forEach((h, idx) => {
         rowObj[h] = cols[idx] !== undefined ? cols[idx] : '';
@@ -520,11 +647,11 @@ export class GoogleIntegrationService {
           } else if (['A', 'B', 'C', 'D', 'E'].includes(rawUpper)) {
             studentAnswers[q.uniqueCode] = rawUpper;
           } else if (rawVal.includes(',')) {
-            // Checkbox multi-select (e.g. "A, C" or "A. Opsi 1, C. Opsi 2")
+            // Checkbox multi-select (e.g. "A, C" or "A. Opsi 1, C. Opsi 2" or direct text "Opsi 1, Opsi 2")
             const parts = rawVal.split(',').map(p => p.trim()).filter(Boolean);
             const normalizedParts = parts.map(p => {
               const m = p.match(/^([A-Ea-e])[\.\)\s]/);
-              return m ? m[1].toUpperCase() : p.toUpperCase();
+              return m ? m[1].toUpperCase() : p;
             });
             studentAnswers[q.uniqueCode] = normalizedParts.sort().join(', ');
           } else if (['BENAR', 'SALAH', 'TRUE', 'FALSE'].includes(rawUpper)) {
@@ -535,9 +662,8 @@ export class GoogleIntegrationService {
             const matchedOpt = q.options.find(opt => opt.text.trim().toUpperCase() === rawUpper);
             studentAnswers[q.uniqueCode] = matchedOpt ? matchedOpt.key : rawVal;
           } else {
-            // Malformed answer option (e.g. "INVALID_VAL", "123", "!@#$%")
-            studentAnswers[q.uniqueCode] = '';
-            malformedAnswers[q.uniqueCode] = rawVal;
+            // Jawaban teks langsung (mendukung soal Google Form tanpa opsi huruf A/B/C/D)
+            studentAnswers[q.uniqueCode] = rawVal;
           }
         } else {
           studentAnswers[q.uniqueCode] = '';
