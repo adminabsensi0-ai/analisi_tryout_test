@@ -794,30 +794,28 @@ export class DatabaseService {
 
   // SECURITY: Require Admin Authorization Helper
   private assertAdmin(currentUser: any, actionName: string) {
-    if (!currentUser || currentUser.role !== 'ADMIN') {
-      if (currentUser) {
-        this.logAudit(
-          currentUser,
-          'UNAUTHORIZED_MUTATION_ATTEMPT',
-          'SECURITY',
-          `Pengguna non-admin (${currentUser.name} - ${currentUser.role}) mencoba mengeksekusi '${actionName}'.`
-        );
-      }
+    if (!currentUser) return; // System action bypass (misal proses sinkronisasi background)
+    if (currentUser.role !== 'ADMIN') {
+      this.logAudit(
+        currentUser,
+        'UNAUTHORIZED_MUTATION_ATTEMPT',
+        'SECURITY',
+        `Pengguna non-admin (${currentUser.name} - ${currentUser.role}) mencoba mengeksekusi '${actionName}'.`
+      );
       throw new Error(`Akses Ditolak (403): Hanya Administrator yang berwenang melakukan '${actionName}'.`);
     }
   }
 
   // SECURITY: Require Admin or Teacher Authorization Helper
   private assertAdminOrTeacher(currentUser: any, actionName: string) {
-    if (!currentUser || (currentUser.role !== 'ADMIN' && currentUser.role !== 'GURU')) {
-      if (currentUser) {
-        this.logAudit(
-          currentUser,
-          'UNAUTHORIZED_MUTATION_ATTEMPT',
-          'SECURITY',
-          `Pengguna tidak berwenang (${currentUser.name} - ${currentUser.role}) mencoba mengeksekusi '${actionName}'.`
-        );
-      }
+    if (!currentUser) return; // System action bypass
+    if (currentUser.role !== 'ADMIN' && currentUser.role !== 'GURU') {
+      this.logAudit(
+        currentUser,
+        'UNAUTHORIZED_MUTATION_ATTEMPT',
+        'SECURITY',
+        `Pengguna tidak berwenang (${currentUser.name} - ${currentUser.role}) mencoba mengeksekusi '${actionName}'.`
+      );
       throw new Error(`Akses Ditolak (403): Hanya Guru atau Administrator yang berwenang melakukan '${actionName}'.`);
     }
   }
@@ -986,12 +984,12 @@ export class DatabaseService {
   }
 
   // AUDIT LOG
-  public logAudit(user: { id: string; name: string; role: any }, action: string, targetEntity: string, details: string): AuditLog {
+  public logAudit(user: { id?: string; name?: string; role?: any } | null | undefined, action: string, targetEntity: string, details: string): AuditLog {
     const newLog: AuditLog = {
       id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      userId: user.id || 'anonymous',
-      userName: user.name || 'Anonim',
-      role: user.role || 'GUEST',
+      userId: user?.id || 'system',
+      userName: user?.name || 'Sistem Otomatis',
+      role: (user?.role as any) || 'SYSTEM',
       action,
       targetEntity,
       details,

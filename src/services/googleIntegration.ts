@@ -783,7 +783,7 @@ export class GoogleIntegrationService {
 
     // Write comprehensive AUDIT LOG matching requirements
     const auditDetails = JSON.stringify({
-      actor: { id: currentUser.id, name: currentUser.name, role: currentUser.role },
+      actor: { id: currentUser?.id || 'system', name: currentUser?.name || 'Sistem Otomatis', role: currentUser?.role || 'SYSTEM' },
       timestamp: now,
       source: sourceMetadata.sourceUrl || 'Google Sheets Manual Paste',
       formReference: sourceMetadata.formRef || 'Form-TO03',
