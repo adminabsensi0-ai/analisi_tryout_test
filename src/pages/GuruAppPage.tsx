@@ -4876,229 +4876,310 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           );
                         })()}
 
-                        {/* DIAGRAM KETUNTASAN SISWA MATAPELAJARAN (ATAS KKM vs DI BAWAH KKM PER KELAS & PER TRYOUT) */}
-                        <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-5 shadow-2xs">
-                          
-                          {/* Header & Filter Selector for TryOut Stage */}
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-                            <div>
-                              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                                <Users className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                                <span>Diagram Ketuntasan Siswa Mapel {activeSubjectObj?.name || 'Mata Pelajaran'}</span>
-                              </h3>
-                              <p className="text-xs text-slate-500 mt-0.5">
-                                Perbandingan jumlah & persentase siswa tuntas (≥ KKM 75.0) vs belum tuntas (&lt; KKM 75.0) khusus mata pelajaran {activeSubjectObj?.name} di setiap kelas yang diampu.
-                              </p>
-                            </div>
+                        {/* DIAGRAM KETUNTASAN SISWA MATAPELAJARAN (DATA RIIL DARI DATABASE & GOOGLE FORM) */}
+                        {(() => {
+                          const activeSubId = activeSubjectObj?.id || selectedSubjectId;
+                          const kkmVal = activeSubjectObj?.passingGrade ?? 75.0;
 
-                            {/* TryOut Selector Filter Buttons */}
-                            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shrink-0">
-                              {['ALL', 'TO 1', 'TO 2', 'TO 3', 'TO 4'].map((stage) => (
-                                <button
-                                  key={stage}
-                                  onClick={() => setSelectedPassFailTO(stage)}
-                                  className={`px-2.5 py-1 text-xs font-mono font-bold rounded-lg transition-all ${
-                                    selectedPassFailTO === stage
-                                      ? 'bg-teal-600 text-white shadow-2xs'
-                                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                                  }`}
-                                >
-                                  {stage === 'ALL' ? 'Rata-Rata TO' : stage}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                          // 1. Filter Try Out yang relevan dengan mata pelajaran ini
+                          const relevantTos = tryouts.filter(to => {
+                            if (to.subjectId === activeSubId) return true;
+                            if (to.externalSubjectIds && to.externalSubjectIds.includes(activeSubId)) return true;
+                            return scores.some(s => s.tryoutId === to.id && s.subjectScores && s.subjectScores[activeSubId] !== undefined);
+                          });
 
-                          {/* Overall Class Pass Rate Summary KPI Cards */}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                            <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1 shadow-2xs">
-                              <span className="text-[10px] text-slate-500 font-mono uppercase">Total Siswa Bimbingan</span>
-                              <div className="text-lg font-black text-slate-900 dark:text-white font-mono">90 Siswa</div>
-                              <p className="text-[11px] text-slate-500">Lintas 3 Kelas Diampu</p>
-                            </div>
+                          const stageList = ['ALL', ...relevantTos.map(t => t.code || t.title)];
+                          const currentStage = stageList.includes(selectedPassFailTO) ? selectedPassFailTO : 'ALL';
+                          const selectedToObj = currentStage === 'ALL' ? null : relevantTos.find(t => (t.code || t.title) === currentStage);
 
-                            <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 rounded-xl space-y-1 shadow-2xs">
-                              <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-mono font-bold uppercase">Rata-Rata Siswa Tuntas</span>
-                              <div className="text-lg font-black text-emerald-700 dark:text-emerald-300 font-mono">
-                                {selectedPassFailTO === 'TO 1' ? '60 Siswa (66.7%)' :
-                                 selectedPassFailTO === 'TO 2' ? '69 Siswa (76.7%)' :
-                                 selectedPassFailTO === 'TO 3' ? '78 Siswa (86.7%)' :
-                                 selectedPassFailTO === 'TO 4' ? '84 Siswa (93.3%)' :
-                                 '72 Siswa (80.0%)'}
+                          // Helper: Dapatkan nilai riil siswa untuk mata pelajaran ini
+                          const getScoreForStudent = (studentId: string, tryoutId?: string): number | null => {
+                            if (tryoutId) {
+                              const sc = scores.find(s => s.studentId === studentId && s.tryoutId === tryoutId);
+                              if (!sc) return null;
+                              if (sc.subjectScores && sc.subjectScores[activeSubId] !== undefined) {
+                                return Number(sc.subjectScores[activeSubId]);
+                              }
+                              const to = tryouts.find(t => t.id === tryoutId);
+                              if (to?.subjectId === activeSubId && sc.calculatedScore !== undefined) {
+                                return Number(sc.calculatedScore);
+                              }
+                              return null;
+                            }
+                            // Jika 'ALL', hitung rata-rata nilai siswa dari semua tryout relevan yang diikutinya
+                            const scoreVals: number[] = [];
+                            relevantTos.forEach(to => {
+                              const sc = scores.find(s => s.studentId === studentId && s.tryoutId === to.id);
+                              if (sc) {
+                                if (sc.subjectScores && sc.subjectScores[activeSubId] !== undefined) {
+                                  scoreVals.push(Number(sc.subjectScores[activeSubId]));
+                                } else if (to.subjectId === activeSubId && sc.calculatedScore !== undefined) {
+                                  scoreVals.push(Number(sc.calculatedScore));
+                                }
+                              }
+                            });
+                            if (scoreVals.length === 0) return null;
+                            return scoreVals.reduce((a, b) => a + b, 0) / scoreVals.length;
+                          };
+
+                          // 2. Kalkulasi statistik riil per kelas yang diampu guru
+                          const teacherClassesList = classes.length > 0 ? classes : dbService.getClasses();
+                          const classStatsList = teacherClassesList.map(cls => {
+                            const clsStudents = students.filter(s => s.classId === cls.id);
+                            let passCount = 0;
+                            let failCount = 0;
+                            let totalScoreVal = 0;
+                            let evaluatedStudents = 0;
+
+                            clsStudents.forEach(st => {
+                              const val = getScoreForStudent(st.id, selectedToObj?.id);
+                              if (val !== null) {
+                                evaluatedStudents++;
+                                totalScoreVal += val;
+                                if (val >= kkmVal) {
+                                  passCount++;
+                                } else {
+                                  failCount++;
+                                }
+                              }
+                            });
+
+                            const totalCount = evaluatedStudents > 0 ? evaluatedStudents : clsStudents.length;
+                            const avgVal = evaluatedStudents > 0 ? Math.round((totalScoreVal / evaluatedStudents) * 10) / 10 : 0;
+                            const passPercent = totalCount > 0 ? Math.round((passCount / totalCount) * 100) : 0;
+                            const failPercent = totalCount > 0 ? Math.round((failCount / totalCount) * 100) : 0;
+
+                            return {
+                              classId: cls.id,
+                              classLabel: cls.name,
+                              totalStudents: clsStudents.length,
+                              evaluatedStudents,
+                              pass: passCount,
+                              fail: failCount,
+                              avg: avgVal,
+                              passPct: passPercent,
+                              failPct: failPercent,
+                            };
+                          });
+
+                          // 3. Ringkasan Keseluruhan (KPI Summary)
+                          const totalStudentsAll = classStatsList.reduce((sum, c) => sum + c.totalStudents, 0);
+                          const totalPassAll = classStatsList.reduce((sum, c) => sum + c.pass, 0);
+                          const totalFailAll = classStatsList.reduce((sum, c) => sum + c.fail, 0);
+                          const totalEvaluatedAll = totalPassAll + totalFailAll;
+                          const passRateAll = totalEvaluatedAll > 0 ? Math.round((totalPassAll / totalEvaluatedAll) * 100) : 0;
+                          const failRateAll = totalEvaluatedAll > 0 ? Math.round((totalFailAll / totalEvaluatedAll) * 100) : 0;
+
+                          // 4. Distribusi Skor Riil (Histogram 4 Tingkat)
+                          let countKurang = 0;
+                          let countCukup = 0;
+                          let countBaik = 0;
+                          let countSangatBaik = 0;
+
+                          students.forEach(st => {
+                            const val = getScoreForStudent(st.id, selectedToObj?.id);
+                            if (val !== null) {
+                              if (val < 60) countKurang++;
+                              else if (val < 75) countCukup++;
+                              else if (val < 90) countBaik++;
+                              else countSangatBaik++;
+                            }
+                          });
+
+                          return (
+                            <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-5 shadow-2xs">
+                              {/* Header & Filter Selector for TryOut Stage */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                                <div>
+                                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                    <Users className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                                    <span>Diagram Ketuntasan Siswa Mapel {activeSubjectObj?.name || 'Mata Pelajaran'}</span>
+                                  </h3>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    Perbandingan jumlah &amp; persentase siswa tuntas (&ge; KKM {kkmVal.toFixed(1)}) vs belum tuntas (&lt; KKM {kkmVal.toFixed(1)}) khusus mata pelajaran {activeSubjectObj?.name} di setiap kelas yang diampu.
+                                  </p>
+                                </div>
+
+                                {/* TryOut Selector Filter Buttons */}
+                                <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shrink-0 flex-wrap">
+                                  {stageList.map((stage) => (
+                                    <button
+                                      key={stage}
+                                      onClick={() => setSelectedPassFailTO(stage)}
+                                      className={`px-2.5 py-1 text-xs font-mono font-bold rounded-lg transition-all cursor-pointer ${
+                                        currentStage === stage
+                                          ? 'bg-teal-600 text-white shadow-2xs'
+                                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                      }`}
+                                    >
+                                      {stage === 'ALL' ? 'Rata-Rata Seluruh TO' : stage}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
-                              <p className="text-[11px] text-emerald-600 dark:text-emerald-400">Memenuhi KKM 75.0 {activeSubjectObj?.name}</p>
-                            </div>
 
-                            <div className="p-3.5 bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 rounded-xl space-y-1 shadow-2xs">
-                              <span className="text-[10px] text-rose-700 dark:text-rose-300 font-mono font-bold uppercase">Siswa Belum Tuntas</span>
-                              <div className="text-lg font-black text-rose-700 dark:text-rose-300 font-mono">
-                                {selectedPassFailTO === 'TO 1' ? '30 Siswa (33.3%)' :
-                                 selectedPassFailTO === 'TO 2' ? '21 Siswa (23.3%)' :
-                                 selectedPassFailTO === 'TO 3' ? '12 Siswa (13.3%)' :
-                                 selectedPassFailTO === 'TO 4' ? '6 Siswa (6.7%)' :
-                                 '18 Siswa (20.0%)'}
-                              </div>
-                              <p className="text-[11px] text-rose-600 dark:text-rose-400">Memerlukan Remedial Mapel</p>
-                            </div>
+                              {/* Overall Class Pass Rate Summary KPI Cards */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                                <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1 shadow-2xs">
+                                  <span className="text-[10px] text-slate-500 font-mono uppercase">Total Siswa Bimbingan</span>
+                                  <div className="text-lg font-black text-slate-900 dark:text-white font-mono">{totalStudentsAll} Siswa</div>
+                                  <p className="text-[11px] text-slate-500">Lintas {teacherClassesList.length} Kelas Diampu</p>
+                                </div>
 
-                            <div className="p-3.5 bg-slate-100/80 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1 shadow-2xs">
-                              <span className="text-[10px] text-slate-500 font-mono uppercase">Tahapan Evaluasi</span>
-                              <div className="text-lg font-black text-slate-900 dark:text-white font-mono">
-                                {selectedPassFailTO === 'ALL' ? 'Aggregat All TO' : selectedPassFailTO}
-                              </div>
-                              <p className="text-[11px] text-teal-600 dark:text-teal-400 font-medium">
-                                {selectedPassFailTO === 'TO 4' ? 'Hasil Evaluasi Akhir' : 'Progres Sesi'}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Class-by-Class Breakdown for this active subject */}
-                          <div className="space-y-4 pt-1">
-                            <div className="flex items-center justify-between text-xs border-b border-slate-100 dark:border-slate-800 pb-2">
-                              <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
-                                Rasio Ketuntasan Per Kelas Pada Mapel {activeSubjectObj?.name} · {selectedPassFailTO === 'ALL' ? 'Seluruh TO' : selectedPassFailTO}
-                              </span>
-                              <div className="flex items-center gap-4 text-[11px] font-mono">
-                                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-xs bg-emerald-500 inline-block"></span> Tuntas (≥ KKM 75)</span>
-                                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-xs bg-rose-500 inline-block"></span> Belum Tuntas (&lt; KKM 75)</span>
-                              </div>
-                            </div>
-
-                            <div className="space-y-4">
-                              {[
-                                { classLabel: 'Kelas XII IPA 1 (Rombel Utuh)',
-                                  data: {
-                                    'TO 1': { pass: 22, fail: 8 },
-                                    'TO 2': { pass: 25, fail: 5 },
-                                    'TO 3': { pass: 28, fail: 2 },
-                                    'TO 4': { pass: 29, fail: 1 },
-                                    'ALL':  { pass: 26, fail: 4 },
-                                  }
-                                },
-                                { classLabel: 'Kelas XII IPA 2',
-                                  data: {
-                                    'TO 1': { pass: 20, fail: 10 },
-                                    'TO 2': { pass: 23, fail: 7 },
-                                    'TO 3': { pass: 26, fail: 4 },
-                                    'TO 4': { pass: 28, fail: 2 },
-                                    'ALL':  { pass: 24, fail: 6 },
-                                  }
-                                },
-                                { classLabel: 'Kelas XII IPS 1',
-                                  data: {
-                                    'TO 1': { pass: 18, fail: 12 },
-                                    'TO 2': { pass: 21, fail: 9 },
-                                    'TO 3': { pass: 24, fail: 6 },
-                                    'TO 4': { pass: 27, fail: 3 },
-                                    'ALL':  { pass: 22, fail: 8 },
-                                  }
-                                },
-                              ].map((cls, cIdx) => {
-                                const stats = cls.data[selectedPassFailTO as keyof typeof cls.data] || cls.data['ALL'];
-                                const total = stats.pass + stats.fail;
-                                const passPct = ((stats.pass / total) * 100).toFixed(1);
-                                const failPct = ((stats.fail / total) * 100).toFixed(1);
-
-                                return (
-                                  <div key={cIdx} className="space-y-1.5 p-3.5 bg-slate-50/70 dark:bg-slate-950/70 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1">
-                                      <span className="font-bold text-slate-900 dark:text-slate-100 font-sans">{cls.classLabel}</span>
-                                      <div className="flex items-center gap-3 text-[11px] font-mono tabular-nums">
-                                        <span className="text-emerald-700 dark:text-emerald-400 font-bold">
-                                          {stats.pass} Siswa ({passPct}%) Tuntas
-                                        </span>
-                                        <span className="text-slate-300 dark:text-slate-700">|</span>
-                                        <span className="text-rose-700 dark:text-rose-400 font-bold">
-                                          {stats.fail} Siswa ({failPct}%) Belum Tuntas
-                                        </span>
-                                      </div>
-                                    </div>
-
-                                    {/* Visual Proportional Stacked Bar */}
-                                    <div className="w-full h-8 bg-slate-200/90 dark:bg-slate-800 rounded-xl overflow-hidden flex p-0.5 border border-slate-300/80 dark:border-slate-700/80 shadow-2xs">
-                                      {stats.pass > 0 && (
-                                        <div
-                                          style={{ width: `${passPct}%` }}
-                                          className="bg-gradient-to-r from-emerald-600 to-emerald-500 h-full rounded-l-lg flex items-center justify-start px-3 transition-all duration-500 group relative"
-                                        >
-                                          <span className="text-[11px] font-mono font-bold text-white whitespace-nowrap drop-shadow-xs">
-                                            {stats.pass} Siswa ({passPct}%)
-                                          </span>
-                                        </div>
-                                      )}
-                                      {stats.fail > 0 && (
-                                        <div
-                                          style={{ width: `${failPct}%` }}
-                                          className="bg-gradient-to-r from-rose-500 to-rose-600 h-full rounded-r-lg flex items-center justify-end px-3 transition-all duration-500 group relative"
-                                        >
-                                          <span className="text-[11px] font-mono font-bold text-white whitespace-nowrap drop-shadow-xs">
-                                            {stats.fail} ({failPct}%)
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
+                                <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 rounded-xl space-y-1 shadow-2xs">
+                                  <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-mono font-bold uppercase">Siswa Tuntas</span>
+                                  <div className="text-lg font-black text-emerald-700 dark:text-emerald-300 font-mono">
+                                    {totalPassAll} Siswa ({passRateAll}%)
                                   </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
+                                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400">Memenuhi KKM {kkmVal.toFixed(1)} {activeSubjectObj?.name}</p>
+                                </div>
 
-                        {/* Class Comparison & Score Distribution Histogram */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {/* Class Comparison */}
-                          <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                            <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
-                              Perbandingan Ketuntasan Mapel Per Kelas
-                            </h3>
-                            <div className="space-y-3 pt-2">
-                              {[
-                                { classLabel: 'XII IPA 1', avg: 85.0, passing: '92%', color: 'bg-emerald-600' },
-                                { classLabel: 'XII IPA 2', avg: 81.5, passing: '88%', color: 'bg-teal-600' },
-                                { classLabel: 'XII IPS 1', avg: 76.0, passing: '78%', color: 'bg-indigo-600' },
-                              ].map(cl => (
-                                <div key={cl.classLabel} className="space-y-1 text-xs">
-                                  <div className="flex justify-between font-medium text-slate-700 dark:text-slate-300">
-                                    <span>{cl.classLabel}</span>
-                                    <span className="font-mono font-bold">{cl.avg} Poin ({cl.passing} Tuntas)</span>
+                                <div className="p-3.5 bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 rounded-xl space-y-1 shadow-2xs">
+                                  <span className="text-[10px] text-rose-700 dark:text-rose-300 font-mono font-bold uppercase">Siswa Belum Tuntas</span>
+                                  <div className="text-lg font-black text-rose-700 dark:text-rose-300 font-mono">
+                                    {totalFailAll} Siswa ({failRateAll}%)
                                   </div>
-                                  <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
-                                    <div style={{ width: `${cl.avg}%` }} className={`h-full ${cl.color} rounded-full transition-all duration-500`} />
+                                  <p className="text-[11px] text-rose-600 dark:text-rose-400">Memerlukan Remedial Mapel</p>
+                                </div>
+
+                                <div className="p-3.5 bg-slate-100/80 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1 shadow-2xs">
+                                  <span className="text-[10px] text-slate-500 font-mono uppercase">Tahapan Evaluasi</span>
+                                  <div className="text-lg font-black text-slate-900 dark:text-white font-mono truncate" title={currentStage}>
+                                    {currentStage === 'ALL' ? 'Semua Try Out' : currentStage}
+                                  </div>
+                                  <p className="text-[11px] text-teal-600 dark:text-teal-400 font-medium">
+                                    {currentStage === 'ALL' ? 'Agregat Rata-Rata' : selectedToObj?.title || 'Sesi Evaluasi'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Class-by-Class Breakdown for this active subject */}
+                              <div className="space-y-4 pt-1">
+                                <div className="flex items-center justify-between text-xs border-b border-slate-100 dark:border-slate-800 pb-2">
+                                  <span className="font-bold text-slate-700 dark:text-slate-300 font-mono">
+                                    Rasio Ketuntasan Per Kelas Pada Mapel {activeSubjectObj?.name} · {currentStage === 'ALL' ? 'Seluruh TO' : currentStage}
+                                  </span>
+                                  <div className="flex items-center gap-4 text-[11px] font-mono">
+                                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-xs bg-emerald-500 inline-block"></span> Tuntas (&ge; KKM {kkmVal.toFixed(1)})</span>
+                                    <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-xs bg-rose-500 inline-block"></span> Belum Tuntas (&lt; KKM {kkmVal.toFixed(1)})</span>
                                   </div>
                                 </div>
-                              ))}
-                            </div>
-                          </div>
 
-                          {/* Histogram Distribution */}
-                          <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                            <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
-                              Distribusi Predikat Skor Siswa ({activeSubjectObj?.name})
-                            </h3>
-                            <div className="grid grid-cols-4 gap-2 text-center pt-2 text-xs font-mono">
-                              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl space-y-1">
-                                <div className="text-[10px] text-rose-700 dark:text-rose-300 font-bold">&lt; 60 (Kurang)</div>
-                                <div className="text-xl font-black text-rose-700 dark:text-rose-300">2</div>
-                                <div className="text-[10px] text-slate-500">Siswa</div>
+                                <div className="space-y-4">
+                                  {classStatsList.map((cls, cIdx) => (
+                                    <div key={cls.classId || cIdx} className="space-y-1.5 p-3.5 bg-slate-50/70 dark:bg-slate-950/70 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-bold text-slate-900 dark:text-slate-100 font-sans">{cls.classLabel}</span>
+                                          <span className="text-[10px] text-slate-400 font-mono">Rerata: <strong className="text-slate-700 dark:text-slate-200">{cls.avg}</strong></span>
+                                        </div>
+                                        <div className="flex items-center gap-3 text-[11px] font-mono tabular-nums">
+                                          <span className="text-emerald-700 dark:text-emerald-400 font-bold">
+                                            {cls.pass} Siswa ({cls.passPct}%) Tuntas
+                                          </span>
+                                          <span className="text-slate-300 dark:text-slate-700">|</span>
+                                          <span className="text-rose-700 dark:text-rose-400 font-bold">
+                                            {cls.fail} Siswa ({cls.failPct}%) Belum Tuntas
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      {/* Visual Proportional Stacked Bar */}
+                                      <div className="w-full h-8 bg-slate-200/90 dark:bg-slate-800 rounded-xl overflow-hidden flex p-0.5 border border-slate-300/80 dark:border-slate-700/80 shadow-2xs">
+                                        {cls.pass > 0 && (
+                                          <div
+                                            style={{ width: `${cls.passPct}%` }}
+                                            className="bg-gradient-to-r from-emerald-600 to-emerald-500 h-full rounded-l-lg flex items-center justify-start px-3 transition-all duration-500 group relative"
+                                          >
+                                            <span className="text-[11px] font-mono font-bold text-white whitespace-nowrap drop-shadow-xs">
+                                              {cls.pass} Siswa ({cls.passPct}%)
+                                            </span>
+                                          </div>
+                                        )}
+                                        {cls.fail > 0 && (
+                                          <div
+                                            style={{ width: `${cls.failPct}%` }}
+                                            className="bg-gradient-to-r from-rose-500 to-rose-600 h-full rounded-r-lg flex items-center justify-end px-3 transition-all duration-500 group relative"
+                                          >
+                                            <span className="text-[11px] font-mono font-bold text-white whitespace-nowrap drop-shadow-xs">
+                                              {cls.fail} Siswa ({cls.failPct}%)
+                                            </span>
+                                          </div>
+                                        )}
+                                        {cls.pass === 0 && cls.fail === 0 && (
+                                          <div className="w-full h-full flex items-center justify-center text-[11px] text-slate-400 italic">
+                                            Belum ada data pengerjaan untuk kelas ini
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl space-y-1">
-                                <div className="text-[10px] text-amber-700 dark:text-amber-300 font-bold">60-74 (Cukup)</div>
-                                <div className="text-xl font-black text-amber-700 dark:text-amber-300">4</div>
-                                <div className="text-[10px] text-slate-500">Siswa</div>
-                              </div>
-                              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 rounded-xl space-y-1">
-                                <div className="text-[10px] text-indigo-700 dark:text-indigo-300 font-bold">75-89 (Baik)</div>
-                                <div className="text-xl font-black text-indigo-700 dark:text-indigo-300">18</div>
-                                <div className="text-[10px] text-slate-500">Siswa</div>
-                              </div>
-                              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-xl space-y-1">
-                                <div className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">90-100 (Sangat Baik)</div>
-                                <div className="text-xl font-black text-emerald-700 dark:text-emerald-300">8</div>
-                                <div className="text-[10px] text-slate-500">Siswa</div>
+
+                              {/* Class Comparison & Score Distribution Histogram */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                {/* Class Comparison */}
+                                <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                                  <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
+                                    Perbandingan Ketuntasan Mapel Per Kelas
+                                  </h3>
+                                  <div className="space-y-3 pt-2">
+                                    {classStatsList.map((cl, i) => (
+                                      <div key={cl.classId || i} className="space-y-1 text-xs">
+                                        <div className="flex justify-between font-medium text-slate-700 dark:text-slate-300">
+                                          <span>{cl.classLabel}</span>
+                                          <span className="font-mono font-bold">{cl.avg} Poin ({cl.passPct}% Tuntas)</span>
+                                        </div>
+                                        <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                                          <div
+                                            style={{ width: `${Math.min(100, Math.max(0, cl.avg))}%` }}
+                                            className={`h-full ${
+                                              cl.avg >= kkmVal
+                                                ? 'bg-emerald-600'
+                                                : cl.avg >= kkmVal - 10
+                                                ? 'bg-teal-600'
+                                                : 'bg-amber-600'
+                                            } rounded-full transition-all duration-500`}
+                                          />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Histogram Distribution */}
+                                <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                                  <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
+                                    Distribusi Predikat Skor Siswa ({activeSubjectObj?.name})
+                                  </h3>
+                                  <div className="grid grid-cols-4 gap-2 text-center pt-2 text-xs font-mono">
+                                    <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl space-y-1">
+                                      <div className="text-[10px] text-rose-700 dark:text-rose-300 font-bold">&lt; 60 (Kurang)</div>
+                                      <div className="text-xl font-black text-rose-700 dark:text-rose-300">{countKurang}</div>
+                                      <div className="text-[10px] text-slate-500">Siswa</div>
+                                    </div>
+                                    <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl space-y-1">
+                                      <div className="text-[10px] text-amber-700 dark:text-amber-300 font-bold">60-74 (Cukup)</div>
+                                      <div className="text-xl font-black text-amber-700 dark:text-amber-300">{countCukup}</div>
+                                      <div className="text-[10px] text-slate-500">Siswa</div>
+                                    </div>
+                                    <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 rounded-xl space-y-1">
+                                      <div className="text-[10px] text-indigo-700 dark:text-indigo-300 font-bold">75-89 (Baik)</div>
+                                      <div className="text-xl font-black text-indigo-700 dark:text-indigo-300">{countBaik}</div>
+                                      <div className="text-[10px] text-slate-500">Siswa</div>
+                                    </div>
+                                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-xl space-y-1">
+                                      <div className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">90-100 (Sangat Baik)</div>
+                                      <div className="text-xl font-black text-emerald-700 dark:text-emerald-300">{countSangatBaik}</div>
+                                      <div className="text-[10px] text-slate-500">Siswa</div>
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </div>
+                          );
+                        })()}
                       </div>
                     );
                   })()}

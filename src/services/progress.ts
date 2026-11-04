@@ -313,20 +313,84 @@ export class ProgressService {
     const subject = dbState.subjects.find((s: Subject) => s.id === subjectId);
     if (!subject) return null;
 
-    const tryouts = this.sortTryoutsChronologically(dbState.tryouts);
-    const questions = dbState.questions.filter((q: Question) => q.subjectId === subjectId);
+    const kkm = subject.passingGrade || 75.0;
+    const tryouts = this.sortTryoutsChronologically(dbState.tryouts || []);
+    const questions = (dbState.questions || []).filter((q: Question) => q.subjectId === subjectId);
     const questionIds = new Set(questions.map((q: Question) => q.id));
 
+    // Filter siswa yang diizinkan untuk guru jika role GURU
+    let allowedStudentIds: Set<string> | null = null;
+    if (currentUser && currentUser.role === 'GURU') {
+      const teacher = (dbState.teachers || []).find((t: any) => t.userId === currentUser.id || t.id === currentUser.id);
+      if (teacher) {
+        const allowedClasses = new Set<string>(teacher.classPermissions || []);
+        (dbState.teacherSubjects || []).forEach((ts: any) => {
+          if (ts.teacherId === teacher.id && ts.classId) allowedClasses.add(ts.classId);
+        });
+        if (allowedClasses.size > 0) {
+          const validStudents = (dbState.students || []).filter((st: Student) => allowedClasses.has(st.classId));
+          allowedStudentIds = new Set(validStudents.map((st: Student) => st.id));
+        }
+      }
+    }
+
     const points = tryouts.map((to: Tryout) => {
-      const toAnswers = dbState.answers.filter((a: Answer) => a.tryoutId === to.id && questionIds.has(a.questionId));
-      const correct = toAnswers.filter((a: Answer) => a.isCorrect).length;
-      const total = toAnswers.length || 1;
-      const avg = Math.round((correct / total) * 100 * 10) / 10;
-      const passing = Math.round((correct / total) * 100) >= 75 ? 100 : Math.round((correct / total) * 100);
+      // 1. Ambil dari tabel scores (Google Form import & Admin entry)
+      let toScores = (dbState.scores || []).filter((s: Score) => s.tryoutId === to.id);
+      if (allowedStudentIds) {
+        toScores = toScores.filter((s: Score) => allowedStudentIds!.has(s.studentId));
+      }
+
+      const subjectScoresList: number[] = [];
+
+      toScores.forEach((s: Score) => {
+        let val: number | undefined = undefined;
+        if (s.subjectScores && s.subjectScores[subjectId] !== undefined) {
+          val = Number(s.subjectScores[subjectId]);
+        } else if (to.subjectId === subjectId && s.calculatedScore !== undefined) {
+          val = Number(s.calculatedScore);
+        }
+
+        if (val !== undefined && !isNaN(val)) {
+          subjectScoresList.push(val);
+        }
+      });
+
+      // 2. Fallback: hitung dari butir jawaban (answers) jika di tabel scores belum ada
+      if (subjectScoresList.length === 0 && questionIds.size > 0) {
+        let toAnswers = (dbState.answers || []).filter((a: Answer) => a.tryoutId === to.id && questionIds.has(a.questionId));
+        if (allowedStudentIds) {
+          toAnswers = toAnswers.filter((a: Answer) => allowedStudentIds!.has(a.studentId));
+        }
+        if (toAnswers.length > 0) {
+          const byStudent = new Map<string, { correct: number; total: number }>();
+          toAnswers.forEach((a: Answer) => {
+            const cur = byStudent.get(a.studentId) || { correct: 0, total: 0 };
+            cur.total++;
+            if (a.isCorrect) cur.correct++;
+            byStudent.set(a.studentId, cur);
+          });
+          byStudent.forEach(cur => {
+            if (cur.total > 0) {
+              subjectScoresList.push(Math.round((cur.correct / cur.total) * 100 * 10) / 10);
+            }
+          });
+        }
+      }
+
+      // Hitung metrik rata-rata & persentase ketuntasan riil
+      const totalStudents = subjectScoresList.length;
+      const avg = totalStudents > 0
+        ? Math.round((subjectScoresList.reduce((sum, v) => sum + v, 0) / totalStudents) * 10) / 10
+        : 0;
+      const passingCount = subjectScoresList.filter(v => v >= kkm).length;
+      const passing = totalStudents > 0
+        ? Math.round((passingCount / totalStudents) * 100)
+        : 0;
 
       return {
         tryoutId: to.id,
-        tryoutCode: to.code,
+        tryoutCode: to.code || to.title,
         averageScore: avg,
         passingRatePct: passing,
       };
