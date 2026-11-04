@@ -1730,7 +1730,7 @@ export class DatabaseService {
     return newTo;
   }
   public updateTryout(id: string, updates: Partial<Tryout>, currentUser: any) {
-    this.assertAdmin(currentUser, 'UPDATE_TRYOUT');
+    this.assertAdminOrTeacher(currentUser, 'UPDATE_TRYOUT');
     this.state.tryouts = this.state.tryouts.map(t => t.id === id ? { ...t, ...updates } : t);
     this.logAudit(currentUser, 'UPDATE_TRYOUT', 'TRYOUT', `Memperbarui data Try Out ID: ${id}`);
     this.persistState();
@@ -1738,7 +1738,7 @@ export class DatabaseService {
     if (this.supabaseSyncEnabled && updated) sdb.syncTryout(updated).catch(() => {});
   }
   public updateTryoutStatus(id: string, status: TryoutStatus, currentUser: any) {
-    this.assertAdmin(currentUser, 'UPDATE_TRYOUT_STATUS');
+    this.assertAdminOrTeacher(currentUser, 'UPDATE_TRYOUT_STATUS');
     this.state.tryouts = this.state.tryouts.map(t => t.id === id ? { ...t, status } : t);
     this.logAudit(currentUser, 'UPDATE_TRYOUT_STATUS', 'TRYOUT', `Mengubah status Try Out ID ${id} menjadi '${status}'`);
     this.persistState();
@@ -1759,7 +1759,7 @@ export class DatabaseService {
     if (this.supabaseSyncEnabled && updated) sdb.syncTryout(updated).catch(() => {});
   }
   public deleteTryout(id: string, currentUser: any) {
-    this.assertAdmin(currentUser, 'DELETE_TRYOUT');
+    this.assertAdminOrTeacher(currentUser, 'DELETE_TRYOUT');
     const to = this.state.tryouts.find(t => t.id === id);
     this.state.tryouts = this.state.tryouts.filter(t => t.id !== id);
     this.logAudit(currentUser, 'DELETE_TRYOUT', 'TRYOUT', `Menghapus Try Out: ${to?.title || id}`);

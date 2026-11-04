@@ -25,7 +25,7 @@ import { ProductionValidationSuiteResult } from '../services/productionValidatio
 import {
   User, Question, Tryout, SheetImportPreviewItem, Explanation, Subject,
   Material, Competency, ClassRoom, Student, QuestionStatus,
-  ColumnMappingConfig, SheetImportSummary, Score, AcademicYear
+  ColumnMappingConfig, SheetImportSummary, Score, AcademicYear, TryoutStatus
 } from '../types/database';
 import { generateUuid } from '../utils/idUtils';
 import { ResourceCard } from '../components/ResourceCard';
@@ -150,6 +150,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [selectedPassFailTO, setSelectedPassFailTO] = useState<string>('TO 4');
 
   const [showTryoutModal, setShowTryoutModal] = useState(false);
+  const [editingTryoutId, setEditingTryoutId] = useState<string | null>(null);
   const [newToCode, setNewToCode] = useState('');
   const [newToTitle, setNewToTitle] = useState('');
   const [newToGFormUrl, setNewToGFormUrl] = useState('');
@@ -159,24 +160,58 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [newToSubjectId, setNewToSubjectId] = useState('');
   const [newToExternalSubjectIds, setNewToExternalSubjectIds] = useState<string[]>([]);
   const [newToTargetClasses, setNewToTargetClasses] = useState<string[]>([]);
+  const [newToStartDate, setNewToStartDate] = useState('');
+  const [newToEndDate, setNewToEndDate] = useState('');
+  const [newToStatus, setNewToStatus] = useState<TryoutStatus>('ACTIVE');
+  const [newToDescription, setNewToDescription] = useState('');
 
   // State untuk modal upload nilai TO eksternal
   const [uploadExternalTo, setUploadExternalTo] = useState<Tryout | null>(null);
 
-  const handleCreateTryoutPackage = () => {
+  const handleOpenAddTryout = () => {
+    setEditingTryoutId(null);
+    setNewToCode('');
+    setNewToTitle('');
+    setNewToGFormUrl('');
+    setNewToGSheetUrl('');
+    setNewToPackageId('');
+    setNewToSubjectId(permittedSubjects[0]?.id || subjects[0]?.id || '');
+    setNewToEntryMode('INTERNAL');
+    setNewToTargetClasses([]);
+    setNewToExternalSubjectIds(subjects.map(s => s.id));
+    setNewToStartDate(new Date().toISOString().slice(0, 10));
+    setNewToEndDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+    setNewToStatus('ACTIVE');
+    setNewToDescription('');
+    setShowTryoutModal(true);
+  };
+
+  const handleOpenEditTryout = (to: Tryout) => {
+    setEditingTryoutId(to.id);
+    setNewToCode(to.code || '');
+    setNewToTitle(to.title || '');
+    setNewToGFormUrl(to.googleFormUrl || '');
+    setNewToGSheetUrl(to.googleSheetUrl || '');
+    setNewToPackageId(to.packageId || '');
+    setNewToSubjectId(to.subjectId || permittedSubjects[0]?.id || subjects[0]?.id || '');
+    setNewToEntryMode(to.isExternal ? 'EXTERNAL' : 'INTERNAL');
+    setNewToTargetClasses(to.targetClassIds || []);
+    setNewToExternalSubjectIds(to.externalSubjectIds || []);
+    setNewToStartDate(to.startDate ? to.startDate.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    setNewToEndDate(to.endDate ? to.endDate.slice(0, 10) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+    setNewToStatus(to.status || 'ACTIVE');
+    setNewToDescription(to.description || '');
+    setShowTryoutModal(true);
+  };
+
+  const handleSaveTryoutPackage = () => {
     if (!newToTitle.trim()) {
       setErrorBanner("Nama Paket TryOut tidak boleh kosong.");
       return;
     }
-    const nextIdx = tryouts.length + 1;
-    const createdCode = newToCode.trim() || `TO-2026-0${nextIdx}`;
-    const selectedPkg = newToPackageId ? dbService.getExamPackageById(newToPackageId) : undefined;
     const isExternal = newToEntryMode === 'EXTERNAL';
-
-    // Mapel untuk internal
     const internalSubjectId = isExternal ? undefined : (newToSubjectId || permittedSubjects[0]?.id || subjects[0]?.id);
-
-    // Mapel untuk eksternal dari master Admin
+    const selectedPkg = newToPackageId ? dbService.getExamPackageById(newToPackageId) : undefined;
     const selectedExtSubjectIds = isExternal
       ? (newToExternalSubjectIds.length > 0 ? newToExternalSubjectIds : subjects.map(s => s.id))
       : undefined;
@@ -184,15 +219,69 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       ? selectedExtSubjectIds.map(id => subjects.find(s => s.id === id)?.name).filter(Boolean) as string[]
       : undefined;
 
+    if (editingTryoutId) {
+      const existing = tryouts.find(t => t.id === editingTryoutId);
+      if (!existing) return;
+
+      const updates: Partial<Tryout> = {
+        title: newToTitle.trim(),
+        code: newToCode.trim() || existing.code,
+        packageId: newToPackageId || undefined,
+        subjectId: internalSubjectId,
+        isExternal,
+        source: isExternal ? 'EXTERNAL' : 'INTERNAL',
+        externalSubjectIds: selectedExtSubjectIds,
+        externalSubjects: selectedExtSubjectNames,
+        googleFormUrl: isExternal ? undefined : newToGFormUrl.trim(),
+        googleSheetUrl: isExternal ? undefined : newToGSheetUrl.trim(),
+        startDate: newToStartDate ? new Date(newToStartDate).toISOString() : existing.startDate,
+        endDate: newToEndDate ? new Date(newToEndDate).toISOString() : existing.endDate,
+        status: newToStatus,
+        targetClassIds: newToTargetClasses.length > 0 ? newToTargetClasses : undefined,
+        description: newToDescription.trim() || existing.description,
+      };
+
+      // Jika URL Google Sheet berubah, reset kolom agar guru dapat mengonfirmasi ulang
+      if (!isExternal && newToGSheetUrl.trim() !== (existing.googleSheetUrl || '').trim()) {
+        updates.selectedQuestionColumns = undefined;
+      }
+
+      dbService.updateTryout(editingTryoutId, updates, currentUser);
+
+      if (!isExternal && selectedPkg && newToGSheetUrl.trim() && internalSubjectId) {
+        dbService.updateExamPackageSubject(
+          selectedPkg.id,
+          internalSubjectId,
+          {
+            googleSheetUrl: newToGSheetUrl.trim(),
+            googleFormUrl: newToGFormUrl.trim(),
+            syncStatus: 'SYNCED',
+          },
+          currentUser
+        );
+      }
+
+      setTryouts(dbService.getTryoutsForTeacher(currentUser));
+      setShowTryoutModal(false);
+      setEditingTryoutId(null);
+      triggerToast(`Paket TryOut '${newToTitle.trim()}' berhasil diperbarui!`);
+      refreshData();
+      return;
+    }
+
+    // CREATE NEW TRYOUT
+    const nextIdx = tryouts.length + 1;
+    const createdCode = newToCode.trim() || `TO-2026-0${nextIdx}`;
+
     const newToObj: Tryout = {
       id: generateUuid(),
       code: createdCode,
       title: newToTitle.trim(),
       assessmentType: 'TRYOUT',
       academicYearId: selectedPkg?.academicYearId || '0ffe2ac4-48bd-400b-ae8c-05ecff36e4a1',
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      status: 'ACTIVE',
+      startDate: newToStartDate ? new Date(newToStartDate).toISOString() : new Date().toISOString(),
+      endDate: newToEndDate ? new Date(newToEndDate).toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      status: newToStatus || 'ACTIVE',
       subjectId: internalSubjectId,
       isExternal,
       source: isExternal ? 'EXTERNAL' : 'INTERNAL',
@@ -210,16 +299,15 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       },
       googleFormUrl: isExternal ? undefined : (newToGFormUrl.trim() || 'https://forms.google.com/sample'),
       googleSheetUrl: isExternal ? undefined : (newToGSheetUrl.trim() || 'https://docs.google.com/spreadsheets/d/sample/edit'),
-      description: isExternal
+      description: newToDescription.trim() || (isExternal
         ? `Try Out Eksternal ${createdCode} (Rekap Nilai).${selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''}`
-        : `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.${selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''}`,
+        : `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.${selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''}`),
       packageId: selectedPkg?.id,
       targetClassIds: newToTargetClasses.length > 0 ? newToTargetClasses : selectedPkg?.targetClassIds,
     };
 
     dbService.saveTryout(newToObj);
 
-    // Jika dimasukkan ke wadah tertentu, sinkronkan juga link sheet ke dalam paket tersebut (hanya untuk internal)
     if (!isExternal && selectedPkg && newToGSheetUrl.trim() && internalSubjectId) {
       dbService.updateExamPackageSubject(
         selectedPkg.id,
@@ -233,7 +321,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       );
     }
 
-    setTryouts(dbService.getTryouts());
+    setTryouts(dbService.getTryoutsForTeacher(currentUser));
     setShowTryoutModal(false);
     setNewToCode('');
     setNewToTitle('');
@@ -244,6 +332,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setNewToEntryMode('INTERNAL');
     setNewToTargetClasses([]);
     setNewToExternalSubjectIds([]);
+    setNewToStartDate('');
+    setNewToEndDate('');
+    setNewToDescription('');
 
     if (isExternal) {
       triggerToast(
@@ -258,9 +349,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     }
   };
 
-
   // Contextual Confirmation Delete State (Safe replacement for window.confirm)
-  const [deleteConfirmItem, setDeleteConfirmItem] = useState<{ id: string; code: string; title: string; type?: 'QUESTION' | 'MATERIAL' | 'COMPETENCY' } | null>(null);
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState<{ id: string; code: string; title: string; type?: 'QUESTION' | 'MATERIAL' | 'COMPETENCY' | 'TRYOUT' } | null>(null);
 
   // Checkbox Bulk Delete States for Guru App
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
@@ -1016,6 +1106,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       } else if (deleteConfirmItem.type === 'COMPETENCY') {
         dbService.deleteCompetency(deleteConfirmItem.id, currentUser);
         triggerToast(`Kompetensi '${deleteConfirmItem.code}' berhasil dihapus.`);
+      } else if (deleteConfirmItem.type === 'TRYOUT') {
+        dbService.deleteTryout(deleteConfirmItem.id, currentUser);
+        triggerToast(`Paket TryOut '${deleteConfirmItem.title}' berhasil dihapus.`);
       } else {
         dbService.deleteQuestion(deleteConfirmItem.id, currentUser);
         triggerToast(`Butir soal '${deleteConfirmItem.code}' berhasil dihapus secara aman.`);
@@ -2086,11 +2179,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     </div>
 
                     <button
-                      onClick={() => {
-                        setNewToSubjectId(permittedSubjects[0]?.id || subjects[0]?.id || '');
-                        setNewToExternalSubjectIds(subjects.map(s => s.id));
-                        setShowTryoutModal(true);
-                      }}
+                      onClick={handleOpenAddTryout}
                       className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-colors cursor-pointer shrink-0"
                     >
                       <Plus className="w-4 h-4" />
@@ -2112,15 +2201,35 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               </span>
                             )}
                           </div>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md font-mono uppercase border ${
-                              to.status === 'ACTIVE'
-                                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                            }`}
-                          >
-                            {to.status}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md font-mono uppercase border ${
+                                to.status === 'ACTIVE'
+                                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                                  : to.status === 'COMPLETED'
+                                  ? 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-800'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              {to.status}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditTryout(to)}
+                              title="Edit Detail & Link TryOut"
+                              className="p-1.5 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmItem({ id: to.id, code: to.code, title: to.title, type: 'TRYOUT' })}
+                              title="Hapus Paket TryOut"
+                              className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="text-sm font-bold text-slate-900 dark:text-slate-100">{to.title}</div>
@@ -8178,8 +8287,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   <Layers className="w-4.5 h-4.5" />
                 </div>
                 <div>
-                  <h2 className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-tight">Tambah Paket TryOut Baru</h2>
-                  <p className="text-[11px] text-slate-400 font-mono">Isi detail paket, lalu simpan</p>
+                  <h2 className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-tight">
+                    {editingTryoutId ? 'Edit Detail & Link Paket TryOut' : 'Tambah Paket TryOut Baru'}
+                  </h2>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    {editingTryoutId ? 'Perbaiki link Google Form/Sheet, jadwal, atau informasi paket' : 'Isi detail paket, lalu simpan'}
+                  </p>
                 </div>
               </div>
               <button
@@ -8281,6 +8394,59 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 </p>
               </div>
 
+              {/* ── Jadwal & Status Pelaksanaan ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Buka Akses (Mulai)
+                  </label>
+                  <input
+                    type="date"
+                    value={newToStartDate}
+                    onChange={e => setNewToStartDate(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 transition text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Batas Akses (Selesai)
+                  </label>
+                  <input
+                    type="date"
+                    value={newToEndDate}
+                    onChange={e => setNewToEndDate(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 transition text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                    Status Pelaksanaan
+                  </label>
+                  <select
+                    value={newToStatus}
+                    onChange={e => setNewToStatus(e.target.value as TryoutStatus)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500 transition text-xs"
+                  >
+                    <option value="ACTIVE">Aktif (Sedang Berjalan)</option>
+                    <option value="COMPLETED">Selesai (Completed)</option>
+                    <option value="ARCHIVED">Diarsipkan (Archived)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
+                  Deskripsi / Petunjuk Pelaksanaan <span className="font-normal text-slate-400">(opsional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={newToDescription}
+                  onChange={e => setNewToDescription(e.target.value)}
+                  placeholder="Informasi atau instruksi pengerjaan untuk siswa..."
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition text-xs"
+                />
+              </div>
+
               {/* ── FORM KHUSUS TRYOUT INTERNAL (GOOGLE FORM) ── */}
               {newToEntryMode === 'INTERNAL' ? (
                 <>
@@ -8308,15 +8474,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                     <div>
                       <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                        Link Google Form <span className="text-rose-400">*</span> <span className="font-normal text-slate-400">(dibagikan ke siswa)</span>
+                        Link Google Form <span className="text-rose-400">*</span> <span className="font-normal text-slate-400">(soal siswa)</span>
                       </label>
                       <input
                         type="url"
                         value={newToGFormUrl}
                         onChange={e => setNewToGFormUrl(e.target.value)}
-                        placeholder="https://forms.gle/..."
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
+                        placeholder="https://forms.gle/... atau https://docs.google.com/forms/d/..."
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                       />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Jika link form salah atau ada ralat link formulir baru, Anda dapat memperbarui URL di sini kapan saja.
+                      </p>
                     </div>
                     <div>
                       <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
@@ -8327,8 +8496,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         value={newToGSheetUrl}
                         onChange={e => setNewToGSheetUrl(e.target.value)}
                         placeholder="https://docs.google.com/spreadsheets/d/..."
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                       />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Pastikan link spreadsheet dibagikan dengan hak akses 'Siapa saja yang memiliki link dapat melihat'.
+                      </p>
                     </div>
                   </div>
 
@@ -8489,12 +8661,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 </button>
                 <button
                   type="button"
-                  onClick={handleCreateTryoutPackage}
+                  onClick={handleSaveTryoutPackage}
                   disabled={!newToTitle.trim()}
                   className="px-5 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer flex items-center gap-1.5 transition-colors"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Simpan Paket TryOut</span>
+                  <span>{editingTryoutId ? 'Simpan Perubahan' : 'Simpan Paket TryOut'}</span>
                 </button>
               </div>
             </div>
@@ -8513,7 +8685,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  Konfirmasi Hapus Butir Soal
+                  {deleteConfirmItem.type === 'TRYOUT'
+                    ? 'Konfirmasi Hapus Paket TryOut'
+                    : deleteConfirmItem.type === 'MATERIAL'
+                    ? 'Konfirmasi Hapus Materi'
+                    : deleteConfirmItem.type === 'COMPETENCY'
+                    ? 'Konfirmasi Hapus Kompetensi'
+                    : 'Konfirmasi Hapus Butir Soal'}
                 </h3>
                 <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400 font-bold">
                   {deleteConfirmItem.code}
