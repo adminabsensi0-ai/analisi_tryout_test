@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   BookOpen, BarChart3, FileSpreadsheet, Plus, CheckCircle,
   AlertTriangle, Upload, Eye, FileText, Download,
@@ -636,9 +636,92 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     }
   };
 
-  // ── Auto-Sync: Ambil CSV dan buka Modal Pemilihan Kolom (atau langsung sync jika sudah ada konfigurasi) ──
-  const syncTryoutFromSheet = async (tryout: Tryout) => {
+  // ── Buka Modal Konfigurasi Kolom Secara Eksplisit (Kapan saja guru butuh) ──
+  const openColumnConfigModal = async (tryout: Tryout) => {
     if (!tryout.googleSheetUrl) return;
+
+    setSheetSyncStatus(prev => ({
+      ...prev,
+      [tryout.id]: { lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null, status: 'syncing', newCount: 0, errorMsg: '' },
+    }));
+
+    try {
+      const csvText = await GoogleIntegrationService.fetchSheetCsv(tryout.googleSheetUrl);
+      const { headers, rows } = GoogleIntegrationService.parseRawSheetText(csvText);
+      if (rows.length === 0) throw new Error('Sheet kosong atau tidak ada baris data.');
+
+      const allDbStudents = dbService.getStudents();
+      const detectedKeyRow = rows.find(r => {
+        const nisnEntry = Object.entries(r).find(([k]) => {
+          const lk = k.toLowerCase();
+          return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk');
+        });
+        const nisnVal = nisnEntry ? nisnEntry[1]?.trim() : '';
+        if (!nisnVal) return false;
+        const st = allDbStudents.find(s => s.nisn === nisnVal);
+        return st?.isAnswerKeyAccount;
+      }) || null;
+
+      const preselect: Record<string, boolean> = {};
+      if (tryout.selectedQuestionColumns && tryout.selectedQuestionColumns.length > 0) {
+        const setCols = new Set(tryout.selectedQuestionColumns);
+        headers.forEach(h => {
+          preselect[h] = setCols.has(h);
+        });
+      } else {
+        headers.forEach(h => {
+          preselect[h] = !GoogleIntegrationService.isMetadataHeader(h);
+        });
+      }
+
+      const nisnCol = headers.find(h => h.toLowerCase().includes('nisn') || h.toLowerCase() === 'nisn') || headers[0] || '';
+      const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
+      const scoreCol = headers.find(h => h.toLowerCase().includes('skor') || h.toLowerCase().includes('score')) || '';
+
+      setSheetSyncStatus(prev => ({
+        ...prev,
+        [tryout.id]: { lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null, status: 'idle', newCount: 0, errorMsg: '' },
+      }));
+
+      setColumnSelectorTryout(tryout);
+      setColumnSelectorHeaders(headers);
+      setColumnSelectorRows(rows);
+      setColumnSelectorNisnCol(nisnCol);
+      setColumnSelectorNameCol(nameCol);
+      setColumnSelectorScoreCol(scoreCol);
+      setColumnSelectorKeyRow(detectedKeyRow);
+      setColumnSelectorChecked(preselect);
+    } catch (err: any) {
+      setSheetSyncStatus(prev => ({
+        ...prev,
+        [tryout.id]: {
+          lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null,
+          status: 'error',
+          newCount: 0,
+          errorMsg: err.message || 'Gagal mengambil data Sheet.',
+        },
+      }));
+      triggerError(err.message || 'Gagal mengambil data Google Sheet.');
+    }
+  };
+
+  // ── Sync: Ambil CSV dan sinkronkan data (hanya buka modal jika manual & belum terkonfigurasi) ──
+  const syncTryoutFromSheet = async (tryout: Tryout, isManual = false) => {
+    if (!tryout.googleSheetUrl) return;
+
+    // Guard: Jika belum dikonfigurasi dan dipanggil otomatis (background polling), JANGAN buka modal!
+    if (!isManual && (!tryout.selectedQuestionColumns || tryout.selectedQuestionColumns.length === 0)) {
+      setSheetSyncStatus(prev => ({
+        ...prev,
+        [tryout.id]: {
+          lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null,
+          status: 'idle',
+          newCount: 0,
+          errorMsg: '',
+        },
+      }));
+      return;
+    }
 
     setSheetSyncStatus(prev => ({
       ...prev,
@@ -673,29 +756,31 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         return;
       }
 
-      // Belum ada konfigurasi → buka Modal Pemilihan Kolom
-      const smartPreselect: Record<string, boolean> = {};
-      headers.forEach(h => {
-        smartPreselect[h] = !GoogleIntegrationService.isMetadataHeader(h);
-      });
+      // Belum ada konfigurasi DAN merupakan manual klik oleh guru → buka Modal Pemilihan Kolom
+      if (isManual) {
+        const smartPreselect: Record<string, boolean> = {};
+        headers.forEach(h => {
+          smartPreselect[h] = !GoogleIntegrationService.isMetadataHeader(h);
+        });
 
-      const nisnCol = headers.find(h => h.toLowerCase().includes('nisn') || h.toLowerCase() === 'nisn') || headers[0] || '';
-      const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
-      const scoreCol = headers.find(h => h.toLowerCase().includes('skor') || h.toLowerCase().includes('score')) || '';
+        const nisnCol = headers.find(h => h.toLowerCase().includes('nisn') || h.toLowerCase() === 'nisn') || headers[0] || '';
+        const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
+        const scoreCol = headers.find(h => h.toLowerCase().includes('skor') || h.toLowerCase().includes('score')) || '';
 
-      setSheetSyncStatus(prev => ({
-        ...prev,
-        [tryout.id]: { lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null, status: 'idle', newCount: 0, errorMsg: '' },
-      }));
+        setSheetSyncStatus(prev => ({
+          ...prev,
+          [tryout.id]: { lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null, status: 'idle', newCount: 0, errorMsg: '' },
+        }));
 
-      setColumnSelectorTryout(tryout);
-      setColumnSelectorHeaders(headers);
-      setColumnSelectorRows(rows);
-      setColumnSelectorNisnCol(nisnCol);
-      setColumnSelectorNameCol(nameCol);
-      setColumnSelectorScoreCol(scoreCol);
-      setColumnSelectorKeyRow(detectedKeyRow);
-      setColumnSelectorChecked(smartPreselect);
+        setColumnSelectorTryout(tryout);
+        setColumnSelectorHeaders(headers);
+        setColumnSelectorRows(rows);
+        setColumnSelectorNisnCol(nisnCol);
+        setColumnSelectorNameCol(nameCol);
+        setColumnSelectorScoreCol(scoreCol);
+        setColumnSelectorKeyRow(detectedKeyRow);
+        setColumnSelectorChecked(smartPreselect);
+      }
     } catch (err: any) {
       setSheetSyncStatus(prev => ({
         ...prev,
@@ -706,28 +791,39 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           errorMsg: err.message || 'Gagal mengambil data Sheet.',
         },
       }));
+      if (isManual) {
+        triggerError(err.message || 'Gagal mengambil data Google Sheet.');
+      }
     }
   };
 
-  // ── Auto-poll every 5 minutes while GuruAppPage is mounted ───────────────────
+  // Simpan referensi tryouts terbaru tanpa memicu looping dependency
+  const tryoutsRef = useRef<Tryout[]>(tryouts);
+  useEffect(() => {
+    tryoutsRef.current = tryouts;
+  }, [tryouts]);
+
+  // ── Auto-poll setiap 5 menit (hanya untuk tryout yang SUDAH terkonfigurasi kolomnya) ──
   useEffect(() => {
     const SAMPLE_URL = 'https://docs.google.com/spreadsheets/d/sample/edit';
     const autoSync = () => {
-      tryouts.forEach(to => {
-        if (to.googleSheetUrl && to.googleSheetUrl !== SAMPLE_URL) {
-          syncTryoutFromSheet(to);
+      const currentList = tryoutsRef.current || [];
+      currentList.forEach(to => {
+        // Hanya auto-sync jika URL valid DAN sudah pernah dikonfigurasi kolomnya
+        if (to.googleSheetUrl && to.googleSheetUrl !== SAMPLE_URL && to.selectedQuestionColumns && to.selectedQuestionColumns.length > 0) {
+          syncTryoutFromSheet(to, false);
         }
       });
     };
-    // Initial sync after 2 s to let UI settle
-    const initial = setTimeout(autoSync, 2000);
-    // Repeat every 5 minutes
+    // Initial sync setelah 4 detik saat UI sudah siap sepenuhnya
+    const initial = setTimeout(autoSync, 4000);
+    // Ulangi setiap 5 menit (tidak menguras memori/CPU browser)
     const interval = setInterval(autoSync, 5 * 60 * 1000);
     return () => {
       clearTimeout(initial);
       clearInterval(interval);
     };
-  }, [tryouts]); // re-register when tryout list changes
+  }, []); // Run on mount only! Mencegah infinite re-polling saat tryouts berubah
 
   const handleTabChange = (tab: GuruTab) => {
     setIsLoading(true);
@@ -2143,6 +2239,29 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               )}
                             </div>
 
+                            {/* Column Mapping Status Badge & Settings */}
+                            <div className="flex items-center justify-between px-3 py-1.5 rounded-xl border text-[11px] font-semibold bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <Sliders className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                {to.selectedQuestionColumns && to.selectedQuestionColumns.length > 0 ? (
+                                  <span className="text-emerald-700 dark:text-emerald-300 font-bold truncate">
+                                    {to.selectedQuestionColumns.length} kolom soal terpetakan
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-700 dark:text-amber-400 font-medium">
+                                    Belum dikonfirmasi
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => openColumnConfigModal(to)}
+                                className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer ml-2 shrink-0"
+                              >
+                                {to.selectedQuestionColumns && to.selectedQuestionColumns.length > 0 ? 'Ubah Kolom' : 'Atur Kolom'}
+                              </button>
+                            </div>
+
                             {/* ── Sinkronkan Google Sheet Button + Live Status ── */}
                             {(() => {
                               const syncState = sheetSyncStatus[to.id];
@@ -2150,21 +2269,34 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               const minutesAgo = syncState?.lastSyncAt
                                 ? Math.round((Date.now() - syncState.lastSyncAt.getTime()) / 60000)
                                 : null;
+                              const hasColumns = !!(to.selectedQuestionColumns && to.selectedQuestionColumns.length > 0);
                               return (
                                 <div className="space-y-1.5">
                                   <button
                                     type="button"
                                     disabled={isSyncing}
-                                    onClick={() => syncTryoutFromSheet(to)}
-                                    className={`w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-2xs cursor-pointer`}
+                                    onClick={() => syncTryoutFromSheet(to, true)}
+                                    className={`w-full ${
+                                      hasColumns
+                                        ? 'bg-teal-600 hover:bg-teal-500 text-white'
+                                        : 'bg-amber-600 hover:bg-amber-500 text-white animate-pulse'
+                                    } disabled:opacity-60 disabled:cursor-not-allowed font-bold text-xs py-2 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-2xs cursor-pointer`}
                                   >
                                     <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                                    <span>{isSyncing ? 'Sedang sinkronisasi...' : 'Sinkronkan Data Google Sheet (Siswa Susulan)'}</span>
+                                    <span>
+                                      {isSyncing
+                                        ? 'Sedang sinkronisasi...'
+                                        : hasColumns
+                                        ? 'Sinkronkan Data Google Sheet (Siswa Susulan)'
+                                        : 'Pilih & Konfirmasi Kolom Soal Sekarang'}
+                                    </span>
                                   </button>
 
                                   {/* Sync status indicator */}
                                   {!syncState || syncState.status === 'idle' ? (
-                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">Belum disinkronkan</p>
+                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">
+                                      {hasColumns ? 'Siap disinkronkan' : 'Menunggu pemilihan kolom oleh guru'}
+                                    </p>
                                   ) : syncState.status === 'syncing' ? (
                                     <p className="text-[10px] text-teal-600 dark:text-teal-400 text-center animate-pulse">Mengambil data dari Google Sheet...</p>
                                   ) : syncState.status === 'success' ? (

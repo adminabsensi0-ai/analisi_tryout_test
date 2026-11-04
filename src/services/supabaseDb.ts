@@ -235,6 +235,22 @@ function fromSupabaseExamPackage(row: Record<string, unknown>, subjects: ExamPac
 }
 
 function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<string, unknown> {
+  const meta: Record<string, unknown> = {
+    selectedQuestionColumns: to.selectedQuestionColumns,
+    answerKey: to.answerKey,
+    subjectId: to.subjectId,
+    isExternal: to.isExternal,
+    source: to.source,
+    externalSubjects: to.externalSubjects,
+    externalSubjectIds: to.externalSubjectIds,
+    externalScoreScale: to.externalScoreScale,
+  };
+
+  const enhancedScoringConfig = {
+    ...(to.scoringConfig || {}),
+    _meta: meta,
+  };
+
   return {
     code: to.code,
     title: to.title,
@@ -242,7 +258,7 @@ function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<s
     academic_year_id: supabaseAcademicYearId || to.academicYearId,
     start_date: to.startDate || new Date().toISOString(),
     end_date: to.endDate || new Date().toISOString(),
-    scoring_config: to.scoringConfig || {},
+    scoring_config: enhancedScoringConfig,
     status: to.status || 'DRAFT',
     description: to.description || null,
     google_form_url: to.googleFormUrl || null,
@@ -253,6 +269,9 @@ function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<s
 }
 
 function fromSupabaseTryout(row: Record<string, unknown>): Tryout {
+  const scoringConfigRaw = ((row.scoring_config as any) || { scoringType: 'ROUND_DOWN', maxScore: 100, correctScore: 1, wrongScore: 0, emptyScore: 0 });
+  const meta = scoringConfigRaw._meta || {};
+
   return {
     id: String(row.id),
     code: String(row.code),
@@ -261,13 +280,23 @@ function fromSupabaseTryout(row: Record<string, unknown>): Tryout {
     academicYearId: String(row.academic_year_id),
     startDate: String(row.start_date || new Date().toISOString()),
     endDate: String(row.end_date || new Date().toISOString()),
-    scoringConfig: (row.scoring_config as any) || { scoringType: 'ROUND_DOWN', maxScore: 100, correctScore: 1, wrongScore: 0, emptyScore: 0 },
+    scoringConfig: scoringConfigRaw,
     status: (row.status as Tryout['status']) || 'ACTIVE',
     description: row.description ? String(row.description) : undefined,
     googleFormUrl: row.google_form_url ? String(row.google_form_url) : undefined,
     googleSheetUrl: row.google_sheet_url ? String(row.google_sheet_url) : undefined,
     packageId: row.package_id ? String(row.package_id) : undefined,
     targetClassIds: Array.isArray(row.target_class_ids) ? (row.target_class_ids as string[]) : [],
+    answerKey: Array.isArray(row.answer_key) ? (row.answer_key as string[]) : (Array.isArray(meta.answerKey) ? meta.answerKey : undefined),
+    selectedQuestionColumns: Array.isArray(row.selected_question_columns)
+      ? (row.selected_question_columns as string[])
+      : (Array.isArray(meta.selectedQuestionColumns) ? meta.selectedQuestionColumns : undefined),
+    subjectId: (row.subject_id as string) || meta.subjectId || undefined,
+    isExternal: row.is_external !== undefined ? Boolean(row.is_external) : (meta.isExternal !== undefined ? Boolean(meta.isExternal) : undefined),
+    source: (row.source as any) || meta.source || undefined,
+    externalSubjects: Array.isArray(row.external_subjects) ? (row.external_subjects as string[]) : (Array.isArray(meta.externalSubjects) ? meta.externalSubjects : undefined),
+    externalSubjectIds: Array.isArray(row.external_subject_ids) ? (row.external_subject_ids as string[]) : (Array.isArray(meta.externalSubjectIds) ? meta.externalSubjectIds : undefined),
+    externalScoreScale: (row.external_score_scale as any) || meta.externalScoreScale || undefined,
   };
 }
 

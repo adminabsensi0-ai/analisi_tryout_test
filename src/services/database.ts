@@ -454,14 +454,36 @@ export class DatabaseService {
           changed = true;
         } else {
           const local = this.state.tryouts[idx];
+          const mergedSelectedCols =
+            cloudTo.selectedQuestionColumns && cloudTo.selectedQuestionColumns.length > 0
+              ? cloudTo.selectedQuestionColumns
+              : local.selectedQuestionColumns;
+          const mergedAnswerKey =
+            cloudTo.answerKey && cloudTo.answerKey.length > 0
+              ? cloudTo.answerKey
+              : local.answerKey;
+
           if (
             local.title !== cloudTo.title ||
             local.status !== cloudTo.status ||
             local.googleSheetUrl !== cloudTo.googleSheetUrl ||
             local.googleFormUrl !== cloudTo.googleFormUrl ||
-            JSON.stringify(local.scoringConfig) !== JSON.stringify(cloudTo.scoringConfig)
+            JSON.stringify(local.scoringConfig) !== JSON.stringify(cloudTo.scoringConfig) ||
+            JSON.stringify(local.selectedQuestionColumns) !== JSON.stringify(mergedSelectedCols) ||
+            JSON.stringify(local.answerKey) !== JSON.stringify(mergedAnswerKey)
           ) {
-            this.state.tryouts[idx] = { ...local, ...cloudTo, id: local.id };
+            this.state.tryouts[idx] = {
+              ...local,
+              ...cloudTo,
+              id: local.id,
+              selectedQuestionColumns: mergedSelectedCols,
+              answerKey: mergedAnswerKey,
+              subjectId: cloudTo.subjectId || local.subjectId,
+              isExternal: cloudTo.isExternal !== undefined ? cloudTo.isExternal : local.isExternal,
+              externalSubjects: cloudTo.externalSubjects || local.externalSubjects,
+              externalSubjectIds: cloudTo.externalSubjectIds || local.externalSubjectIds,
+              externalScoreScale: cloudTo.externalScoreScale || local.externalScoreScale,
+            };
             changed = true;
           }
         }
