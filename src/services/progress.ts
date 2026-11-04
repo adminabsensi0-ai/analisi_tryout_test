@@ -131,43 +131,66 @@ export class ProgressService {
     if (!student) return null;
 
     const studentClass = dbState.classes.find((c: ClassRoom) => c.id === student.classId);
-    const studentScores = dbState.scores.filter((s: Score) => s.studentId === studentId);
+    const studentScores = (dbState.scores || []).filter((s: Score) => s.studentId === studentId);
+    const studentAnswers = (dbState.answers || []).filter((a: Answer) => a.studentId === studentId);
 
-    // Hanya tampilkan tryout yang benar-benar memiliki nilai untuk siswa ini
-    const tryoutIdsWithScore = new Set(studentScores.map((s: Score) => s.tryoutId));
-    const tryouts = this.sortTryoutsChronologically(
-      (dbState.tryouts || []).filter((t: Tryout) => tryoutIdsWithScore.has(t.id))
-    );
+    // Tryouts with score or answers
+    const tryoutIdsWithData = new Set([
+      ...studentScores.map((s: Score) => s.tryoutId),
+      ...studentAnswers.map((a: Answer) => a.tryoutId),
+    ]);
+
+    const allTryouts: Tryout[] = dbState.tryouts || [];
+    let relevantTryouts = allTryouts.filter(t => tryoutIdsWithData.has(t.id));
+    if (relevantTryouts.length === 0) {
+      relevantTryouts = allTryouts;
+    } else if (allTryouts.length > relevantTryouts.length) {
+      relevantTryouts = allTryouts;
+    }
+    const tryouts = this.sortTryoutsChronologically(relevantTryouts);
 
     const targetScore = student.targetScore || 80;
 
     const points: ProgressPoint[] = tryouts.map((to: Tryout) => {
       const scoreObj = studentScores.find((s: Score) => s.tryoutId === to.id);
-      const classScores = dbState.scores.filter((s: Score) => s.tryoutId === to.id);
+      const toAnswers = studentAnswers.filter((a: Answer) => a.tryoutId === to.id);
+
+      let score = 0;
+      if (scoreObj) {
+        score = scoreObj.calculatedScore || scoreObj.googleFormScore || 0;
+      } else if (toAnswers.length > 0) {
+        const correct = toAnswers.filter((a: Answer) => a.isCorrect).length;
+        score = Math.round((correct / toAnswers.length) * 100 * 10) / 10;
+      }
+
+      const classScores = (dbState.scores || []).filter((s: Score) => s.tryoutId === to.id);
       const classAvg = classScores.length > 0
-        ? Math.round((classScores.reduce((acc: number, cur: Score) => acc + cur.calculatedScore, 0) / classScores.length) * 10) / 10
+        ? Math.round((classScores.reduce((acc: number, cur: Score) => acc + (cur.calculatedScore || cur.googleFormScore || 0), 0) / classScores.length) * 10) / 10
         : undefined;
 
-      const score = scoreObj ? scoreObj.calculatedScore : 0;
+      const totalCorrect = scoreObj?.totalCorrect ?? toAnswers.filter((a: Answer) => a.isCorrect).length;
+      const totalIncorrect = scoreObj?.totalIncorrect ?? toAnswers.filter((a: Answer) => !a.isCorrect && a.studentAnswer).length;
+      const totalUnanswered = scoreObj?.totalUnanswered ?? toAnswers.filter((a: Answer) => !a.studentAnswer).length;
+
       return {
         tryoutId: to.id,
         tryoutCode: to.code,
         tryoutTitle: to.title,
         date: to.startDate ? new Date(to.startDate).toLocaleDateString('id-ID') : '2026',
         score,
-        googleFormScore: scoreObj ? scoreObj.googleFormScore : 0,
+        googleFormScore: scoreObj ? (scoreObj.googleFormScore || score) : score,
         targetScore,
         isTargetMet: score >= targetScore,
         classAverage: classAvg,
-        totalCorrect: scoreObj ? scoreObj.totalCorrect : 0,
-        totalIncorrect: scoreObj ? scoreObj.totalIncorrect : 0,
-        totalUnanswered: scoreObj ? scoreObj.totalUnanswered : 0,
+        totalCorrect,
+        totalIncorrect,
+        totalUnanswered,
       };
     });
 
     const activePoints = points.filter(p => p.score > 0);
-    const firstScore = activePoints.length > 0 ? activePoints[0].score : 0;
-    const latestScore = activePoints.length > 0 ? activePoints[activePoints.length - 1].score : 0;
+    const firstScore = activePoints.length > 0 ? activePoints[0].score : (points[0]?.score || 0);
+    const latestScore = activePoints.length > 0 ? activePoints[activePoints.length - 1].score : (points[points.length - 1]?.score || 0);
     const scoreDelta = Math.round((latestScore - firstScore) * 10) / 10;
 
     const trend: 'MENINGKAT' | 'MENURUN' | 'STABIL' =
@@ -176,7 +199,7 @@ export class ProgressService {
     // Competency Progression Across Tryouts
     const materials: Material[] = dbState.materials || [];
     const questions: Question[] = dbState.questions || [];
-    const answers: Answer[] = dbState.answers.filter((a: Answer) => a.studentId === studentId);
+    const answers: Answer[] = studentAnswers;
 
     const competencyProgression = materials.map((m: Material) => {
       const matQuestions = questions.filter(q => q.materialId === m.id);
@@ -184,7 +207,7 @@ export class ProgressService {
 
       const scoresByTO: Record<string, number> = {};
       tryouts.forEach((to: Tryout) => {
-        const toAnswers = answers.filter(a => a.tryoutId === to.id && matQIds.has(a.questionId));
+        const toAnswers = answers.filter(a => a.tryoutId === to.id && (matQIds.size === 0 || matQIds.has(a.questionId)));
         const correct = toAnswers.filter(a => a.isCorrect).length;
         const total = toAnswers.length || 1;
         scoresByTO[to.code] = Math.round((correct / total) * 100);
@@ -244,21 +267,44 @@ export class ProgressService {
     // Hanya tampilkan tryout yang memiliki setidaknya 1 nilai dari siswa kelas ini
     // agar tryout yang sudah dihapus atau tidak relevan tidak muncul di grafik
     const allClassScores = (dbState.scores || []).filter((s: Score) => classStudentIds.has(s.studentId));
-    const tryoutIdsWithScore = new Set(allClassScores.map((s: Score) => s.tryoutId));
-    const tryouts = this.sortTryoutsChronologically(
-      (dbState.tryouts || []).filter((t: Tryout) => tryoutIdsWithScore.has(t.id))
-    );
+    const allClassAnswers = (dbState.answers || []).filter((a: Answer) => classStudentIds.has(a.studentId));
+    const tryoutIdsWithData = new Set([
+      ...allClassScores.map((s: Score) => s.tryoutId),
+      ...allClassAnswers.map((a: Answer) => a.tryoutId),
+    ]);
+
+    const allTryouts: Tryout[] = dbState.tryouts || [];
+    let relevantTryouts = allTryouts.filter(t => tryoutIdsWithData.has(t.id));
+    if (relevantTryouts.length === 0) {
+      relevantTryouts = allTryouts;
+    } else if (allTryouts.length > relevantTryouts.length) {
+      relevantTryouts = allTryouts;
+    }
+    const tryouts = this.sortTryoutsChronologically(relevantTryouts);
 
     const points = tryouts.map((to: Tryout) => {
       const scores = dbState.scores.filter((s: Score) => s.tryoutId === to.id && classStudentIds.has(s.studentId));
-      const total = scores.length;
-      const avg = total > 0 ? scores.reduce((a: number, b: Score) => a + b.calculatedScore, 0) / total : 0;
-      const sorted = [...scores].map(s => s.calculatedScore).sort((a, b) => a - b);
+      let scoreValues: number[] = scores.map((s: Score) => s.calculatedScore || s.googleFormScore || 0);
+
+      // Fallback from answers if scores array is empty for this tryout
+      if (scoreValues.length === 0) {
+        classStudents.forEach((st: Student) => {
+          const stAns = allClassAnswers.filter((a: Answer) => a.tryoutId === to.id && a.studentId === st.id);
+          if (stAns.length > 0) {
+            const correct = stAns.filter((a: Answer) => a.isCorrect).length;
+            scoreValues.push(Math.round((correct / stAns.length) * 100 * 10) / 10);
+          }
+        });
+      }
+
+      const total = scoreValues.length;
+      const avg = total > 0 ? scoreValues.reduce((a: number, b: number) => a + b, 0) / total : 0;
+      const sorted = [...scoreValues].sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
       const median = sorted.length === 0 ? 0 : sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
       const highest = sorted.length > 0 ? sorted[sorted.length - 1] : 0;
       const lowest = sorted.length > 0 ? sorted[0] : 0;
-      const passing = scores.filter((s: Score) => s.calculatedScore >= 75).length;
+      const passing = scoreValues.filter((val: number) => val >= 75).length;
       const passingRate = total > 0 ? Math.round((passing / total) * 100) : 0;
 
       return {

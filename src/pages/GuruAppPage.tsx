@@ -1283,8 +1283,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   );
 
   // 2. Class Level Analytics
-  // Gunakan tryoutId yang efektif agar analytics tidak null saat selectedTryoutId belum dipilih
-  const effectiveTryoutIdForClass = selectedTryoutId || tryouts[0]?.id || '';
+  // Gunakan tryoutId yang efektif agar analytics tidak null saat selectedTryoutId bernilai 'ALL' atau belum dipilih
+  const effectiveTryoutIdForClass = (selectedTryoutId && selectedTryoutId !== 'ALL' && tryouts.some(t => t.id === selectedTryoutId))
+    ? selectedTryoutId
+    : (tryouts[0]?.id || '');
   const activeAnalyticsClassId = (analyticsClassFilter !== 'ALL' ? analyticsClassFilter : classes[0]?.id) || '';
   const classAnalyticsData = (activeAnalyticsClassId && effectiveTryoutIdForClass)
     ? dbService.getClassAnalytics(activeAnalyticsClassId, effectiveTryoutIdForClass, currentUser)
@@ -1292,11 +1294,17 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
   // 3. Student Individual Analytics
   const activeStudentIdForAnalytics = selectedStudentForAnalytics || students[0]?.id || '';
-  const activeStudentTryoutId = studentTryoutFilter || selectedTryoutId || tryouts[0]?.id || '';
-  const studentAnalyticsData = (activeStudentIdForAnalytics && activeStudentTryoutId) ? dbService.getStudentAnalytics(activeStudentIdForAnalytics, activeStudentTryoutId) : null;
+  const activeStudentTryoutId = (studentTryoutFilter && studentTryoutFilter !== 'ALL' && tryouts.some(t => t.id === studentTryoutFilter))
+    ? studentTryoutFilter
+    : effectiveTryoutIdForClass;
+  const studentAnalyticsData = (activeStudentIdForAnalytics && activeStudentTryoutId)
+    ? dbService.getStudentAnalytics(activeStudentIdForAnalytics, activeStudentTryoutId)
+    : null;
 
   // 4. Question Psychometric Item Analysis
-  const activePsychometricsTryoutId = psychometricsTryoutId || selectedTryoutId || tryouts[0]?.id || '';
+  const activePsychometricsTryoutId = (psychometricsTryoutId && psychometricsTryoutId !== 'ALL' && tryouts.some(t => t.id === psychometricsTryoutId))
+    ? psychometricsTryoutId
+    : effectiveTryoutIdForClass;
   const targetPsychometricsTryout = tryouts.find(t => t.id === activePsychometricsTryoutId);
   const effectivePsychometricsSubjectId = targetPsychometricsTryout?.subjectId || selectedSubjectId;
   const questionAnalysisList: QuestionAnalysisResult[] = dbService.getQuestionAnalysis(
@@ -1306,11 +1314,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     currentUser
   );
 
-  // 4b. Dashboard Question Item Analysis (synced with teacher dashboard classFilter)
+  // 4b. Dashboard & Overview Question Item Analysis (synced with active/selected tryout and classFilter)
   const dashboardItemAnalysisList: QuestionAnalysisResult[] = dbService.getQuestionAnalysis(
-    selectedTryoutId,
-    selectedSubjectId,
-    classFilter === 'ALL' ? undefined : classFilter,
+    effectiveTryoutIdForClass || activePsychometricsTryoutId,
+    effectivePsychometricsSubjectId,
+    analyticsClassFilter === 'ALL' ? undefined : analyticsClassFilter,
     currentUser
   );
 
@@ -3481,6 +3489,133 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </div>
                         </div>
                       </div>
+
+                      {/* Ringkasan Analisis Butir Soal & Psikometri */}
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-colors space-y-3 p-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                          <div>
+                            <div className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center space-x-1.5">
+                              <FileCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                              <span>Ringkasan Analisis Butir Soal &amp; Mutu Soal ({dashboardItemAnalysisList.length} Soal)</span>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              Distribusi tingkat kesukaran (p-value), daya pembeda (D-value), dan butir soal yang memerlukan evaluasi guru.
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => setAnalyticsSubTab('PSYCHOMETRICS')}
+                            className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-lg border border-indigo-200 dark:border-indigo-800 flex items-center space-x-1.5 transition-colors cursor-pointer self-start sm:self-auto shrink-0"
+                          >
+                            <span>Buka Detail Psikometrik &amp; Distraktor</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* KPI Bar Kesukaran & Daya Pembeda */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+                          <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 block">Total Soal Diuji</span>
+                            <span className="text-lg font-bold font-mono text-slate-900 dark:text-white mt-0.5 block">{dashboardItemAnalysisList.length}</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60">
+                            <span className="text-[10px] text-emerald-800 dark:text-emerald-300 block">Soal Mudah (p &gt; 0.60)</span>
+                            <span className="text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400 mt-0.5 block">
+                              {dashboardItemAnalysisList.filter(q => q.difficultyCategory === 'MUDAH' || q.difficultyCategory === 'SANGAT_MUDAH').length}
+                            </span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60">
+                            <span className="text-[10px] text-indigo-800 dark:text-indigo-300 block">Soal Sedang (0.40 - 0.60)</span>
+                            <span className="text-lg font-bold font-mono text-indigo-700 dark:text-indigo-400 mt-0.5 block">
+                              {dashboardItemAnalysisList.filter(q => q.difficultyCategory === 'SEDANG').length}
+                            </span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60">
+                            <span className="text-[10px] text-amber-800 dark:text-amber-300 block">Soal Sukar (p &le; 0.40)</span>
+                            <span className="text-lg font-bold font-mono text-amber-700 dark:text-amber-400 mt-0.5 block">
+                              {dashboardItemAnalysisList.filter(q => q.difficultyCategory === 'SULIT' || q.difficultyCategory === 'SANGAT_SULIT').length}
+                            </span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60">
+                            <span className="text-[10px] text-emerald-800 dark:text-emerald-300 block">Daya Pembeda Baik</span>
+                            <span className="text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400 mt-0.5 block">
+                              {dashboardItemAnalysisList.filter(q => q.discriminationCategory === 'SANGAT_BAIK' || q.discriminationCategory === 'BAIK').length}
+                            </span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-rose-50/70 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60">
+                            <span className="text-[10px] text-rose-800 dark:text-rose-300 block">Perlu Revisi (D &lt; 0.20)</span>
+                            <span className="text-lg font-bold font-mono text-rose-700 dark:text-rose-400 mt-0.5 block">
+                              {dashboardItemAnalysisList.filter(q => q.discriminationCategory === 'BURUK' || (q.discriminationIndex ?? 0) < 0.2).length}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Tabel Cuplikan Butir Soal */}
+                        <div className="overflow-x-auto border border-slate-100 dark:border-slate-800 rounded-lg">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-800">
+                              <tr>
+                                <th className="py-2 px-3 w-12 text-center">No</th>
+                                <th className="py-2 px-3 w-28">Kode Soal</th>
+                                <th className="py-2 px-3">Teks Ringkas Soal</th>
+                                <th className="py-2 px-3 w-28 text-center">Tingkat Kesukaran</th>
+                                <th className="py-2 px-3 w-24 text-center">Daya Pembeda</th>
+                                <th className="py-2 px-3 w-20 text-center">% Benar</th>
+                                <th className="py-2 px-3 w-28 text-center">Status Mutu</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {dashboardItemAnalysisList.length === 0 ? (
+                                <tr>
+                                  <td colSpan={7} className="py-6 text-center text-slate-400 italic">
+                                    Belum ada data butir soal untuk Try Out atau mata pelajaran terpilih.
+                                  </td>
+                                </tr>
+                              ) : (
+                                dashboardItemAnalysisList.slice(0, 10).map((q, idx) => (
+                                  <tr key={q.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                    <td className="py-2 px-3 text-center font-bold text-slate-600 dark:text-slate-400">{q.questionNumber || idx + 1}</td>
+                                    <td className="py-2 px-3 font-mono font-bold text-indigo-700 dark:text-indigo-400">{q.uniqueCode || `SOAL-${idx + 1}`}</td>
+                                    <td className="py-2 px-3 text-slate-700 dark:text-slate-300 line-clamp-1">{q.questionText || '-'}</td>
+                                    <td className="py-2 px-3 text-center font-mono">
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                        q.difficultyCategory === 'MUDAH' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' :
+                                        q.difficultyCategory === 'SEDANG' ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300' :
+                                        'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                                      }`}>
+                                        {q.difficultyIndex?.toFixed(2) ?? '0.00'} ({q.difficultyCategory})
+                                      </span>
+                                    </td>
+                                    <td className="py-2 px-3 text-center font-mono font-bold">
+                                      <span className={`text-[11px] ${
+                                        (q.discriminationIndex ?? 0) >= 0.3 ? 'text-emerald-600 dark:text-emerald-400' :
+                                        (q.discriminationIndex ?? 0) >= 0.2 ? 'text-indigo-600 dark:text-indigo-400' :
+                                        'text-rose-600 dark:text-rose-400'
+                                      }`}>
+                                        {q.discriminationIndex?.toFixed(2) ?? '0.00'}
+                                      </span>
+                                    </td>
+                                    <td className="py-2 px-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200">
+                                      {q.correctPercentage}%
+                                    </td>
+                                    <td className="py-2 px-3 text-center">
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                        q.discriminationCategory === 'SANGAT_BAIK' || q.discriminationCategory === 'BAIK'
+                                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                                          : q.discriminationCategory === 'CUKUP'
+                                          ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                                          : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                                      }`}>
+                                        {q.reviewRecommendation || q.discriminationStatus || 'Diterima'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -3699,6 +3834,129 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </tbody>
                         </table>
                       </div>
+
+                      {/* Analisis Butir Soal Kelas */}
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-colors">
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center space-x-1.5">
+                            <FileCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                            <span>Analisis Butir Soal Kelas ({classAnalyticsData.className})</span>
+                          </div>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            {classAnalyticsData.itemAnalysis?.length || 0} Butir Soal
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+                              <tr>
+                                <th className="py-2.5 px-3 w-12 text-center">No</th>
+                                <th className="py-2.5 px-3 w-28">Kode Soal</th>
+                                <th className="py-2.5 px-3">Teks Ringkas Soal</th>
+                                <th className="py-2.5 px-3 w-20 text-center text-emerald-600 dark:text-emerald-400">Benar</th>
+                                <th className="py-2.5 px-3 w-20 text-center text-rose-600 dark:text-rose-400">Salah</th>
+                                <th className="py-2.5 px-3 w-20 text-center text-amber-600 dark:text-amber-400">Kosong</th>
+                                <th className="py-2.5 px-3 w-24 text-center">Kesukaran (p)</th>
+                                <th className="py-2.5 px-3 w-24 text-center">Pembeda (D)</th>
+                                <th className="py-2.5 px-3 w-24 text-center">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {(!classAnalyticsData.itemAnalysis || classAnalyticsData.itemAnalysis.length === 0) ? (
+                                <tr>
+                                  <td colSpan={9} className="py-6 text-center text-slate-400 italic">
+                                    Belum ada data butir soal untuk kelas ini.
+                                  </td>
+                                </tr>
+                              ) : (
+                                classAnalyticsData.itemAnalysis.map((item, idx) => (
+                                  <tr key={item.questionId || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                    <td className="py-2.5 px-3 text-center font-bold text-slate-500">{idx + 1}</td>
+                                    <td className="py-2.5 px-3 font-mono font-bold text-indigo-700 dark:text-indigo-400">{item.uniqueCode}</td>
+                                    <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300 line-clamp-1">{item.questionText || '-'}</td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">{item.correctCount}</td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-bold text-rose-600 dark:text-rose-400">{item.incorrectCount}</td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-bold text-amber-600 dark:text-amber-400">{item.unansweredCount}</td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-semibold">{item.difficultyIndex.toFixed(2)}</td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-600 dark:text-indigo-400">{item.discriminationIndex.toFixed(2)}</td>
+                                    <td className="py-2.5 px-3 text-center">
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                        item.discriminationCategory === 'SANGAT_BAIK' || item.discriminationCategory === 'BAIK'
+                                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                                          : item.discriminationCategory === 'CUKUP'
+                                          ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                                          : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                                      }`}>
+                                        {item.discriminationCategory}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Pemetaan Penguasaan Kompetensi Dasar / Materi Kelas */}
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-colors">
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center space-x-1.5">
+                            <BookOpen className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>Penguasaan Kompetensi Dasar (KD) Rombel ({classAnalyticsData.className})</span>
+                          </div>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            {classAnalyticsData.competencyAnalysis?.length || 0} KD Terpetakan
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+                              <tr>
+                                <th className="py-2.5 px-3 w-12 text-center">No</th>
+                                <th className="py-2.5 px-3 w-24">Kode KD</th>
+                                <th className="py-2.5 px-3">Pernyataan Kompetensi</th>
+                                <th className="py-2.5 px-3 w-40">Materi Pokok</th>
+                                <th className="py-2.5 px-3 w-32 text-center">Penguasaan Rata-Rata</th>
+                                <th className="py-2.5 px-3 w-28 text-center">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {(!classAnalyticsData.competencyAnalysis || classAnalyticsData.competencyAnalysis.length === 0) ? (
+                                <tr>
+                                  <td colSpan={6} className="py-6 text-center text-slate-400 italic">
+                                    Belum ada pemetaan kompetensi dasar untuk paket Try Out ini.
+                                  </td>
+                                </tr>
+                              ) : (
+                                classAnalyticsData.competencyAnalysis.map((comp, idx) => (
+                                  <tr key={comp.competencyId || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                    <td className="py-2.5 px-3 text-center font-bold text-slate-500">{idx + 1}</td>
+                                    <td className="py-2.5 px-3 font-mono font-bold text-indigo-700 dark:text-indigo-400">{comp.code}</td>
+                                    <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">{comp.statement}</td>
+                                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400">{comp.materialTitle}</td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700 dark:text-indigo-400">
+                                      {comp.classAverageMastery}%
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center">
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                        comp.status === 'SANGAT_BAIK' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' :
+                                        comp.status === 'BAIK' ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300' :
+                                        comp.status === 'CUKUP' ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300' :
+                                        'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                                      }`}>
+                                        {comp.status}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </div>
                   )}
                     </>
@@ -3772,7 +4030,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           <div>
                             <label className="text-slate-500 dark:text-slate-400 font-medium block text-[10px] mb-0.5">Paket Try Out:</label>
                             <select
-                              value={studentTryoutFilter}
+                              value={activeStudentTryoutId}
                               onChange={e => setStudentTryoutFilter(e.target.value)}
                               className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500"
                             >
@@ -3879,6 +4137,50 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </span>
                                 <span className="text-[10px] text-amber-300">Belum diisi siswa</span>
                               </div>
+                            </div>
+                          </div>
+
+                          {/* Pemetaan Materi Kuat & Lemah Siswa */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-xl space-y-2">
+                              <h4 className="text-xs font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5 uppercase tracking-wider font-mono">
+                                <CheckCircle className="w-4 h-4 text-emerald-600" />
+                                <span>Materi Yang Dikuasai (Kuat)</span>
+                              </h4>
+                              {studentAnalyticsData.strongMaterials.length > 0 ? (
+                                <div className="space-y-1.5 text-xs">
+                                  {studentAnalyticsData.strongMaterials.map(m => (
+                                    <div key={m.materialId} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+                                      <span className="font-semibold text-slate-800 dark:text-slate-200">{m.title}</span>
+                                      <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{m.masteryPercentage}% ({m.correct}/{m.total} Soal)</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-slate-500 italic py-2">Belum ada materi mencapai ambang ketuntasan kuat (≥ 75%).</div>
+                              )}
+                            </div>
+
+                            <div className="p-4 bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/60 rounded-xl space-y-2">
+                              <h4 className="text-xs font-bold text-rose-900 dark:text-rose-300 flex items-center gap-1.5 uppercase tracking-wider font-mono">
+                                <AlertTriangle className="w-4 h-4 text-rose-600" />
+                                <span>Materi Perlu Remedial (Lemah)</span>
+                              </h4>
+                              {studentAnalyticsData.weakMaterials.length > 0 ? (
+                                <div className="space-y-1.5 text-xs">
+                                  {studentAnalyticsData.weakMaterials.map(m => (
+                                    <div key={m.materialId} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 shadow-2xs">
+                                      <span className="font-semibold text-slate-800 dark:text-slate-200">{m.title}</span>
+                                      <span className="font-mono font-bold text-rose-600 dark:text-rose-400">{m.masteryPercentage}% ({m.correct}/{m.total} Soal)</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium py-2 flex items-center gap-1.5">
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  <span>Seluruh materi telah memenuhi standar penguasaan siswa.</span>
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -4658,15 +4960,20 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                         {/* Analisis Butir Nomor Soal (Pengganti Bagian Materi) */}
                         {(() => {
-                          const activeTO = tryouts.find(t => t.id === selectedTryoutId) || tryouts[tryouts.length - 1] || tryouts[0];
-                          const studentAnswers = dbService.getAnswers().filter(
-                            a => a.studentId === activeStudentId && (!activeTO || a.tryoutId === activeTO.id)
+                          const studentAllAnswers = dbService.getAnswers().filter(a => a.studentId === activeStudentId);
+                          const studentTOIds = new Set(studentAllAnswers.map(a => a.tryoutId));
+                          const activeTO = (selectedTryoutId && selectedTryoutId !== 'ALL' && tryouts.find(t => t.id === selectedTryoutId))
+                            || tryouts.slice().reverse().find(t => studentTOIds.has(t.id))
+                            || tryouts[0];
+                          const studentAnswers = studentAllAnswers.filter(
+                            a => !activeTO || a.tryoutId === activeTO.id
                           );
                           const correctQuestionAnswers = studentAnswers.filter(a => a.isCorrect);
                           const wrongQuestionAnswers = studentAnswers.filter(a => !a.isCorrect);
 
+                          const allQuestions = dbService.getQuestions();
                           const getQuestionNumber = (qId: string) => {
-                            const qObj = questions.find(q => q.id === qId);
+                            const qObj = questions.find(q => q.id === qId) || allQuestions.find(q => q.id === qId);
                             if (qObj?.questionNumber) return `No. ${qObj.questionNumber}`;
                             if (qObj?.uniqueCode) {
                               const match = qObj.uniqueCode.match(/(\d+)$/);

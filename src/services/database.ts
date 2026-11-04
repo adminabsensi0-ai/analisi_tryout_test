@@ -1909,8 +1909,19 @@ export class DatabaseService {
    * 2. Soal yang memiliki jawaban tersimpan di tabel answers untuk tryoutId ini
    * 3. Soal yang cocok dengan subjectId tryout
    */
-  public getQuestionsForTryout(tryoutId: string): Question[] {
+  public getQuestionsForTryout(tryoutId?: string, subjectId?: string): Question[] {
+    if (!tryoutId || tryoutId === 'ALL') {
+      if (subjectId && subjectId !== 'ALL') {
+        return this.state.questions
+          .filter(q => q.subjectId === subjectId)
+          .sort((a, b) => (a.questionNumber || 0) - (b.questionNumber || 0));
+      }
+      return [...this.state.questions].sort((a, b) => (a.questionNumber || 0) - (b.questionNumber || 0));
+    }
+
     const tryout = this.state.tryouts.find(t => t.id === tryoutId);
+    const targetSubjectId = (subjectId && subjectId !== 'ALL') ? subjectId : tryout?.subjectId;
+
     const linkedQIds = new Set(
       (this.state.tryoutQuestions || [])
         .filter(tq => tq.tryoutId === tryoutId)
@@ -1926,8 +1937,8 @@ export class DatabaseService {
       q => linkedQIds.has(q.id) || answerQIds.has(q.id)
     );
 
-    if (result.length === 0 && tryout && tryout.subjectId) {
-      result = this.state.questions.filter(q => q.subjectId === tryout.subjectId);
+    if (result.length === 0 && targetSubjectId) {
+      result = this.state.questions.filter(q => q.subjectId === targetSubjectId);
     }
 
     if (result.length === 0) {
@@ -1945,10 +1956,20 @@ export class DatabaseService {
    * Derives real calculations strictly from database entities.
    */
   public getStudentAnalytics(studentId: string, tryoutId: string): StudentAnalyticsResult | null {
-    const tryoutQuestions = this.getQuestionsForTryout(tryoutId);
+    let effectiveTryoutId = tryoutId;
+    if (!effectiveTryoutId || effectiveTryoutId === 'ALL') {
+      const studentScores = this.state.scores.filter(s => s.studentId === studentId);
+      const studentAnswers = this.state.answers.filter(a => a.studentId === studentId);
+      effectiveTryoutId = studentScores[studentScores.length - 1]?.tryoutId
+        || studentAnswers[studentAnswers.length - 1]?.tryoutId
+        || this.state.tryouts[0]?.id
+        || '';
+    }
+
+    const tryoutQuestions = this.getQuestionsForTryout(effectiveTryoutId);
     return AnalyticsService.getStudentAnalytics(
       studentId,
-      tryoutId,
+      effectiveTryoutId,
       this.state.students,
       this.state.classes,
       this.state.tryouts,
@@ -1973,15 +1994,25 @@ export class DatabaseService {
       }
     }
 
-    const tryout = this.state.tryouts.find(t => t && t.id === tryoutId) || this.state.tryouts[0];
+    let effectiveTryoutId = tryoutId;
+    if (!effectiveTryoutId || effectiveTryoutId === 'ALL') {
+      const classStudents = this.state.students.filter(s => s.classId === classId);
+      const classStudentIds = new Set(classStudents.map(s => s.id));
+      const classScores = this.state.scores.filter(s => classStudentIds.has(s.studentId));
+      effectiveTryoutId = classScores[classScores.length - 1]?.tryoutId
+        || this.state.tryouts[0]?.id
+        || '';
+    }
+
+    const tryout = this.state.tryouts.find(t => t && t.id === effectiveTryoutId) || this.state.tryouts[0];
     if (!tryout) return null;
     const tsub = (this.state.tryoutSubjects || []).find(ts => ts && ts.tryoutId === tryout.id);
     const passingGrade = tsub?.passingGrade || 75;
-    const tryoutQuestions = this.getQuestionsForTryout(tryoutId);
+    const tryoutQuestions = this.getQuestionsForTryout(effectiveTryoutId);
 
     return AnalyticsService.getClassAnalytics(
       classId,
-      tryoutId,
+      effectiveTryoutId,
       this.state.students,
       this.state.classes,
       this.state.tryouts,
@@ -2044,7 +2075,8 @@ export class DatabaseService {
     classId?: string,
     currentUser?: any
   ): QuestionAnalysisResult[] {
-    let questions = this.getQuestionsForTryout(tryoutId);
+    const isAllTryouts = !tryoutId || tryoutId === 'ALL';
+    let questions = this.getQuestionsForTryout(tryoutId, subjectId);
     if (questions.length === 0) {
       questions = this.state.questions;
       if (subjectId && subjectId !== 'ALL') {
@@ -2066,8 +2098,24 @@ export class DatabaseService {
       }
     }
 
-    let answers = this.answersByTryout.get(tryoutId) || this.state.answers.filter(a => a.tryoutId === tryoutId);
-    let scores = this.scoresByTryout.get(tryoutId) || this.state.scores.filter(s => s.tryoutId === tryoutId);
+    let answers: Answer[] = [];
+    let scores: Score[] = [];
+
+    if (isAllTryouts) {
+      answers = [...this.state.answers];
+      scores = [...this.state.scores];
+      if (subjectId && subjectId !== 'ALL') {
+        const qIdsForSubject = new Set(questions.map(q => q.id));
+        if (qIdsForSubject.size > 0) {
+          answers = answers.filter(a => qIdsForSubject.has(a.questionId));
+        }
+      }
+    } else {
+      const cachedAns = this.answersByTryout.get(tryoutId);
+      answers = (cachedAns && cachedAns.length > 0) ? cachedAns : this.state.answers.filter(a => a.tryoutId === tryoutId);
+      const cachedScores = this.scoresByTryout.get(tryoutId);
+      scores = (cachedScores && cachedScores.length > 0) ? cachedScores : this.state.scores.filter(s => s.tryoutId === tryoutId);
+    }
 
     // Filter by class if specified
     if (classId && classId !== 'ALL') {
