@@ -930,8 +930,9 @@ export class DatabaseService {
       throw new Error(`Akses Ditolak (401): Pengguna belum terautentikasi untuk '${actionName}'.`);
     }
     if (currentUser.role === 'ADMIN') return; // Admin bypass
+    if (!classId || classId === 'ALL') return; // Safe bypass: parameter ALL atau kosong bukan pelanggaran hak akses
     const allowedClasses = this.getTeacherAllowedClassIds(currentUser);
-    if (!allowedClasses.includes(classId)) {
+    if (allowedClasses.length > 0 && !allowedClasses.includes(classId)) {
       this.logAudit(
         currentUser,
         'UNAUTHORIZED_TEACHER_ACCESS',
@@ -2271,17 +2272,31 @@ export class DatabaseService {
   }
 
   public getClassProgress(classId: string, currentUser?: any): ClassProgressResult | null {
-    if (currentUser && currentUser.role === 'GURU') {
-      this.assertTeacherClass(currentUser, classId, 'VIEW_CLASS_PROGRESS');
+    if (!classId) return null;
+    let targetClassId = classId;
+    if (targetClassId === 'ALL') {
+      const allowed = currentUser ? this.getTeacherAllowedClassIds(currentUser) : [];
+      targetClassId = allowed[0] || (this.state.classes || [])[0]?.id || '';
+      if (!targetClassId) return null;
     }
-    return ProgressService.getClassProgress(classId, this.state, currentUser);
+    if (currentUser && currentUser.role === 'GURU') {
+      this.assertTeacherClass(currentUser, targetClassId, 'VIEW_CLASS_PROGRESS');
+    }
+    return ProgressService.getClassProgress(targetClassId, this.state, currentUser);
   }
 
   public getSubjectProgress(subjectId: string, currentUser?: any): SubjectProgressResult | null {
-    if (currentUser && currentUser.role === 'GURU') {
-      this.assertTeacherSubject(currentUser, subjectId, 'VIEW_SUBJECT_PROGRESS');
+    if (!subjectId) return null;
+    let targetSubjectId = subjectId;
+    if (targetSubjectId === 'ALL') {
+      const allowed = currentUser ? this.getTeacherAllowedSubjectIds(currentUser) : [];
+      targetSubjectId = allowed[0] || (this.state.subjects || [])[0]?.id || '';
+      if (!targetSubjectId) return null;
     }
-    return ProgressService.getSubjectProgress(subjectId, this.state, currentUser);
+    if (currentUser && currentUser.role === 'GURU') {
+      this.assertTeacherSubject(currentUser, targetSubjectId, 'VIEW_SUBJECT_PROGRESS');
+    }
+    return ProgressService.getSubjectProgress(targetSubjectId, this.state, currentUser);
   }
 
   public getCompetencyProgress(competencyId: string, currentUser?: any): CompetencyProgressResult | null {

@@ -4505,7 +4505,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                   {/* SUB-TAB 2: CLASS PROGRESS TRACKING */}
                   {progressSubTab === 'CLASS' && (() => {
-                    const targetClassId = selectedClassForProgress || classes[0]?.id || '';
+                    const targetClassId = (selectedClassForProgress && selectedClassForProgress !== 'ALL' && classes.some(c => c.id === selectedClassForProgress))
+                      ? selectedClassForProgress
+                      : (classes[0]?.id || '');
                     const classProg = targetClassId ? dbService.getClassProgress(targetClassId, currentUser) : null;
                     const selectedClassObj = classes.find(c => c.id === targetClassId);
                     return (
@@ -4514,7 +4516,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           <div className="flex items-center space-x-2">
                             <span className="text-slate-500 dark:text-slate-400 font-medium">Pilih Rombel / Kelas:</span>
                             <select
-                              value={selectedClassForProgress}
+                              value={targetClassId}
                               onChange={e => setSelectedClassForProgress(e.target.value)}
                               className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-white rounded-xl px-3 py-1.5 cursor-pointer focus:ring-2 focus:ring-indigo-500"
                             >
