@@ -269,9 +269,16 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       return;
     }
 
-    // CREATE NEW TRYOUT
+    // CREATE NEW TRYOUT — validasi kode unik sebelum menyimpan
     const nextIdx = tryouts.length + 1;
     const createdCode = newToCode.trim() || `TO-2026-0${nextIdx}`;
+
+    // Cek duplikasi kode (case-insensitive)
+    const isDuplicateCode = tryouts.some(t => t.code.toLowerCase() === createdCode.toLowerCase());
+    if (isDuplicateCode) {
+      setErrorBanner(`Validasi Gagal: Kode Try Out '${createdCode}' sudah digunakan. Gunakan kode lain.`);
+      return;
+    }
 
     const newToObj: Tryout = {
       id: generateUuid(),
@@ -1249,8 +1256,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   );
 
   // 2. Class Level Analytics
+  // Gunakan tryoutId yang efektif agar analytics tidak null saat selectedTryoutId belum dipilih
+  const effectiveTryoutIdForClass = selectedTryoutId || tryouts[0]?.id || '';
   const activeAnalyticsClassId = (analyticsClassFilter !== 'ALL' ? analyticsClassFilter : classes[0]?.id) || '';
-  const classAnalyticsData = activeAnalyticsClassId ? dbService.getClassAnalytics(activeAnalyticsClassId, selectedTryoutId, currentUser) : null;
+  const classAnalyticsData = (activeAnalyticsClassId && effectiveTryoutIdForClass)
+    ? dbService.getClassAnalytics(activeAnalyticsClassId, effectiveTryoutIdForClass, currentUser)
+    : null;
 
   // 3. Student Individual Analytics
   const activeStudentIdForAnalytics = selectedStudentForAnalytics || students[0]?.id || '';
@@ -3445,7 +3456,39 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   )}
 
                   {/* SUB-TAB 2: CLASS LEVEL ANALYTICS */}
-                  {analyticsSubTab === 'CLASS' && classAnalyticsData && (
+                  {analyticsSubTab === 'CLASS' && (
+                    <>
+                    {/* Fallback: belum ada data kelas atau tryout belum dipilih */}
+                    {!classAnalyticsData && (
+                      <div className="flex flex-col items-center justify-center py-20 text-center space-y-3">
+                        <div className="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
+                          <svg className="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                          </svg>
+                        </div>
+                        <p className="text-base font-semibold text-slate-700 dark:text-slate-300">Data Analisis Kelas Belum Tersedia</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm">
+                          {tryouts.length === 0
+                            ? 'Belum ada Try Out yang dibuat. Buat Try Out terlebih dahulu dan sinkronkan data Google Sheet.'
+                            : classes.length === 0
+                            ? 'Belum ada kelas yang terdaftar di akun Anda.'
+                            : 'Belum ada nilai siswa untuk kelas dan Try Out yang dipilih. Pastikan sudah melakukan sinkronisasi Google Sheet.'}
+                        </p>
+                        {tryouts.length > 0 && (
+                          <div className="flex flex-wrap gap-2 justify-center mt-2 text-xs">
+                            <span className="text-slate-400 dark:text-slate-500">Try Out terpilih:</span>
+                            <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                              {tryouts.find(t => t.id === effectiveTryoutIdForClass)?.title || tryouts[0]?.title || '-'}
+                            </span>
+                            <span className="text-slate-400 dark:text-slate-500">| Kelas:</span>
+                            <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                              {classes.find(c => c.id === activeAnalyticsClassId)?.name || classes[0]?.name || '-'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {classAnalyticsData && (
                     <div className="space-y-4">
                       {/* Class Selection & Quick Stats */}
                       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 transition-colors">
@@ -3600,6 +3643,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         </table>
                       </div>
                     </div>
+                  )}
+                    </>
                   )}
 
                   {/* SUB-TAB 3: STUDENT INDIVIDUAL ANALYTICS */}
