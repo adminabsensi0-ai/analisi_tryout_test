@@ -257,8 +257,41 @@ export class GoogleIntegrationService {
 
     const remainingQuestions = dbService.getQuestions().filter(q => q.subjectId === subject.id);
 
-    const firstMaterial = dbService.getMaterials().find(m => m.subjectId === subject.id);
-    const firstCompetency = dbService.getCompetencies().find(c => c.subjectId === subject.id);
+    let firstMaterial = dbService.getMaterials().find(m => m.subjectId === subject.id);
+    let firstCompetency = dbService.getCompetencies().find(c => c.subjectId === subject.id);
+
+    if (!firstMaterial) {
+      try {
+        firstMaterial = dbService.addMaterial(
+          {
+            code: `${subject.code || 'MAPEL'}-01`,
+            title: `Materi Pokok ${subject.name}`,
+            description: `Materi dasar untuk mata pelajaran ${subject.name}`,
+            subjectId: subject.id,
+          },
+          null
+        );
+      } catch {
+        // Fallback jika terjadi pembatasan
+      }
+    }
+
+    if (!firstCompetency) {
+      try {
+        firstCompetency = dbService.addCompetency(
+          {
+            code: 'KD-3.1',
+            statement: `Memahami dan menguasai materi ${subject.name}`,
+            gradeLevel: 'Umum',
+            subjectId: subject.id,
+          },
+          null
+        );
+      } catch {
+        // Fallback jika terjadi pembatasan
+      }
+    }
+
     const materialId = firstMaterial?.id || `mat-${subject.id}-default`;
     const competencyId = firstCompetency?.id || `comp-${subject.id}-default`;
 

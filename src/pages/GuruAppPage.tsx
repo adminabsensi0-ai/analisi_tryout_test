@@ -1297,9 +1297,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
   // 4. Question Psychometric Item Analysis
   const activePsychometricsTryoutId = psychometricsTryoutId || selectedTryoutId || tryouts[0]?.id || '';
+  const targetPsychometricsTryout = tryouts.find(t => t.id === activePsychometricsTryoutId);
+  const effectivePsychometricsSubjectId = targetPsychometricsTryout?.subjectId || selectedSubjectId;
   const questionAnalysisList: QuestionAnalysisResult[] = dbService.getQuestionAnalysis(
     activePsychometricsTryoutId,
-    selectedSubjectId,
+    effectivePsychometricsSubjectId,
     psychometricsClassFilter === 'ALL' ? undefined : psychometricsClassFilter,
     currentUser
   );
@@ -4537,29 +4539,56 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
                                   <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
 
-                                  {/* Class Average Polyline (dashed emerald) */}
-                                  <polyline
-                                    fill="none"
-                                    stroke="#10b981"
-                                    strokeWidth="2.5"
-                                    strokeDasharray="6 4"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    points={classPoly}
-                                  />
+                                  {/* Class Average Line */}
+                                  {pts.length > 1 ? (
+                                    <polyline
+                                      fill="none"
+                                      stroke="#10b981"
+                                      strokeWidth="2.5"
+                                      strokeDasharray="6 4"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      points={classPoly}
+                                    />
+                                  ) : (
+                                    <line
+                                      x1="50"
+                                      y1={getY(pts[0]?.classAverage || 75)}
+                                      x2="950"
+                                      y2={getY(pts[0]?.classAverage || 75)}
+                                      stroke="#10b981"
+                                      strokeWidth="2"
+                                      strokeDasharray="6 4"
+                                    />
+                                  )}
 
                                   {/* Student Gradient Fill */}
-                                  <polygon points={`${firstX},260 ${studentPoly} ${lastX},260`} fill="url(#studentAreaGrad)" />
+                                  {pts.length > 1 ? (
+                                    <polygon points={`${firstX},260 ${studentPoly} ${lastX},260`} fill="url(#studentAreaGrad)" />
+                                  ) : (
+                                    <line
+                                      x1="50"
+                                      y1={studentCoords[0]?.y || 150}
+                                      x2="950"
+                                      y2={studentCoords[0]?.y || 150}
+                                      stroke="#4f46e5"
+                                      strokeWidth="3"
+                                      strokeOpacity="0.8"
+                                      strokeDasharray="4 4"
+                                    />
+                                  )}
 
                                   {/* Student Connecting Line */}
-                                  <polyline
-                                    fill="none"
-                                    stroke="#4f46e5"
-                                    strokeWidth="4"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    points={studentPoly}
-                                  />
+                                  {pts.length > 1 && (
+                                    <polyline
+                                      fill="none"
+                                      stroke="#4f46e5"
+                                      strokeWidth="4"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      points={studentPoly}
+                                    />
+                                  )}
 
                                   {/* Student Nodes with Score Badges */}
                                   {studentCoords.map((pt, i) => (
@@ -4913,17 +4942,32 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
 
                                   {/* Gradient Fill */}
-                                  <polygon points={`${firstX},260 ${svgPolyPoints} ${lastX},260`} fill="url(#classAreaGrad)" />
+                                  {pts.length > 1 ? (
+                                    <polygon points={`${firstX},260 ${svgPolyPoints} ${lastX},260`} fill="url(#classAreaGrad)" />
+                                  ) : (
+                                    <line
+                                      x1="50"
+                                      y1={viewCoords[0]?.y || 150}
+                                      x2="950"
+                                      y2={viewCoords[0]?.y || 150}
+                                      stroke="#4f46e5"
+                                      strokeWidth="3"
+                                      strokeOpacity="0.8"
+                                      strokeDasharray="4 4"
+                                    />
+                                  )}
 
                                   {/* Connecting Line */}
-                                  <polyline
-                                    fill="none"
-                                    stroke="#4f46e5"
-                                    strokeWidth="4"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    points={svgPolyPoints}
-                                  />
+                                  {pts.length > 1 && (
+                                    <polyline
+                                      fill="none"
+                                      stroke="#4f46e5"
+                                      strokeWidth="4"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      points={svgPolyPoints}
+                                    />
+                                  )}
 
                                   {/* Nodes with Score Badges */}
                                   {viewCoords.map((pt, i) => (

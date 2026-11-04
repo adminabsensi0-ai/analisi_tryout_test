@@ -1903,6 +1903,40 @@ export class DatabaseService {
     return { reconciledCount };
   }
 
+  /**
+   * Mengambil butir soal yang spesifik milik Tryout ini:
+   * 1. Soal yang terdaftar di tryoutQuestions
+   * 2. Soal yang memiliki jawaban tersimpan di tabel answers untuk tryoutId ini
+   * 3. Soal yang cocok dengan subjectId tryout
+   */
+  public getQuestionsForTryout(tryoutId: string): Question[] {
+    const tryout = this.state.tryouts.find(t => t.id === tryoutId);
+    const linkedQIds = new Set(
+      (this.state.tryoutQuestions || [])
+        .filter(tq => tq.tryoutId === tryoutId)
+        .map(tq => tq.questionId)
+    );
+    const answerQIds = new Set(
+      (this.state.answers || [])
+        .filter(a => a.tryoutId === tryoutId)
+        .map(a => a.questionId)
+    );
+
+    let result = this.state.questions.filter(
+      q => linkedQIds.has(q.id) || answerQIds.has(q.id)
+    );
+
+    if (result.length === 0 && tryout && tryout.subjectId) {
+      result = this.state.questions.filter(q => q.subjectId === tryout.subjectId);
+    }
+
+    if (result.length === 0) {
+      result = this.state.questions;
+    }
+
+    return result.sort((a, b) => (a.questionNumber || 0) - (b.questionNumber || 0));
+  }
+
   // -------------------------------------------------------------
   // PHASE 9 — ANALYTICS ENGINE API
   // -------------------------------------------------------------
@@ -1911,13 +1945,14 @@ export class DatabaseService {
    * Derives real calculations strictly from database entities.
    */
   public getStudentAnalytics(studentId: string, tryoutId: string): StudentAnalyticsResult | null {
+    const tryoutQuestions = this.getQuestionsForTryout(tryoutId);
     return AnalyticsService.getStudentAnalytics(
       studentId,
       tryoutId,
       this.state.students,
       this.state.classes,
       this.state.tryouts,
-      this.state.questions,
+      tryoutQuestions.length > 0 ? tryoutQuestions : this.state.questions,
       this.state.materials,
       this.state.competencies,
       this.state.answers,
@@ -1942,6 +1977,7 @@ export class DatabaseService {
     if (!tryout) return null;
     const tsub = (this.state.tryoutSubjects || []).find(ts => ts && ts.tryoutId === tryout.id);
     const passingGrade = tsub?.passingGrade || 75;
+    const tryoutQuestions = this.getQuestionsForTryout(tryoutId);
 
     return AnalyticsService.getClassAnalytics(
       classId,
@@ -1951,7 +1987,7 @@ export class DatabaseService {
       this.state.tryouts,
       this.state.academicYears,
       this.state.scores,
-      this.state.questions,
+      tryoutQuestions.length > 0 ? tryoutQuestions : this.state.questions,
       this.state.answers,
       this.state.materials,
       this.state.competencies,
@@ -2008,18 +2044,26 @@ export class DatabaseService {
     classId?: string,
     currentUser?: any
   ): QuestionAnalysisResult[] {
-    let questions = this.state.questions;
-    if (subjectId && subjectId !== 'ALL') {
-      if (currentUser && (currentUser.role === 'GURU' || currentUser.role === 'WALI_KELAS')) {
-        const allowed = this.getTeacherAllowedSubjectIds(currentUser);
-        if (allowed.length > 0 && !allowed.includes(subjectId)) {
-          subjectId = allowed[0];
+    let questions = this.getQuestionsForTryout(tryoutId);
+    if (questions.length === 0) {
+      questions = this.state.questions;
+      if (subjectId && subjectId !== 'ALL') {
+        if (currentUser && (currentUser.role === 'GURU' || currentUser.role === 'WALI_KELAS')) {
+          const allowed = this.getTeacherAllowedSubjectIds(currentUser);
+          if (allowed.length > 0 && !allowed.includes(subjectId)) {
+            subjectId = allowed[0];
+          }
         }
+        questions = questions.filter(q => q.subjectId === subjectId);
+      } else if (currentUser && (currentUser.role === 'GURU' || currentUser.role === 'WALI_KELAS')) {
+        const allowed = this.getTeacherAllowedSubjectIds(currentUser);
+        questions = questions.filter(q => allowed.includes(q.subjectId));
       }
-      questions = questions.filter(q => q.subjectId === subjectId);
-    } else if (currentUser && (currentUser.role === 'GURU' || currentUser.role === 'WALI_KELAS')) {
-      const allowed = this.getTeacherAllowedSubjectIds(currentUser);
-      questions = questions.filter(q => allowed.includes(q.subjectId));
+    } else if (subjectId && subjectId !== 'ALL') {
+      const matchSub = questions.filter(q => q.subjectId === subjectId);
+      if (matchSub.length > 0) {
+        questions = matchSub;
+      }
     }
 
     let answers = this.answersByTryout.get(tryoutId) || this.state.answers.filter(a => a.tryoutId === tryoutId);

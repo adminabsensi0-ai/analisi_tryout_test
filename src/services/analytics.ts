@@ -595,10 +595,12 @@ export class AnalyticsService {
       };
     });
 
-    // Progress Antar Try Out
+    // Progress Antar Try Out (mencakup seluruh tryout yang memiliki nilai untuk siswa ini atau tryout yang aktif/terjadwal)
     const studentAllScores = scores.filter(s => s.studentId === studentId);
+    const tryoutIdsWithScore = new Set(studentAllScores.map(s => s.tryoutId));
     const progress: ProgressTrendPoint[] = tryouts
-      .filter(t => t.status === 'COMPLETED' || t.id === tryout.id)
+      .filter(t => tryoutIdsWithScore.has(t.id) || t.id === tryout.id || t.status === 'COMPLETED')
+      .sort((a, b) => (a.startDate || a.code || '').localeCompare(b.startDate || b.code || ''))
       .map(t => {
         const sc = studentAllScores.find(s => s.tryoutId === t.id);
         const classScores = scores.filter(s => s.tryoutId === t.id);
