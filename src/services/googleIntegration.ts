@@ -69,6 +69,37 @@ export class GoogleIntegrationService {
   }
 
   /**
+   * Sanitasi & normalisasi NISN:
+   * Menangani pembuangan angka nol di depan oleh Google Sheets/Excel (misal '61234567' -> '0061234567'),
+   * konversi notasi ilmiah (misal '6.12E+08'),
+   * dan pembersihan karakter non-angka atau whitespace tak kasat mata.
+   */
+  public static normalizeNisn(rawNisn: string | number | null | undefined): string {
+    if (rawNisn === null || rawNisn === undefined) return '';
+    let str = String(rawNisn).trim();
+    if (!str) return '';
+
+    // Tangani kemungkinan notasi ilmiah (misal "6.06123E+09" dari Excel)
+    if (/^[0-9]+(\.[0-9]+)?e\+[0-9]+$/i.test(str)) {
+      const num = Number(str);
+      if (!isNaN(num)) {
+        str = Math.round(num).toString();
+      }
+    }
+
+    // Buang semua karakter selain digit angka
+    const digitsOnly = str.replace(/\D/g, '');
+    if (!digitsOnly) return '';
+
+    // Jika panjang digit antara 7 hingga 9 (karena 1-3 nol terpotong oleh Excel/GSheets), pad dengan '0' di depan hingga 10 digit
+    if (digitsOnly.length >= 7 && digitsOnly.length < 10) {
+      return digitsOnly.padStart(10, '0');
+    }
+
+    return digitsOnly;
+  }
+
+  /**
    * Cek apakah suatu kolom merupakan metadata / identitas siswa (Bagian 1 Google Form).
    * Kolom metadata TIDAK boleh dijadikan butir soal.
    */
@@ -107,7 +138,9 @@ export class GoogleIntegrationService {
       lower.includes('nomor peserta') ||
       lower.includes('no peserta') ||
       lower.includes('nomor ujian') ||
-      lower.includes('no ujian')
+      lower.includes('no ujian') ||
+      lower.includes('no. ujian') ||
+      lower.includes('no. peserta')
     ) {
       return true;
     }
@@ -130,6 +163,8 @@ export class GoogleIntegrationService {
       lower.startsWith('kelas ') ||
       lower.includes('rombel') ||
       lower.includes('absen') ||
+      lower.includes('nomor urut') ||
+      lower.includes('no urut') ||
       lower.includes('jurusan') ||
       lower.includes('peminatan') ||
       lower.includes('program keahlian')
@@ -141,13 +176,15 @@ export class GoogleIntegrationService {
       lower === 'skor' ||
       lower === 'score' ||
       lower.includes('total point') ||
+      lower.includes('total poin') ||
       lower.startsWith('skor ') ||
       lower === 'nilai' ||
-      lower === 'poin'
+      lower === 'poin' ||
+      lower.includes('nilai akhir')
     ) {
       return true;
     }
-    // 7. Token / Password / Ruang / Sesi / Sekolah
+    // 7. Token / Password / Ruang / Sesi / Sekolah / Mapel / Paket
     if (
       lower.includes('token') ||
       lower.includes('password') ||
@@ -160,7 +197,24 @@ export class GoogleIntegrationService {
       lower.startsWith('sesi ') ||
       lower === 'sekolah' ||
       lower.includes('asal sekolah') ||
-      lower.includes('nama sekolah')
+      lower.includes('nama sekolah') ||
+      lower === 'mata pelajaran' ||
+      lower === 'mapel' ||
+      lower.startsWith('mata pelajaran') ||
+      lower.startsWith('mapel ') ||
+      lower === 'paket' ||
+      lower.includes('paket soal') ||
+      lower.includes('paket ujian') ||
+      lower.includes('tanggal lahir') ||
+      lower.includes('tgl lahir') ||
+      lower.includes('jenis kelamin') ||
+      lower === 'gender' ||
+      lower === 'jk' ||
+      lower.includes('pakta') ||
+      lower.includes('kejujuran') ||
+      lower.includes('pernyataan') ||
+      lower === 'catatan' ||
+      lower === 'keterangan'
     ) {
       return true;
     }
@@ -358,12 +412,16 @@ export class GoogleIntegrationService {
     customOverrides?: Partial<ColumnMappingConfig>,
     selectedColumns?: string[]
   ): ColumnMappingConfig {
-    // Auto-detect NISN column
+    // Auto-detect NISN column (Prioritaskan kolom khusus NISN, lalu nomor induk siswa nasional)
     const nisnHeader =
       customOverrides?.nisnColumn ||
       headers.find(h => {
-        const lower = h.toLowerCase();
-        return lower === 'nisn' || lower.includes('nisn') || lower.includes('nomor induk siswa');
+        const lower = h.toLowerCase().trim();
+        return lower === 'nisn' || lower.includes('nisn') || lower.includes('nomor induk siswa nasional');
+      }) ||
+      headers.find(h => {
+        const lower = h.toLowerCase().trim();
+        return lower === 'nis' || lower.includes('nomor induk');
       }) ||
       headers[0] ||
       'NISN';
@@ -372,23 +430,44 @@ export class GoogleIntegrationService {
     const scoreHeader =
       customOverrides?.scoreColumn ||
       headers.find(h => {
-        const lower = h.toLowerCase();
-        return lower === 'skor' || lower === 'score' || lower.includes('skor') || lower.includes('nilai') || lower.includes('total point');
+        const lower = h.toLowerCase().trim();
+        return (
+          lower === 'skor' ||
+          lower === 'score' ||
+          lower === 'nilai' ||
+          lower === 'poin' ||
+          lower.includes('total point') ||
+          lower.includes('total poin') ||
+          lower.includes('nilai akhir') ||
+          lower.includes('skor') ||
+          lower.includes('score') ||
+          lower.includes('nilai') ||
+          lower.includes('poin')
+        );
       });
 
     // Auto-detect Name column
     const nameHeader =
       customOverrides?.nameColumn ||
       headers.find(h => {
-        const lower = h.toLowerCase();
-        return lower.includes('nama') || lower.includes('name') || lower.includes('siswa');
+        const lower = h.toLowerCase().trim();
+        return (
+          lower === 'nama' ||
+          lower === 'name' ||
+          lower.includes('nama lengkap') ||
+          lower.includes('nama siswa') ||
+          lower.includes('nama peserta') ||
+          lower.includes('nama') ||
+          lower.includes('name') ||
+          lower.includes('siswa')
+        );
       });
 
     // Auto-detect Timestamp column
     const timestampHeader =
       customOverrides?.timestampColumn ||
       headers.find(h => {
-        const lower = h.toLowerCase();
+        const lower = h.toLowerCase().trim();
         return lower.includes('timestamp') || lower.includes('waktu') || lower.includes('tanggal');
       });
 
@@ -412,9 +491,9 @@ export class GoogleIntegrationService {
         // Exact unique code match or substring match
         if (lowerH.includes(lowerCode)) return true;
 
-        // Fallback: check if header matches question number tag (e.g. "[No. 1]" or "Soal 1")
+        // Fallback: check if header matches question number tag (e.g. "[No. 1]", "Soal 1", "1. Pertanyaan...", "1) Pertanyaan...")
         if (q.questionNumber) {
-          const numPattern = new RegExp(`(soal|no|q)\\.?\\s*${q.questionNumber}\\b`, 'i');
+          const numPattern = new RegExp(`(^|\\b|\\s)(?:soal|no|q)?\\.?\\s*${q.questionNumber}[\\.\\)\\:\\s\\]]`, 'i');
           if (numPattern.test(lowerH)) return true;
         }
         return false;
@@ -523,7 +602,7 @@ export class GoogleIntegrationService {
 
     for (const row of parsedRows) {
       const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
-      const rawName = (row[mappingConfig.nameColumn] || '').trim();
+      const rawName = (mappingConfig.nameColumn ? row[mappingConfig.nameColumn] : '')?.trim() || '';
       if (!rawNisn && !rawName) continue;
 
       // 1. Cek kecocokan NISN terhadap akun siswa di database yang bertanda isAnswerKeyAccount
@@ -604,7 +683,7 @@ export class GoogleIntegrationService {
     const studentRows = parsedRows.filter(row => {
       if (detectedKeyRow && row === detectedKeyRow) return false;
       const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
-      const rawName = (row[mappingConfig.nameColumn] || '').trim();
+      const rawName = (mappingConfig.nameColumn ? row[mappingConfig.nameColumn] : '')?.trim() || '';
       if (/kunci|answer\s*key|master\s*key/i.test(rawName) || /kunci|answer\s*key|master\s*key/i.test(rawNisn) || rawNisn === '0000000000' || rawNisn === '9999999999') {
         return false;
       }
@@ -632,15 +711,19 @@ export class GoogleIntegrationService {
     const previewItems: SheetImportPreviewItem[] = studentRows.map((row, index) => {
       const rowNumber = index + 1;
       const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
+      const rawName = (mappingConfig.nameColumn && row[mappingConfig.nameColumn])
+        ? String(row[mappingConfig.nameColumn]).trim()
+        : '';
+      const cleanNisn = GoogleIntegrationService.normalizeNisn(rawNisn);
 
-      // Extract raw GForm score with smart auto-normalization (supporting X/Y format)
+      // Extract raw GForm score with smart auto-normalization (supporting X/Y format, Indonesian comma decimal, etc.)
       let rawGFormScoreNum = 0;
       if (mappingConfig.scoreColumn && row[mappingConfig.scoreColumn]) {
         const rawScoreStr = row[mappingConfig.scoreColumn].trim();
         if (rawScoreStr.includes('/')) {
           const parts = rawScoreStr.split('/');
-          const num = parseFloat(parts[0].trim());
-          const denom = parseFloat(parts[1].trim());
+          const num = parseFloat(parts[0].trim().replace(',', '.'));
+          const denom = parseFloat(parts[1].trim().replace(',', '.'));
           if (!isNaN(num) && !isNaN(denom) && denom > 0) {
             // Normalisasi otomatis pecahan Google Form (misal "35 / 40") ke skala maxScore (skala 100)
             const maxScore = tryout.scoringConfig?.maxScore || 100;
@@ -649,24 +732,72 @@ export class GoogleIntegrationService {
             rawGFormScoreNum = isNaN(num) ? 0 : num;
           }
         } else {
-          const parsed = parseFloat(rawScoreStr.trim());
+          const normalizedStr = rawScoreStr.replace(',', '.');
+          const parsed = parseFloat(normalizedStr);
           rawGFormScoreNum = isNaN(parsed) ? 0 : parsed;
         }
       }
 
-      // Check NISN format (Indonesian standard: 10 digits numeric)
-      const isFormatValid = /^\d{10}$/.test(rawNisn);
+      // Multi-tier student lookup:
+      // 1. Exact NISN
+      // 2. Normalized 10-digit NISN (padded 0)
+      // 3. Zero-stripped NISN
+      // 4. Match by NIS (Nomor Induk Siswa)
+      // 5. Fallback match by Name if unambiguous
+      let matchedStudent: Student | undefined =
+        students.find(s => s.nisn === rawNisn || s.nisn.trim() === rawNisn) ||
+        allDbStudents.find(s => s.nisn === rawNisn || s.nisn.trim() === rawNisn);
 
-      // Student existence (check provided list or full database)
-      const matchedStudent = students.find(s => s.nisn === rawNisn) || allDbStudents.find(s => s.nisn === rawNisn);
+      if (!matchedStudent && cleanNisn) {
+        const padded10 = cleanNisn.padStart(10, '0');
+        matchedStudent =
+          students.find(s => GoogleIntegrationService.normalizeNisn(s.nisn) === padded10) ||
+          allDbStudents.find(s => GoogleIntegrationService.normalizeNisn(s.nisn) === padded10);
+
+        if (!matchedStudent) {
+          const stripped = cleanNisn.replace(/^0+/, '');
+          if (stripped) {
+            matchedStudent =
+              students.find(s => s.nisn.replace(/\D/g, '').replace(/^0+/, '') === stripped) ||
+              allDbStudents.find(s => s.nisn.replace(/\D/g, '').replace(/^0+/, '') === stripped);
+          }
+        }
+      }
+
+      if (!matchedStudent && rawNisn) {
+        // Cek NIS
+        matchedStudent =
+          students.find(s => s.nis && s.nis.trim() === rawNisn) ||
+          allDbStudents.find(s => s.nis && s.nis.trim() === rawNisn);
+      }
+
+      if (!matchedStudent && rawName && rawName.length >= 3) {
+        // Fallback nama siswa
+        const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const nameMatches = allDbStudents.filter(s => {
+          const sn = s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return sn === normName || (sn.length > 5 && (sn.includes(normName) || normName.includes(sn)));
+        });
+        if (nameMatches.length === 1) {
+          matchedStudent = nameMatches[0];
+        }
+      }
+
       const isValidStudent = !!matchedStudent;
+      const effectiveNisn = matchedStudent ? matchedStudent.nisn : (cleanNisn || rawNisn);
+
+      // Check NISN format (Indonesian standard: 10 digits numeric, tolerating 7-10 after normalization or if student is found)
+      const isFormatValid = isValidStudent || /^\d{10}$/.test(rawNisn) || (cleanNisn.length >= 7 && cleanNisn.length <= 10);
 
       // Duplicate in current sheet
-      const isDuplicateRowInSheet = (nisnOccurrences[rawNisn] || 0) > 1;
+      const isDuplicateRowInSheet = Boolean(
+        (rawNisn && (nisnOccurrences[rawNisn] || 0) > 1) ||
+        (effectiveNisn && (nisnOccurrences[effectiveNisn] || 0) > 1)
+      );
 
       // Duplicate submission in database
       const isExistingSubmissionInDb = isValidStudent
-        ? existingScores.some(s => s.studentId === matchedStudent.id && s.tryoutId === tryout.id)
+        ? existingScores.some(s => s.studentId === matchedStudent!.id && s.tryoutId === tryout.id)
         : false;
 
       // Extract & validate answers
@@ -767,14 +898,14 @@ export class GoogleIntegrationService {
           status = 'WARNING_MISMATCH';
           mismatchCount++;
           errorDetails.push(
-            `Baris ${rowNumber} (${matchedStudent.name}): Selisih skor terdeteksi (GForm: ${rawGFormScoreNum}, Hitung: ${scoringResult.calculatedScore}, Selisih: ${scoringResult.scoreDifference.toFixed(2)})`
+            `Baris ${rowNumber} (${matchedStudent?.name || 'Siswa'}): Selisih skor terdeteksi (GForm: ${rawGFormScoreNum}, Hitung: ${scoringResult.calculatedScore}, Selisih: ${scoringResult.scoreDifference.toFixed(2)})`
           );
         }
       }
 
       return {
         rowNumber,
-        nisn: rawNisn,
+        nisn: effectiveNisn || rawNisn,
         studentName: matchedStudent?.name || (row[mappingConfig.nameColumn || ''] || 'Siswa Tidak Dikenal'),
         studentId: matchedStudent?.id,
         classId: matchedStudent?.classId,

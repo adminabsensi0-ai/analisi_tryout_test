@@ -1857,6 +1857,52 @@ export class DatabaseService {
     return this.state.scores.filter(s => s.scoringStatus === 'SCORING_MISMATCH');
   }
 
+  /**
+   * Rekonsiliasi Skor dengan Google Form:
+   * Menyelaraskan seluruh skor pada tryout dengan nilai resmi Google Form (mengakhiri status SCORING_MISMATCH secara sah).
+   */
+  public reconcileScoresWithGForm(
+    tryoutId: string,
+    currentUser?: any
+  ): { reconciledCount: number } {
+    let reconciledCount = 0;
+
+    this.state.scores = this.state.scores.map(s => {
+      if (s.tryoutId === tryoutId && s.googleFormScore !== undefined && s.googleFormScore > 0) {
+        if (s.scoringStatus === 'SCORING_MISMATCH' || Math.abs(s.calculatedScore - s.googleFormScore) > 0.01) {
+          reconciledCount++;
+          // Sinkronkan juga pada subjectScores jika ada mapel
+          const updatedSubjectScores = { ...(s.subjectScores || {}) };
+          Object.keys(updatedSubjectScores).forEach(subjId => {
+            updatedSubjectScores[subjId] = s.googleFormScore!;
+          });
+
+          return {
+            ...s,
+            calculatedScore: s.googleFormScore,
+            subjectScores: updatedSubjectScores,
+            scoreDifference: 0,
+            scoringStatus: 'MATCH',
+          };
+        }
+      }
+      return s;
+    });
+
+    if (reconciledCount > 0) {
+      this.persistState();
+      this.logAudit(
+        currentUser || { id: 'teacher', name: 'Guru Mata Pelajaran', role: 'GURU' },
+        'RECONCILE_SCORES_WITH_GFORM',
+        'TRYOUT_SCORES',
+        `Menyelaraskan ${reconciledCount} nilai siswa pada Tryout ${tryoutId} dengan nilai resmi Google Form.`
+      );
+      this.notifyListeners();
+    }
+
+    return { reconciledCount };
+  }
+
   // -------------------------------------------------------------
   // PHASE 9 — ANALYTICS ENGINE API
   // -------------------------------------------------------------

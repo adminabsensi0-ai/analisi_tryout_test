@@ -788,9 +788,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         });
       }
 
-      const nisnCol = headers.find(h => h.toLowerCase().includes('nisn') || h.toLowerCase() === 'nisn') || headers[0] || '';
+      const nisnCol = (headers.find(h => {
+        const lk = h.toLowerCase().trim();
+        return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk siswa nasional');
+      }) || headers.find(h => {
+        const lk = h.toLowerCase().trim();
+        return lk === 'nis' || lk.includes('nomor induk');
+      })) || headers[0] || '';
       const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
-      const scoreCol = headers.find(h => h.toLowerCase().includes('skor') || h.toLowerCase().includes('score')) || '';
+      const scoreCol = headers.find(h => {
+        const lk = h.toLowerCase().trim();
+        return lk === 'skor' || lk === 'score' || lk === 'nilai' || lk === 'poin' || lk.includes('total point') || lk.includes('total poin') || lk.includes('nilai akhir') || lk.includes('skor') || lk.includes('score') || lk.includes('nilai') || lk.includes('poin');
+      }) || '';
 
       setSheetSyncStatus(prev => ({
         ...prev,
@@ -872,9 +881,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       // Jika sudah ada konfigurasi kolom tersimpan → langsung sync tanpa modal
       if (tryout.selectedQuestionColumns && tryout.selectedQuestionColumns.length > 0) {
         const savedCols = tryout.selectedQuestionColumns;
-        const nisnCol = headers.find(h => h.toLowerCase().includes('nisn') || h.toLowerCase() === 'nisn') || headers[0] || '';
+        const nisnCol = (headers.find(h => {
+        const lk = h.toLowerCase().trim();
+        return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk siswa nasional');
+      }) || headers.find(h => {
+        const lk = h.toLowerCase().trim();
+        return lk === 'nis' || lk.includes('nomor induk');
+      })) || headers[0] || '';
         const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
-        const scoreCol = headers.find(h => h.toLowerCase().includes('skor') || h.toLowerCase().includes('score')) || '';
+        const scoreCol = headers.find(h => {
+        const lk = h.toLowerCase().trim();
+        return lk === 'skor' || lk === 'score' || lk === 'nilai' || lk === 'poin' || lk.includes('total point') || lk.includes('total poin') || lk.includes('nilai akhir') || lk.includes('skor') || lk.includes('score') || lk.includes('nilai') || lk.includes('poin');
+      }) || '';
         await executeSheetSync(tryout, headers, rows, savedCols, nisnCol, nameCol, scoreCol, detectedKeyRow);
         return;
       }
@@ -886,9 +904,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           smartPreselect[h] = !GoogleIntegrationService.isMetadataHeader(h);
         });
 
-        const nisnCol = headers.find(h => h.toLowerCase().includes('nisn') || h.toLowerCase() === 'nisn') || headers[0] || '';
+        const nisnCol = (headers.find(h => {
+        const lk = h.toLowerCase().trim();
+        return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk siswa nasional');
+      }) || headers.find(h => {
+        const lk = h.toLowerCase().trim();
+        return lk === 'nis' || lk.includes('nomor induk');
+      })) || headers[0] || '';
         const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
-        const scoreCol = headers.find(h => h.toLowerCase().includes('skor') || h.toLowerCase().includes('score')) || '';
+        const scoreCol = headers.find(h => {
+        const lk = h.toLowerCase().trim();
+        return lk === 'skor' || lk === 'score' || lk === 'nilai' || lk === 'poin' || lk.includes('total point') || lk.includes('total poin') || lk.includes('nilai akhir') || lk.includes('skor') || lk.includes('score') || lk.includes('nilai') || lk.includes('poin');
+      }) || '';
 
         setSheetSyncStatus(prev => ({
           ...prev,
@@ -3558,6 +3585,34 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       </div>
 
                       {/* Class Student Rankings Table */}
+                      {classAnalyticsData.studentRankings.some(st => st.status === 'SCORING_MISMATCH') && (
+                        <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm">
+                          <div className="flex items-center space-x-2 text-xs text-amber-900 dark:text-amber-200">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>
+                              Terdeteksi <strong>{classAnalyticsData.studentRankings.filter(st => st.status === 'SCORING_MISMATCH').length} siswa</strong> memiliki perbedaan nilai antara formulir Google Form dan kalkulasi kunci jawaban.
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const activeTO = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
+                              if (activeTO) {
+                                const res = dbService.reconcileScoresWithGForm(activeTO.id, currentUser);
+                                if (res.reconciledCount > 0) {
+                                  triggerToast(`${res.reconciledCount} nilai siswa berhasil diselaraskan dengan Google Form!`);
+                                  refreshData();
+                                } else {
+                                  triggerToast('Seluruh nilai siswa sudah selaras.');
+                                }
+                              }
+                            }}
+                            className="bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center justify-center space-x-1.5 cursor-pointer transition-colors shadow-sm shrink-0"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Samakan Nilai dengan Google Form</span>
+                          </button>
+                        </div>
+                      )}
                       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-colors">
                         <div className="p-3 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
@@ -3593,7 +3648,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               <th className="py-2.5 px-3">Nama Siswa</th>
                               <th className="py-2.5 px-3 w-24 text-center">Nilai Ujian</th>
                               <th className="py-2.5 px-3 w-28 text-center">Status Kelulusan</th>
-                              <th className="py-2.5 px-3 w-28 text-center">Status Scoring</th>
+                              <th className="py-2.5 px-3 w-28 text-center">Sinkronisasi</th>
                               <th className="py-2.5 px-3 w-24 text-center">Aksi</th>
                             </tr>
                           </thead>
@@ -3623,7 +3678,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                         : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
                                     }`}
                                   >
-                                    {st.status}
+                                    {st.status === 'MATCH' ? 'Sinkron 100%' : 'Selisih Skor'}
                                   </span>
                                 </td>
                                 <td className="py-2.5 px-3 text-center">
@@ -8863,7 +8918,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Pilih Kolom Butir Soal</h3>
-                <span className="text-xs text-slate-500 dark:text-slate-400">— {columnSelectorTryout.name}</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">— {columnSelectorTryout.title || columnSelectorTryout.code}</span>
               </div>
               <button
                 onClick={() => setColumnSelectorTryout(null)}

@@ -803,10 +803,16 @@ export class AnalyticsService {
         const target = st?.targetScore || passingGrade;
         const attainmentPct = Math.round((sc.calculatedScore / target) * 100 * 10) / 10;
 
-        // Re-kalkulasi status scoring saat runtime agar tidak tergantung nilai lama di DB.
-        // Jika selisih antara nilai GForm dan nilai aplikasi <= 0.01 maka dianggap MATCH.
-        const scoreDiff = sc.scoreDifference ?? Math.abs((sc.googleFormScore ?? 0) - sc.calculatedScore);
-        const resolvedStatus: ScoringStatus = scoreDiff <= 0.01 ? 'MATCH' : (sc.scoringStatus || 'MATCH');
+        // Re-kalkulasi status scoring saat runtime:
+        // 1. Jika tryout tidak memiliki googleFormScore atau bernilai 0 / undefined, status selalu 'MATCH' (karena bersumber dari sistem internal).
+        // 2. Jika ada googleFormScore, hitung selisihnya terhadap calculatedScore.
+        let resolvedStatus: ScoringStatus = 'MATCH';
+        if (sc.googleFormScore !== undefined && sc.googleFormScore > 0) {
+          const scoreDiff = Math.abs(sc.googleFormScore - sc.calculatedScore);
+          resolvedStatus = scoreDiff <= 0.01 ? 'MATCH' : (sc.scoringStatus === 'MATCH' ? 'MATCH' : 'SCORING_MISMATCH');
+        } else {
+          resolvedStatus = 'MATCH';
+        }
 
         return {
           rank: 0,

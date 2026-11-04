@@ -94,7 +94,24 @@ export class ScoringService {
     };
     const sNorm = boolMap[s.toUpperCase()] || s.toUpperCase();
     const cNorm = boolMap[c.toUpperCase()] || c.toUpperCase();
-    return sNorm === cNorm;
+    if (sNorm === cNorm) return true;
+
+    // Multiple Choice Option Prefix matching (e.g. "A" matches "A. Pilihan" or "A) Pilihan")
+    const extractOptionLetter = (val: string): string | null => {
+      const clean = val.trim();
+      const prefix = clean.match(/^([A-Ea-e])[\.\)\:\s]/);
+      if (prefix) return prefix[1].toUpperCase();
+      if (['A', 'B', 'C', 'D', 'E'].includes(clean.toUpperCase())) return clean.toUpperCase();
+      return null;
+    };
+
+    const sLet = extractOptionLetter(s);
+    const cLet = extractOptionLetter(c);
+    if (sLet && cLet && sLet === cLet) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
