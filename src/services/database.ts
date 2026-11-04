@@ -1762,7 +1762,20 @@ export class DatabaseService {
     this.assertAdminOrTeacher(currentUser, 'DELETE_TRYOUT');
     const to = this.state.tryouts.find(t => t.id === id);
     this.state.tryouts = this.state.tryouts.filter(t => t.id !== id);
-    this.logAudit(currentUser, 'DELETE_TRYOUT', 'TRYOUT', `Menghapus Try Out: ${to?.title || id}`);
+
+    // Hapus semua data terkait tryout ini (scores, answers, responses)
+    // agar tidak ada data orphan yang masih muncul di grafik & perkembangan
+    const deletedScoreIds = new Set(
+      this.state.scores.filter(s => s.tryoutId === id).map(s => s.id)
+    );
+    this.state.scores = this.state.scores.filter(s => s.tryoutId !== id);
+    this.state.answers = this.state.answers.filter(a => a.tryoutId !== id);
+    if (this.state.responses) {
+      this.state.responses = this.state.responses.filter((r: any) => r.tryoutId !== id);
+    }
+
+    this.logAudit(currentUser, 'DELETE_TRYOUT', 'TRYOUT',
+      `Menghapus Try Out: ${to?.title || id} beserta ${deletedScoreIds.size} nilai dan jawaban terkait`);
     this.persistState();
     if (this.supabaseSyncEnabled && to?.code) sdb.removeTryoutByCode(to.code).catch(() => {});
   }

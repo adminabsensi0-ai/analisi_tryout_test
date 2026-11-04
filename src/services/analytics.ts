@@ -802,6 +802,12 @@ export class AnalyticsService {
         const st = classStudents.find(s => s.id === sc.studentId);
         const target = st?.targetScore || passingGrade;
         const attainmentPct = Math.round((sc.calculatedScore / target) * 100 * 10) / 10;
+
+        // Re-kalkulasi status scoring saat runtime agar tidak tergantung nilai lama di DB.
+        // Jika selisih antara nilai GForm dan nilai aplikasi <= 0.01 maka dianggap MATCH.
+        const scoreDiff = sc.scoreDifference ?? Math.abs((sc.googleFormScore ?? 0) - sc.calculatedScore);
+        const resolvedStatus: ScoringStatus = scoreDiff <= 0.01 ? 'MATCH' : (sc.scoringStatus || 'MATCH');
+
         return {
           rank: 0,
           studentId: sc.studentId,
@@ -810,7 +816,7 @@ export class AnalyticsService {
           score: sc.calculatedScore,
           targetScore: target,
           attainmentPercentage: attainmentPct,
-          status: sc.scoringStatus || 'MATCH' as ScoringStatus,
+          status: resolvedStatus,
           isTargetAttained: sc.calculatedScore >= target,
         };
       })

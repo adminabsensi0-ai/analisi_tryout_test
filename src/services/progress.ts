@@ -131,8 +131,14 @@ export class ProgressService {
     if (!student) return null;
 
     const studentClass = dbState.classes.find((c: ClassRoom) => c.id === student.classId);
-    const tryouts = this.sortTryoutsChronologically(dbState.tryouts);
     const studentScores = dbState.scores.filter((s: Score) => s.studentId === studentId);
+
+    // Hanya tampilkan tryout yang benar-benar memiliki nilai untuk siswa ini
+    const tryoutIdsWithScore = new Set(studentScores.map((s: Score) => s.tryoutId));
+    const tryouts = this.sortTryoutsChronologically(
+      (dbState.tryouts || []).filter((t: Tryout) => tryoutIdsWithScore.has(t.id))
+    );
+
     const targetScore = student.targetScore || 80;
 
     const points: ProgressPoint[] = tryouts.map((to: Tryout) => {
@@ -234,7 +240,14 @@ export class ProgressService {
 
     const classStudents = (dbState.students || []).filter((s: Student) => s && s.classId === classId);
     const classStudentIds = new Set(classStudents.map((s: Student) => s.id));
-    const tryouts = this.sortTryoutsChronologically(dbState.tryouts);
+
+    // Hanya tampilkan tryout yang memiliki setidaknya 1 nilai dari siswa kelas ini
+    // agar tryout yang sudah dihapus atau tidak relevan tidak muncul di grafik
+    const allClassScores = (dbState.scores || []).filter((s: Score) => classStudentIds.has(s.studentId));
+    const tryoutIdsWithScore = new Set(allClassScores.map((s: Score) => s.tryoutId));
+    const tryouts = this.sortTryoutsChronologically(
+      (dbState.tryouts || []).filter((t: Tryout) => tryoutIdsWithScore.has(t.id))
+    );
 
     const points = tryouts.map((to: Tryout) => {
       const scores = dbState.scores.filter((s: Score) => s.tryoutId === to.id && classStudentIds.has(s.studentId));
@@ -314,7 +327,6 @@ export class ProgressService {
     if (!subject) return null;
 
     const kkm = subject.passingGrade || 75.0;
-    const tryouts = this.sortTryoutsChronologically(dbState.tryouts || []);
     const questions = (dbState.questions || []).filter((q: Question) => q.subjectId === subjectId);
     const questionIds = new Set(questions.map((q: Question) => q.id));
 
@@ -333,6 +345,15 @@ export class ProgressService {
         }
       }
     }
+
+    // Hanya tampilkan tryout yang memiliki setidaknya 1 nilai atau jawaban terkait subjek ini
+    const relevantScores = (dbState.scores || []).filter((s: Score) =>
+      allowedStudentIds ? allowedStudentIds.has(s.studentId) : true
+    );
+    const tryoutIdsWithData = new Set(relevantScores.map((s: Score) => s.tryoutId));
+    const tryouts = this.sortTryoutsChronologically(
+      (dbState.tryouts || []).filter((t: Tryout) => tryoutIdsWithData.has(t.id))
+    );
 
     const points = tryouts.map((to: Tryout) => {
       // 1. Ambil dari tabel scores (Google Form import & Admin entry)
