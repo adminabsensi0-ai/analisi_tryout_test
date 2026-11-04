@@ -726,6 +726,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           errorMsg: '',
         },
       }));
+      // Otomatis arahkan fokus UI ke tryout yang baru saja disinkronkan
+      setSelectedTryoutId(tryout.id);
+      setStudentTryoutFilter(tryout.id);
+      setPsychometricsTryoutId(tryout.id);
+      if (tryoutSubject) {
+        setSelectedSubjectId(tryoutSubject.id);
+      }
       setTryouts(dbService.getTryouts());
       refreshData();
     } catch (err: any) {
@@ -982,12 +989,24 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setTimeout(() => setIsLoading(false), 150);
   };
 
-  // Active items for view
-  const activeTryout = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
+  // Active items for view — Smart selection prioritizing tryouts that actually contain scores or answers
+  const tryoutWithData = tryouts.find(t =>
+    scores.some(s => s.tryoutId === t.id) ||
+    dbService.getAnswers().some(a => a.tryoutId === t.id)
+  );
+  const smartDefaultTryoutId = tryoutWithData?.id || tryouts[0]?.id || '';
+  const activeTryout = tryouts.find(t => t.id === selectedTryoutId) || tryouts.find(t => t.id === smartDefaultTryoutId) || tryouts[0];
   const activeSubject = subjects.find(s => s.id === selectedSubjectId);
   const permittedSubjects = subjects.filter(s => allowedSubjectIds.includes(s.id));
   const activeSubjectObj = permittedSubjects[0] || subjects[0];
   const currentSubjectKKM = activeSubjectObj?.passingGrade ?? 75.0;
+
+  // Auto-init selectedTryoutId jika kosong atau tidak valid
+  useEffect(() => {
+    if ((!selectedTryoutId || !tryouts.some(t => t.id === selectedTryoutId)) && smartDefaultTryoutId) {
+      setSelectedTryoutId(smartDefaultTryoutId);
+    }
+  }, [tryouts, smartDefaultTryoutId, selectedTryoutId]);
 
   const [teacherKkmInput, setTeacherKkmInput] = useState<number>(currentSubjectKKM);
 
@@ -1286,7 +1305,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   // Gunakan tryoutId yang efektif agar analytics tidak null saat selectedTryoutId bernilai 'ALL' atau belum dipilih
   const effectiveTryoutIdForClass = (selectedTryoutId && selectedTryoutId !== 'ALL' && tryouts.some(t => t.id === selectedTryoutId))
     ? selectedTryoutId
-    : (tryouts[0]?.id || '');
+    : (smartDefaultTryoutId || tryouts[0]?.id || '');
   const activeAnalyticsClassId = (analyticsClassFilter !== 'ALL' ? analyticsClassFilter : classes[0]?.id) || '';
   const classAnalyticsData = (activeAnalyticsClassId && effectiveTryoutIdForClass)
     ? dbService.getClassAnalytics(activeAnalyticsClassId, effectiveTryoutIdForClass, currentUser)
@@ -3212,7 +3231,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           <div>
                             <label className="text-slate-500 dark:text-slate-400 font-medium block mb-1">Pelaksanaan Try Out</label>
                             <select
-                              value={selectedTryoutId}
+                              value={selectedTryoutId || 'ALL'}
                               onChange={e => setSelectedTryoutId(e.target.value)}
                               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-medium focus:ring-1 focus:ring-indigo-500"
                             >
@@ -3639,15 +3658,35 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             : 'Belum ada nilai siswa untuk kelas dan Try Out yang dipilih. Pastikan sudah melakukan sinkronisasi Google Sheet.'}
                         </p>
                         {tryouts.length > 0 && (
-                          <div className="flex flex-wrap gap-2 justify-center mt-2 text-xs">
-                            <span className="text-slate-400 dark:text-slate-500">Try Out terpilih:</span>
-                            <span className="font-semibold text-indigo-600 dark:text-indigo-400">
-                              {tryouts.find(t => t.id === effectiveTryoutIdForClass)?.title || tryouts[0]?.title || '-'}
-                            </span>
-                            <span className="text-slate-400 dark:text-slate-500">| Kelas:</span>
-                            <span className="font-semibold text-indigo-600 dark:text-indigo-400">
-                              {classes.find(c => c.id === activeAnalyticsClassId)?.name || classes[0]?.name || '-'}
-                            </span>
+                          <div className="flex flex-wrap gap-3 items-center justify-center mt-3 text-xs bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="text-slate-500 dark:text-slate-400 font-medium">Ganti Try Out:</span>
+                              <select
+                                value={effectiveTryoutIdForClass}
+                                onChange={e => setSelectedTryoutId(e.target.value)}
+                                className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                              >
+                                {tryouts.map(t => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.code} — {t.title}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center space-x-1.5">
+                              <span className="text-slate-500 dark:text-slate-400 font-medium">Kelas:</span>
+                              <select
+                                value={activeAnalyticsClassId}
+                                onChange={e => setAnalyticsClassFilter(e.target.value)}
+                                className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                              >
+                                {classes.map(c => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -3671,19 +3710,35 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </p>
                         </div>
 
-                        <div className="flex items-center space-x-2 text-xs">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">Pilih Kelas:</span>
-                          <select
-                            value={analyticsClassFilter === 'ALL' ? classes[0]?.id : analyticsClassFilter}
-                            onChange={e => setAnalyticsClassFilter(e.target.value)}
-                            className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500"
-                          >
-                            {classes.map(c => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
+                        <div className="flex flex-wrap items-center gap-3 text-xs">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-slate-500 dark:text-slate-400 font-medium">Try Out:</span>
+                            <select
+                              value={effectiveTryoutIdForClass}
+                              onChange={e => setSelectedTryoutId(e.target.value)}
+                              className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                            >
+                              {tryouts.map(t => (
+                                <option key={t.id} value={t.id}>
+                                  {t.code} — {t.title}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-slate-500 dark:text-slate-400 font-medium">Pilih Kelas:</span>
+                            <select
+                              value={analyticsClassFilter === 'ALL' ? classes[0]?.id : analyticsClassFilter}
+                              onChange={e => setAnalyticsClassFilter(e.target.value)}
+                              className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-slate-800 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                            >
+                              {classes.map(c => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
                       </div>
 
@@ -4374,7 +4429,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                           <span className="text-slate-500 dark:text-slate-400 font-medium">Paket Try Out:</span>
                           <select
-                            value={psychometricsTryoutId}
+                            value={activePsychometricsTryoutId}
                             onChange={e => setPsychometricsTryoutId(e.target.value)}
                             className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-slate-800 dark:text-slate-200 font-semibold focus:outline-none"
                           >
@@ -4406,7 +4461,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                           <button
                             onClick={() => {
-                              const activeTo = tryouts.find(t => t.id === psychometricsTryoutId) || tryouts[0];
+                              const activeTo = tryouts.find(t => t.id === activePsychometricsTryoutId) || tryouts[0];
                               const activeSub = subjects.find(s => s.id === selectedSubjectId);
                               const activeCls = classes.find(c => c.id === psychometricsClassFilter);
                               const classSuffix = activeCls ? `_${activeCls.name.replace(/\s+/g, '_')}` : '_Semua_Kelas';
@@ -4685,11 +4740,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       ? students
                       : students.filter(s => s.classId === selectedClassForProgress);
                     
+                    const studentWithScore = filteredStudents.find(s => dbService.getScoresByStudent(s.id).length > 0);
                     const activeStudentId = selectedStudentForProgress && filteredStudents.some(s => s.id === selectedStudentForProgress)
                       ? selectedStudentForProgress
-                      : filteredStudents[0]?.id || students[0]?.id || '';
+                      : (studentWithScore?.id || filteredStudents[0]?.id || students[0]?.id || '');
 
-                    const studentProg = dbService.getStudentProgress(activeStudentId);
+                    const studentProg = activeStudentId ? dbService.getStudentProgress(activeStudentId) : null;
                     const currentStudentObj = students.find(s => s.id === activeStudentId);
 
                     return (
@@ -5072,15 +5128,32 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             </div>
                           );
                         })()}
+
+                        {(!studentProg || studentProg.points.length === 0) && (
+                          <div className="flex flex-col items-center justify-center py-16 text-center space-y-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
+                            <div className="w-14 h-14 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
+                              <Users className="w-7 h-7 text-indigo-400" />
+                            </div>
+                            <p className="text-base font-semibold text-slate-700 dark:text-slate-300">Belum Ada Riwayat Nilai Siswa Ini</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm">
+                              Siswa terpilih belum memiliki catatan pengerjaan Try Out. Pilih siswa lain yang sudah mengikuti ujian atau sinkronkan data respon Google Form.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
 
                   {/* SUB-TAB 2: CLASS PROGRESS TRACKING */}
                   {progressSubTab === 'CLASS' && (() => {
+                    const classWithScore = classes.find(c => {
+                      const cStudents = students.filter(s => s.classId === c.id);
+                      const cStudentIds = new Set(cStudents.map(s => s.id));
+                      return scores.some(s => cStudentIds.has(s.studentId));
+                    });
                     const targetClassId = (selectedClassForProgress && selectedClassForProgress !== 'ALL' && classes.some(c => c.id === selectedClassForProgress))
                       ? selectedClassForProgress
-                      : (classes[0]?.id || '');
+                      : (classWithScore?.id || classes[0]?.id || '');
                     const classProg = targetClassId ? dbService.getClassProgress(targetClassId, currentUser) : null;
                     const selectedClassObj = classes.find(c => c.id === targetClassId);
                     return (
@@ -5296,6 +5369,17 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           );
                         })()}
 
+                        {(!classProg || classProg.points.length === 0) && (
+                          <div className="flex flex-col items-center justify-center py-16 text-center space-y-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
+                            <div className="w-14 h-14 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
+                              <School className="w-7 h-7 text-indigo-400" />
+                            </div>
+                            <p className="text-base font-semibold text-slate-700 dark:text-slate-300">Belum Ada Riwayat Nilai untuk Kelas Ini</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm">
+                              Kelas terpilih belum memiliki catatan hasil Try Out yang tersinkron. Pilih kelas lain atau lakukan sinkronisasi hasil ujian.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}

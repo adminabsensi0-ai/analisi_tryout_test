@@ -140,12 +140,24 @@ export class ProgressService {
       ...studentAnswers.map((a: Answer) => a.tryoutId),
     ]);
 
-    const allTryouts: Tryout[] = dbState.tryouts || [];
-    let relevantTryouts = allTryouts.filter(t => tryoutIdsWithData.has(t.id));
+    // Filter tryouts: Singkirkan tryout kosong (dummy/ghost) yang tidak memiliki skor/jawaban dari siapapun
+    const allTryouts: Tryout[] = (dbState.tryouts || []).filter((t: Tryout) => {
+      const hasAnyScore = (dbState.scores || []).some((s: Score) => s.tryoutId === t.id);
+      const hasAnyAnswer = (dbState.answers || []).some((a: Answer) => a.tryoutId === t.id);
+      return hasAnyScore || hasAnyAnswer;
+    });
+    const baselineTryouts = allTryouts.length > 0 ? allTryouts : (dbState.tryouts || []);
+
+    // Tryouts relevan: tryout yang diikuti siswa atau tryout yang diselenggarakan untuk kelas siswa
+    const classScores = (dbState.scores || []).filter((s: Score) =>
+      s.studentId === studentId ||
+      (studentClass && (dbState.students || []).some((st: Student) => st.classId === studentClass.id && st.id === s.studentId))
+    );
+    const classTryoutIds = new Set(classScores.map((s: Score) => s.tryoutId));
+
+    let relevantTryouts = baselineTryouts.filter((t: Tryout) => tryoutIdsWithData.has(t.id) || classTryoutIds.has(t.id));
     if (relevantTryouts.length === 0) {
-      relevantTryouts = allTryouts;
-    } else if (allTryouts.length > relevantTryouts.length) {
-      relevantTryouts = allTryouts;
+      relevantTryouts = baselineTryouts;
     }
     const tryouts = this.sortTryoutsChronologically(relevantTryouts);
 
@@ -273,12 +285,17 @@ export class ProgressService {
       ...allClassAnswers.map((a: Answer) => a.tryoutId),
     ]);
 
-    const allTryouts: Tryout[] = dbState.tryouts || [];
-    let relevantTryouts = allTryouts.filter(t => tryoutIdsWithData.has(t.id));
+    // Singkirkan tryout dummy/kosong tanpa nilai dari kelas ini
+    const allTryouts: Tryout[] = (dbState.tryouts || []).filter((t: Tryout) => {
+      const hasAnyScore = (dbState.scores || []).some((s: Score) => s.tryoutId === t.id);
+      const hasAnyAnswer = (dbState.answers || []).some((a: Answer) => a.tryoutId === t.id);
+      return hasAnyScore || hasAnyAnswer;
+    });
+    const baselineTryouts = allTryouts.length > 0 ? allTryouts : (dbState.tryouts || []);
+
+    let relevantTryouts = baselineTryouts.filter((t: Tryout) => tryoutIdsWithData.has(t.id));
     if (relevantTryouts.length === 0) {
-      relevantTryouts = allTryouts;
-    } else if (allTryouts.length > relevantTryouts.length) {
-      relevantTryouts = allTryouts;
+      relevantTryouts = baselineTryouts;
     }
     const tryouts = this.sortTryoutsChronologically(relevantTryouts);
 

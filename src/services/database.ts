@@ -33,6 +33,7 @@ import { sdb } from './supabaseDb';
 import { generateUuid, isValidUuid } from '../utils/idUtils';
 
 const STORAGE_KEY = 'school_tryout_analytics_db_v1';
+const DELETED_TRYOUTS_KEY = 'school_tryout_deleted_ids_v1';
 
 export interface DatabaseState {
   users: User[];
@@ -237,6 +238,45 @@ export class DatabaseService {
     }
 
     this.supabaseInitDone = true;
+  }
+
+  /**
+   * Helper tombstone: Mendapatkan daftar identifier (id dan kode) tryout yang sudah dihapus.
+   * Ini mencegah tryout dummy / seed yang telah dihapus oleh pengguna bangkit kembali saat merge dari cloud.
+   */
+  private getDeletedTryoutIdentifiers(): Set<string> {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(DELETED_TRYOUTS_KEY) : null;
+      const parsed = raw ? JSON.parse(raw) : [];
+      const set = new Set<string>(
+        (Array.isArray(parsed) ? parsed : []).map((x: string) => String(x).toLowerCase().trim())
+      );
+      // Default tombstone untuk dummy / seed tryout bawaan jika belum ada
+      set.add('to-2026-01');
+      set.add('to000000-0000-0000-0000-000000000001');
+      return set;
+    } catch {
+      return new Set<string>(['to-2026-01', 'to000000-0000-0000-0000-000000000001']);
+    }
+  }
+
+  /**
+   * Helper tombstone: Mencatat tryout yang dihapus ke localStorage agar persisten lintas sesi & cloud sync.
+   */
+  private recordDeletedTryoutIdentifier(...idsOrCodes: (string | undefined)[]): void {
+    try {
+      const set = this.getDeletedTryoutIdentifiers();
+      idsOrCodes.forEach(item => {
+        if (item && item.trim()) {
+          set.add(item.toLowerCase().trim());
+        }
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(DELETED_TRYOUTS_KEY, JSON.stringify(Array.from(set)));
+      }
+    } catch (e) {
+      console.warn('[DB] Gagal menyimpan tombstone tryout yang dihapus:', e);
+    }
   }
 
   /**
@@ -447,7 +487,14 @@ export class DatabaseService {
     // Merge tryouts (by code)
     if (cloud.tryouts && Array.isArray(cloud.tryouts)) {
       if (!this.state.tryouts) this.state.tryouts = [];
+      const deletedTryouts = this.getDeletedTryoutIdentifiers();
       cloud.tryouts.forEach(cloudTo => {
+        const toCode = (cloudTo.code || '').toLowerCase().trim();
+        const toId = (cloudTo.id || '').toLowerCase().trim();
+        if (deletedTryouts.has(toCode) || deletedTryouts.has(toId)) {
+          // Jangan pernah mengimpor / membangkitkan kembali tryout yang sudah dihapus pengguna!
+          return;
+        }
         const idx = this.state.tryouts.findIndex(t => t.code.toLowerCase() === cloudTo.code.toLowerCase());
         if (idx === -1) {
           this.state.tryouts.push(cloudTo);
@@ -688,19 +735,41 @@ export class DatabaseService {
           });
         }
 
-        // Clean out legacy mock data if present in localStorage
+        // Clean out legacy mock data & tombstoned tryouts if present in localStorage
         const legacyMockToIds = new Set(['to-1', 'to-2', 'to-3', 'to-4']);
+        const deletedTryouts = this.getDeletedTryoutIdentifiers();
         if (parsed.tryouts && Array.isArray(parsed.tryouts)) {
-          parsed.tryouts = parsed.tryouts.filter((t: any) => !legacyMockToIds.has(t.id));
+          parsed.tryouts = parsed.tryouts.filter((t: any) => {
+            if (legacyMockToIds.has(t.id)) return false;
+            const toId = (t.id || '').toLowerCase().trim();
+            const toCode = (t.code || '').toLowerCase().trim();
+            if (deletedTryouts.has(toId) || deletedTryouts.has(toCode)) return false;
+            return true;
+          });
         }
         if (parsed.scores && Array.isArray(parsed.scores)) {
-          parsed.scores = parsed.scores.filter((s: any) => !legacyMockToIds.has(s.tryoutId) && !s.id.startsWith('sc-'));
+          parsed.scores = parsed.scores.filter((s: any) => {
+            if (legacyMockToIds.has(s.tryoutId) || s.id?.startsWith('sc-')) return false;
+            const toId = (s.tryoutId || '').toLowerCase().trim();
+            if (deletedTryouts.has(toId)) return false;
+            return true;
+          });
         }
         if (parsed.responses && Array.isArray(parsed.responses)) {
-          parsed.responses = parsed.responses.filter((r: any) => !legacyMockToIds.has(r.tryoutId) && !r.id.startsWith('resp-'));
+          parsed.responses = parsed.responses.filter((r: any) => {
+            if (legacyMockToIds.has(r.tryoutId) || r.id?.startsWith('resp-')) return false;
+            const toId = (r.tryoutId || '').toLowerCase().trim();
+            if (deletedTryouts.has(toId)) return false;
+            return true;
+          });
         }
         if (parsed.answers && Array.isArray(parsed.answers)) {
-          parsed.answers = parsed.answers.filter((a: any) => !legacyMockToIds.has(a.tryoutId) && !a.id.startsWith('ans-'));
+          parsed.answers = parsed.answers.filter((a: any) => {
+            if (legacyMockToIds.has(a.tryoutId) || a.id?.startsWith('ans-')) return false;
+            const toId = (a.tryoutId || '').toLowerCase().trim();
+            if (deletedTryouts.has(toId)) return false;
+            return true;
+          });
         }
         if (parsed.questions && Array.isArray(parsed.questions)) {
           parsed.questions = parsed.questions.filter((q: any) => !q.uniqueCode?.startsWith('MAT-TO03-'));
@@ -1761,6 +1830,7 @@ export class DatabaseService {
   public deleteTryout(id: string, currentUser: any) {
     this.assertAdminOrTeacher(currentUser, 'DELETE_TRYOUT');
     const to = this.state.tryouts.find(t => t.id === id);
+    this.recordDeletedTryoutIdentifier(id, to?.id, to?.code);
     this.state.tryouts = this.state.tryouts.filter(t => t.id !== id);
 
     // Hapus semua data terkait tryout ini (scores, answers, responses)
