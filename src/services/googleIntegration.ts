@@ -184,9 +184,12 @@ export class GoogleIntegrationService {
     subject: Subject,
     headers: string[],
     answerKeyRow?: Record<string, string> | null,
-    currentUser?: User | null
+    currentUser?: User | null,
+    selectedColumns?: string[] | null
   ): Question[] {
-    const questionHeaders = this.getQuestionHeaders(headers);
+    const questionHeaders = selectedColumns && selectedColumns.length > 0
+      ? selectedColumns
+      : this.getQuestionHeaders(headers);
     if (questionHeaders.length === 0) {
       return dbService.getQuestions().filter(q => q.subjectId === subject.id);
     }
@@ -264,7 +267,6 @@ export class GoogleIntegrationService {
               { key: 'E', text: 'Pilihan E' },
             ],
             weight: 1,
-            cognitiveLevel: 'C2',
             status: 'ACTIVE',
           },
           null // System action: bypass teacher subject restriction during automated ingestion
@@ -353,7 +355,8 @@ export class GoogleIntegrationService {
   public static detectColumnMappings(
     headers: string[],
     questions: Question[],
-    customOverrides?: Partial<ColumnMappingConfig>
+    customOverrides?: Partial<ColumnMappingConfig>,
+    selectedColumns?: string[]
   ): ColumnMappingConfig {
     // Auto-detect NISN column
     const nisnHeader =
@@ -389,8 +392,10 @@ export class GoogleIntegrationService {
         return lower.includes('timestamp') || lower.includes('waktu') || lower.includes('tanggal');
       });
 
-    // Ambil kolom-kolom murni pertanyaan (Bagian 2 Google Form)
-    const questionHeaders = this.getQuestionHeaders(headers);
+    // Ambil kolom-kolom murni pertanyaan (Bagian 2 Google Form atau Kolom Pilihan Guru)
+    const questionHeaders = selectedColumns && selectedColumns.length > 0
+      ? selectedColumns
+      : this.getQuestionHeaders(headers);
 
     // Map each question by uniqueCode (with Positional Fallback for unnumbered headers)
     const questionMappings: Record<string, string> = {

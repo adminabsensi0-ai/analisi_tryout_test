@@ -1755,12 +1755,11 @@ export class DatabaseService {
     const newQ: Question = {
       ...q,
       id: `q-${Date.now()}`,
-      cognitiveLevel: q.cognitiveLevel || 'C3',
       status: q.status || 'ACTIVE',
       weight: q.weight ?? 1,
     };
     this.state.questions.push(newQ);
-    this.logAudit(currentUser, 'CREATE_QUESTION', 'QUESTION', `Menambahkan butir soal: ${newQ.uniqueCode} (${newQ.cognitiveLevel})`);
+    this.logAudit(currentUser, 'CREATE_QUESTION', 'QUESTION', `Menambahkan butir soal: ${newQ.uniqueCode}`);
     this.persistState();
     return newQ;
   }

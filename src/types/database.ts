@@ -219,6 +219,8 @@ export interface Tryout {
   targetClassIds?: string[];
   /** Mata pelajaran acuan untuk Try Out internal (Google Form) */
   subjectId?: string;
+  /** Daftar judul kolom Google Sheet yang dipilih guru untuk dianalisis sebagai butir soal */
+  selectedQuestionColumns?: string[];
   /** Menandakan Try Out diselenggarakan oleh pihak eksternal (rekap nilai, bukan butir soal) */
   isExternal?: boolean;
   source?: 'INTERNAL' | 'EXTERNAL';

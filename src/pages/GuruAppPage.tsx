@@ -24,7 +24,7 @@ import { ExplanationService, ExplanationTestSuiteResult } from '../services/expl
 import { ProductionValidationSuiteResult } from '../services/productionValidation';
 import {
   User, Question, Tryout, SheetImportPreviewItem, Explanation, Subject,
-  Material, Competency, ClassRoom, Student, CognitiveLevel, QuestionStatus,
+  Material, Competency, ClassRoom, Student, QuestionStatus,
   ColumnMappingConfig, SheetImportSummary, Score, AcademicYear
 } from '../types/database';
 import { generateUuid } from '../utils/idUtils';
@@ -93,8 +93,17 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [classFilter, setClassFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [cognitiveFilter, setCognitiveFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  // State untuk Modal Pemilihan Kolom (Column Selector)
+  const [columnSelectorTryout, setColumnSelectorTryout] = useState<Tryout | null>(null);
+  const [columnSelectorHeaders, setColumnSelectorHeaders] = useState<string[]>([]);
+  const [columnSelectorRows, setColumnSelectorRows] = useState<Record<string, string>[]>([]);
+  const [columnSelectorNisnCol, setColumnSelectorNisnCol] = useState<string>('');
+  const [columnSelectorNameCol, setColumnSelectorNameCol] = useState<string>('');
+  const [columnSelectorScoreCol, setColumnSelectorScoreCol] = useState<string>('');
+  const [columnSelectorKeyRow, setColumnSelectorKeyRow] = useState<Record<string, string> | null>(null);
+  const [columnSelectorChecked, setColumnSelectorChecked] = useState<Record<string, boolean>>({});
 
   // Database Local States
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -137,7 +146,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   ]);
   const [qCorrectAnswer, setQCorrectAnswer] = useState('A');
   const [qWeight, setQWeight] = useState(1);
-  const [qCognitiveLevel, setQCognitiveLevel] = useState<CognitiveLevel>('C4');
   const [qStatus, setQStatus] = useState<QuestionStatus>('ACTIVE');
   const [selectedPassFailTO, setSelectedPassFailTO] = useState<string>('TO 4');
 
@@ -508,63 +516,55 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setTimeout(() => setErrorBanner(null), 5000);
   };
 
-  // ── Auto-Sync: Fetch, parse, and import Google Sheet CSV for a tryout ────────
-  const syncTryoutFromSheet = async (tryout: Tryout) => {
-    if (!tryout.googleSheetUrl) return;
-
-    // Mark as syncing
+  // ── Fungsi inti yang dipanggil SETELAH guru konfirmasi kolom di Modal ─────────
+  const executeSheetSync = async (
+    tryout: Tryout,
+    headers: string[],
+    rows: Record<string, string>[],
+    selectedColumns: string[],
+    nisnCol: string,
+    nameCol: string,
+    scoreCol: string,
+    keyRow: Record<string, string> | null
+  ) => {
     setSheetSyncStatus(prev => ({
       ...prev,
       [tryout.id]: { lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null, status: 'syncing', newCount: 0, errorMsg: '' },
     }));
 
     try {
-      // 1. Fetch CSV text from public Google Sheet export URL
-      const csvText = await GoogleIntegrationService.fetchSheetCsv(tryout.googleSheetUrl);
+      // Simpan konfigurasi kolom ke tryout agar sinkronisasi susulan tidak perlu pilih ulang
+      dbService.updateTryout(tryout.id, { selectedQuestionColumns: selectedColumns }, null);
 
-      // 2. Parse CSV into headers + rows
-      const { headers, rows } = GoogleIntegrationService.parseRawSheetText(csvText);
-      if (rows.length === 0) throw new Error('Sheet kosong atau tidak ada baris data.');
-
-      // 3. Find the subject for this tryout (use tryout.subjectId, or permitted subjects, or fall back to all subjects)
+      // Cari mata pelajaran
       const allSubjectsNow = dbService.getSubjects();
       const permittedSubjectsNow = allSubjectsNow.filter(s => allowedSubjectIds.includes(s.id));
       const tryoutSubject = (tryout.subjectId ? allSubjectsNow.find(s => s.id === tryout.subjectId) : null) || permittedSubjectsNow[0] || allSubjectsNow[0];
       if (!tryoutSubject) throw new Error('Mata pelajaran tidak ditemukan untuk sinkronisasi.');
 
-      // 4. Deteksi baris akun kunci jawaban jika ada
-      const allDbStudents = dbService.getStudents();
-      const detectedKeyRow = rows.find(r => {
-        const rowVals = Object.entries(r);
-        const nisnEntry = rowVals.find(([k]) => {
-          const lk = k.toLowerCase();
-          return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk');
-        });
-        const nisnVal = nisnEntry ? nisnEntry[1]?.trim() : '';
-        if (!nisnVal) return false;
-        const st = allDbStudents.find(s => s.nisn === nisnVal);
-        return st?.isAnswerKeyAccount;
-      });
-
-      // 5. Pastikan butir soal ada di database (Auto-Bootstrap jika belum ada soal atau belum lengkap)
-      const detectedQuestionHeaders = GoogleIntegrationService.getQuestionHeaders(headers);
+      // Auto-bootstrap butir soal berdasarkan kolom yang dipilih guru
       let tryoutQuestions = dbService.getQuestions().filter(q => q.subjectId === tryoutSubject.id);
       const hasBogusQuestions = tryoutQuestions.some(q => GoogleIntegrationService.isMetadataHeader(q.questionText));
 
-      if (tryoutQuestions.length === 0 || tryoutQuestions.length < detectedQuestionHeaders.length || hasBogusQuestions) {
+      if (tryoutQuestions.length === 0 || tryoutQuestions.length < selectedColumns.length || hasBogusQuestions) {
         tryoutQuestions = GoogleIntegrationService.ensureQuestionsExist(
           tryoutSubject,
           headers,
-          detectedKeyRow,
-          currentUser
+          keyRow,
+          currentUser,
+          selectedColumns
         );
         setQuestions(dbService.getQuestions());
       }
 
-      // 6. Detect column mappings menggunakan unique question code & positional fallback
-      const mappingConfig = GoogleIntegrationService.detectColumnMappings(headers, tryoutQuestions);
+      // Buat mapping config berdasarkan kolom pilihan guru
+      const mappingConfig = GoogleIntegrationService.detectColumnMappings(
+        headers,
+        tryoutQuestions,
+        { nisnColumn: nisnCol, scoreColumn: scoreCol || undefined, nameColumn: nameCol || undefined },
+        selectedColumns
+      );
 
-      // 7. Validate rows — produces previewItems with VALID / WARNING_MISMATCH / ERROR status
       const allStudentsNow = dbService.getStudents();
       const allScoresNow = dbService.getScores();
       const validationResult = GoogleIntegrationService.validateSheetImportDetailed(
@@ -587,7 +587,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       );
 
       if (importableItems.length === 0) {
-        // Nothing new to save — still mark success with 0 new items
         setSheetSyncStatus(prev => ({
           ...prev,
           [tryout.id]: { lastSyncAt: new Date(), status: 'success', newCount: 0, errorMsg: '' },
@@ -595,11 +594,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         setTryouts(dbService.getTryouts());
         if (validationResult.summary.answerKeyDetected) {
           triggerToast(`Kunci Jawaban resmi tersimpan (${validationResult.summary.answerKeyExtractedCount} soal). Menunggu respon siswa nyata untuk analisis.`);
+        } else {
+          triggerToast(`Sinkronisasi selesai. ${selectedColumns.length} kolom soal dipetakan.`);
         }
         return;
       }
 
-      // 8. Idempotent import — same pipeline as handleConfirmImport
       const result = GoogleIntegrationService.executeIdempotentImport(
         tryout,
         tryoutSubject,
@@ -612,7 +612,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         }
       );
 
-      // 9. Update sync status and refresh dashboard
       setSheetSyncStatus(prev => ({
         ...prev,
         [tryout.id]: {
@@ -632,6 +631,79 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           status: 'error',
           newCount: 0,
           errorMsg: err.message || 'Gagal sinkronisasi.',
+        },
+      }));
+    }
+  };
+
+  // ── Auto-Sync: Ambil CSV dan buka Modal Pemilihan Kolom (atau langsung sync jika sudah ada konfigurasi) ──
+  const syncTryoutFromSheet = async (tryout: Tryout) => {
+    if (!tryout.googleSheetUrl) return;
+
+    setSheetSyncStatus(prev => ({
+      ...prev,
+      [tryout.id]: { lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null, status: 'syncing', newCount: 0, errorMsg: '' },
+    }));
+
+    try {
+      const csvText = await GoogleIntegrationService.fetchSheetCsv(tryout.googleSheetUrl);
+      const { headers, rows } = GoogleIntegrationService.parseRawSheetText(csvText);
+      if (rows.length === 0) throw new Error('Sheet kosong atau tidak ada baris data.');
+
+      // Deteksi baris akun kunci jawaban
+      const allDbStudents = dbService.getStudents();
+      const detectedKeyRow = rows.find(r => {
+        const nisnEntry = Object.entries(r).find(([k]) => {
+          const lk = k.toLowerCase();
+          return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk');
+        });
+        const nisnVal = nisnEntry ? nisnEntry[1]?.trim() : '';
+        if (!nisnVal) return false;
+        const st = allDbStudents.find(s => s.nisn === nisnVal);
+        return st?.isAnswerKeyAccount;
+      }) || null;
+
+      // Jika sudah ada konfigurasi kolom tersimpan → langsung sync tanpa modal
+      if (tryout.selectedQuestionColumns && tryout.selectedQuestionColumns.length > 0) {
+        const savedCols = tryout.selectedQuestionColumns;
+        const nisnCol = headers.find(h => h.toLowerCase().includes('nisn') || h.toLowerCase() === 'nisn') || headers[0] || '';
+        const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
+        const scoreCol = headers.find(h => h.toLowerCase().includes('skor') || h.toLowerCase().includes('score')) || '';
+        await executeSheetSync(tryout, headers, rows, savedCols, nisnCol, nameCol, scoreCol, detectedKeyRow);
+        return;
+      }
+
+      // Belum ada konfigurasi → buka Modal Pemilihan Kolom
+      const smartPreselect: Record<string, boolean> = {};
+      headers.forEach(h => {
+        smartPreselect[h] = !GoogleIntegrationService.isMetadataHeader(h);
+      });
+
+      const nisnCol = headers.find(h => h.toLowerCase().includes('nisn') || h.toLowerCase() === 'nisn') || headers[0] || '';
+      const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
+      const scoreCol = headers.find(h => h.toLowerCase().includes('skor') || h.toLowerCase().includes('score')) || '';
+
+      setSheetSyncStatus(prev => ({
+        ...prev,
+        [tryout.id]: { lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null, status: 'idle', newCount: 0, errorMsg: '' },
+      }));
+
+      setColumnSelectorTryout(tryout);
+      setColumnSelectorHeaders(headers);
+      setColumnSelectorRows(rows);
+      setColumnSelectorNisnCol(nisnCol);
+      setColumnSelectorNameCol(nameCol);
+      setColumnSelectorScoreCol(scoreCol);
+      setColumnSelectorKeyRow(detectedKeyRow);
+      setColumnSelectorChecked(smartPreselect);
+    } catch (err: any) {
+      setSheetSyncStatus(prev => ({
+        ...prev,
+        [tryout.id]: {
+          lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null,
+          status: 'error',
+          newCount: 0,
+          errorMsg: err.message || 'Gagal mengambil data Sheet.',
         },
       }));
     }
@@ -694,12 +766,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   // Filtered Questions in Bank
   const filteredQuestions = questions.filter(q => {
     const matchSubject = q.subjectId === selectedSubjectId;
-    const matchCognitive = cognitiveFilter === 'ALL' || q.cognitiveLevel === cognitiveFilter;
     const matchStatus = statusFilter === 'ALL' || q.status === statusFilter;
     const matchSearch = !searchQuery.trim() ||
       q.uniqueCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
       q.questionText.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchSubject && matchCognitive && matchStatus && matchSearch;
+    return matchSubject && matchStatus && matchSearch;
   });
 
   // Filtered Students in Classes
@@ -731,7 +802,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     ]);
     setQCorrectAnswer('A');
     setQWeight(1);
-    setQCognitiveLevel('C4');
     setQStatus('ACTIVE');
     setShowQuestionModal(true);
   };
@@ -747,7 +817,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setQOptions(q.options || []);
     setQCorrectAnswer(q.correctAnswer);
     setQWeight(q.weight || 1);
-    setQCognitiveLevel(q.cognitiveLevel || 'C4');
     setQStatus(q.status || 'ACTIVE');
     setShowQuestionModal(true);
   };
@@ -777,7 +846,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
             options: qOptions,
             correctAnswer: qCorrectAnswer,
             weight: Number(qWeight),
-            cognitiveLevel: qCognitiveLevel,
             status: qStatus,
           },
           currentUser
@@ -795,7 +863,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
             options: qOptions,
             correctAnswer: qCorrectAnswer,
             weight: Number(qWeight),
-            cognitiveLevel: qCognitiveLevel,
             status: qStatus,
           },
           currentUser
@@ -2174,8 +2241,50 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
               )}
 
               {/* TAB 3: QUESTION BANK */}
-              {activeTab === 'QUESTION_BANK' && (
+              {activeTab === 'QUESTION_BANK' && (() => {
+                // Statistik ringkasan Bank Soal
+                const bankSubjectQuestions = questions.filter(q => q.subjectId === selectedSubjectId);
+                const totalSoal = bankSubjectQuestions.length;
+                const kunciTerisi = bankSubjectQuestions.filter(q => q.correctAnswer && q.correctAnswer.trim() !== '').length;
+                const persenKunci = totalSoal > 0 ? Math.round((kunciTerisi / totalSoal) * 100) : 0;
+                const isGFormLinked = !!tryouts.find(t => t.subjectId === selectedSubjectId && t.googleSheetUrl && !t.googleSheetUrl.includes('/sample/'));
+                return (
                 <div className="space-y-4">
+                  {/* Kartu Statistik Ringkas */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center shrink-0">
+                        <HelpCircle className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">Total Butir Soal</p>
+                        <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{totalSoal}</p>
+                      </div>
+                    </div>
+                    <div className={`bg-white dark:bg-slate-900 border rounded-xl p-3 shadow-sm flex items-center gap-3 ${persenKunci === 100 ? 'border-emerald-200 dark:border-emerald-800' : 'border-amber-200 dark:border-amber-800'}`}>
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${persenKunci === 100 ? 'bg-emerald-100 dark:bg-emerald-950' : 'bg-amber-100 dark:bg-amber-950'}`}>
+                        <Key className={`w-5 h-5 ${persenKunci === 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">Kunci Jawaban</p>
+                        <p className={`text-sm font-bold ${persenKunci === 100 ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                          {kunciTerisi}/{totalSoal} <span className="text-xs font-normal">({persenKunci}%)</span>
+                        </p>
+                      </div>
+                    </div>
+                    <div className={`bg-white dark:bg-slate-900 border rounded-xl p-3 shadow-sm flex items-center gap-3 ${isGFormLinked ? 'border-teal-200 dark:border-teal-800' : 'border-slate-200 dark:border-slate-800'}`}>
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${isGFormLinked ? 'bg-teal-100 dark:bg-teal-950' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                        <Link className={`w-5 h-5 ${isGFormLinked ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'}`} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">Sumber Data</p>
+                        <p className={`text-xs font-semibold ${isGFormLinked ? 'text-teal-700 dark:text-teal-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                          {isGFormLinked ? 'Google Form' : 'Input Manual'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Control / Filter Bar */}
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 transition-colors">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -2192,24 +2301,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               {s.name} ({s.code})
                             </option>
                           ))}
-                        </select>
-                      </div>
-
-                      {/* Cognitive Level Filter */}
-                      <div className="flex items-center space-x-1.5">
-                        <span className="text-slate-500 dark:text-slate-400 font-medium">Kognitif:</span>
-                        <select
-                          value={cognitiveFilter}
-                          onChange={e => setCognitiveFilter(e.target.value)}
-                          className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-slate-800 dark:text-slate-200 focus:outline-none"
-                        >
-                          <option value="ALL">Semua Level (C1-C6)</option>
-                          <option value="C1">C1 - Mengingat</option>
-                          <option value="C2">C2 - Memahami</option>
-                          <option value="C3">C3 - Menerapkan</option>
-                          <option value="C4">C4 - Menganalisis</option>
-                          <option value="C5">C5 - Mengevaluasi</option>
-                          <option value="C6">C6 - Mencipta</option>
                         </select>
                       </div>
 
@@ -2299,10 +2390,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             </th>
                             <th className="py-2.5 px-3 w-12 text-center">No</th>
                             <th className="py-2.5 px-3 w-36">Kode Unik / ID</th>
-                            <th className="py-2.5 px-3">Teks Butir Soal & Pilihan</th>
+                            <th className="py-2.5 px-3">Teks Butir Soal</th>
                             <th className="py-2.5 px-3 w-32">Materi Pembelajaran</th>
-                            <th className="py-2.5 px-3 w-16 text-center">Kunci</th>
-                            <th className="py-2.5 px-3 w-20 text-center">Kognitif</th>
+                            <th className="py-2.5 px-3 w-36 text-center">Kunci Jawaban</th>
                             <th className="py-2.5 px-3 w-20 text-center">Status</th>
                             <th className="py-2.5 px-3 w-24 text-center">Aksi</th>
                           </tr>
@@ -2310,15 +2400,19 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                           {filteredQuestions.length === 0 ? (
                             <tr>
-                              <td colSpan={9} className="py-12 text-center text-slate-400 dark:text-slate-500 italic">
+                              <td colSpan={8} className="py-12 text-center text-slate-400 dark:text-slate-500 italic">
                                 Belum ada butir soal pada kriteria filter ini. Klik &quot;Tambah Butir Soal&quot; untuk menambahkan.
                               </td>
                             </tr>
                           ) : (
                             filteredQuestions.map((q, idx) => {
                               const mat = materials.find(m => m.id === q.materialId);
-                              const comp = competencies.find(c => c.id === q.competencyId);
                               const isChecked = selectedQuestionIds.includes(q.id);
+                              // Deteksi apakah soal dari Google Form (opsi dummy) atau manual
+                              const isGFormQuestion = q.options?.every(opt => opt.text === `Pilihan ${opt.key}` || opt.text === '' || opt.text === '-');
+                              // Deteksi tipe soal dari kunci jawaban
+                              const keyAns = q.correctAnswer || '';
+                              const soalTipe = keyAns.includes(',') ? 'PG Kompleks' : ['BENAR','SALAH','TRUE','FALSE'].includes(keyAns.toUpperCase()) ? 'Benar/Salah' : 'Pilihan Ganda';
                               return (
                                 <tr key={q.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${isChecked ? 'bg-indigo-50/50 dark:bg-indigo-950/20' : ''}`}>
                                   <td className="py-3 px-3 text-center">
@@ -2342,38 +2436,25 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     <div className="font-mono font-bold text-indigo-700 dark:text-indigo-400">{q.uniqueCode}</div>
                                     <div className="text-[10px] text-slate-400 font-mono">{q.id}</div>
                                   </td>
-                                  <td className="py-3 px-3 space-y-1">
-                                    <div className="font-medium text-slate-900 dark:text-slate-100 leading-snug">{q.questionText}</div>
-                                    <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-600 dark:text-slate-300 pt-1">
-                                      {q.options?.map(opt => (
-                                        <div
-                                          key={opt.key}
-                                          className={`px-1.5 py-0.5 rounded ${
-                                            opt.key === q.correctAnswer
-                                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800'
-                                              : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-transparent'
-                                          }`}
-                                        >
-                                          <span className="font-bold mr-1">{opt.key}.</span>
-                                          <span>{opt.text}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </td>
                                   <td className="py-3 px-3">
-                                    <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
-                                      {mat?.title || 'Umum'}
-                                    </div>
+                                    <div className="font-medium text-slate-900 dark:text-slate-100 leading-snug line-clamp-2">{q.questionText}</div>
+                                    {isGFormQuestion && (
+                                      <span className="mt-1 inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                                        {soalTipe} · Respon Form
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-3 text-[11px] font-semibold text-slate-800 dark:text-slate-200">
+                                    {mat?.title || 'Umum'}
                                   </td>
                                   <td className="py-3 px-3 text-center">
-                                    <span className="inline-block bg-emerald-600 text-white font-bold w-6 h-6 leading-6 rounded text-xs shadow-xs">
-                                      {q.correctAnswer}
-                                    </span>
-                                  </td>
-                                  <td className="py-3 px-3 text-center">
-                                    <span className="inline-block bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 font-mono font-semibold px-2 py-0.5 rounded text-[10px] border border-transparent dark:border-indigo-800">
-                                      {q.cognitiveLevel || 'C4'}
-                                    </span>
+                                    {keyAns ? (
+                                      <span className="inline-block bg-emerald-600 text-white font-bold px-2 py-0.5 rounded text-[10px] shadow-xs max-w-[120px] truncate" title={keyAns}>
+                                        {keyAns}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-block text-[10px] text-amber-600 dark:text-amber-400 italic">Belum diisi</span>
+                                    )}
                                   </td>
                                   <td className="py-3 px-3 text-center">
                                     <span
@@ -2421,9 +2502,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       ) : (
                         filteredQuestions.map((q, idx) => {
                           const mat = materials.find(m => m.id === q.materialId);
-                          const comp = competencies.find(c => c.id === q.competencyId);
+                          const isGFormQuestion = q.options?.every(opt => opt.text === `Pilihan ${opt.key}` || opt.text === '' || opt.text === '-');
+                          const keyAns = q.correctAnswer || '';
+                          const soalTipe = keyAns.includes(',') ? 'PG Kompleks' : ['BENAR','SALAH','TRUE','FALSE'].includes(keyAns.toUpperCase()) ? 'Benar/Salah' : 'Pilihan Ganda';
                           return (
-                            <div key={q.id} className="p-4 space-y-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                            <div key={q.id} className="p-4 space-y-2.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                   <span className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-700 dark:text-slate-300 font-mono">
@@ -2433,10 +2516,14 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     {q.uniqueCode}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                    Kunci: {q.correctAnswer}
-                                  </span>
+                                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                  {keyAns ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 max-w-[100px] truncate" title={`Kunci: ${keyAns}`}>
+                                      Kunci: {keyAns}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] italic text-amber-600 dark:text-amber-400">Kunci kosong</span>
+                                  )}
                                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
                                     q.status === 'ACTIVE'
                                       ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
@@ -2447,31 +2534,20 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </div>
                               </div>
 
-                              <p className="text-xs text-slate-900 dark:text-slate-100 font-medium leading-relaxed">
+                              <p className="text-xs text-slate-900 dark:text-slate-100 font-medium leading-relaxed line-clamp-3">
                                 {q.questionText}
                               </p>
 
-                              {/* Options preview */}
-                              <div className="grid grid-cols-1 gap-1 text-xs">
-                                {q.options?.map(opt => (
-                                  <div
-                                    key={opt.key}
-                                    className={`px-2 py-1 rounded-lg ${
-                                      opt.key === q.correctAnswer
-                                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800'
-                                        : 'bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300'
-                                    }`}
-                                  >
-                                    <span className="font-bold mr-1">{opt.key}.</span>
-                                    <span>{opt.text}</span>
-                                  </div>
-                                ))}
-                              </div>
+                              {isGFormQuestion && (
+                                <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                                  {soalTipe} · Respon Langsung Google Form
+                                </span>
+                              )}
 
                               {/* Meta and touch-friendly actions */}
                               <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-500 dark:text-slate-400">
                                 <div className="text-[11px]">
-                                  <span>{mat?.title || 'Umum'}</span> · <span className="font-mono">{comp?.code || '-'}</span> · <span className="font-semibold text-indigo-600 dark:text-indigo-400">{q.cognitiveLevel || 'C4'}</span>
+                                  <span>{mat?.title || 'Umum'}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <button
@@ -2499,7 +2575,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     </div>
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* TAB 4: MATERIALS WITH GOOGLE FORM INTEGRATION */}
               {activeTab === 'MATERIALS' && (
@@ -7276,22 +7353,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Level Kognitif</label>
-                  <select
-                    value={qCognitiveLevel}
-                    onChange={e => setQCognitiveLevel(e.target.value as CognitiveLevel)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-semibold"
-                  >
-                    <option value="C1">C1 - Mengingat</option>
-                    <option value="C2">C2 - Memahami</option>
-                    <option value="C3">C3 - Menerapkan</option>
-                    <option value="C4">C4 - Menganalisis</option>
-                    <option value="C5">C5 - Mengevaluasi</option>
-                    <option value="C6">C6 - Mencipta</option>
-                  </select>
-                </div>
-
-                <div>
                   <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Status</label>
                   <select
                     value={qStatus}
@@ -8325,6 +8386,173 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           }}
           onToast={(msg) => triggerToast(msg)}
         />
+      )}
+
+      {/* COLUMN SELECTOR MODAL */}
+      {columnSelectorTryout && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Pilih Kolom Butir Soal</h3>
+                <span className="text-xs text-slate-500 dark:text-slate-400">— {columnSelectorTryout.name}</span>
+              </div>
+              <button
+                onClick={() => setColumnSelectorTryout(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Panel Identitas Terdeteksi */}
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-2 text-xs shrink-0">
+              <p className="font-semibold text-slate-700 dark:text-slate-300">Kolom Identitas Terdeteksi (tidak dianalisis sebagai soal):</p>
+              <div className="flex flex-wrap gap-2">
+                {[columnSelectorNisnCol, columnSelectorNameCol, columnSelectorScoreCol].filter(Boolean).map(col => (
+                  <span key={col} className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono">{col}</span>
+                ))}
+                {![columnSelectorNisnCol, columnSelectorNameCol, columnSelectorScoreCol].some(Boolean) && (
+                  <span className="text-slate-400 italic">Tidak ada kolom identitas yang terdeteksi otomatis</span>
+                )}
+              </div>
+              {columnSelectorKeyRow && (
+                <p className="text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1">
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  Baris Kunci Jawaban Resmi ditemukan. Kunci akan diisi otomatis saat konfirmasi.
+                </p>
+              )}
+            </div>
+
+            {/* Toolbar aksi cepat */}
+            <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2 text-xs shrink-0 flex-wrap">
+              <button
+                onClick={() => {
+                  const all: Record<string, boolean> = {};
+                  columnSelectorHeaders.forEach(h => { all[h] = true; });
+                  setColumnSelectorChecked(all);
+                }}
+                className="px-2.5 py-1 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-semibold cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900 transition-colors"
+              >
+                Pilih Semua
+              </button>
+              <button
+                onClick={() => {
+                  const none: Record<string, boolean> = {};
+                  columnSelectorHeaders.forEach(h => { none[h] = false; });
+                  setColumnSelectorChecked(none);
+                }}
+                className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                Kosongkan
+              </button>
+              <button
+                onClick={() => {
+                  const smart: Record<string, boolean> = {};
+                  columnSelectorHeaders.forEach(h => {
+                    smart[h] = !GoogleIntegrationService.isMetadataHeader(h);
+                  });
+                  setColumnSelectorChecked(smart);
+                }}
+                className="px-2.5 py-1 rounded bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 font-semibold cursor-pointer hover:bg-teal-200 dark:hover:bg-teal-900 transition-colors"
+              >
+                Rekomendasi Otomatis
+              </button>
+              <span className="ml-auto font-semibold text-emerald-700 dark:text-emerald-300 whitespace-nowrap">
+                {Object.values(columnSelectorChecked).filter(Boolean).length} kolom terpilih sebagai soal
+              </span>
+            </div>
+
+            {/* Daftar kolom scrollable */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+              {columnSelectorHeaders.map((h, idx) => {
+                const isChecked = !!columnSelectorChecked[h];
+                const keyVal = columnSelectorKeyRow ? columnSelectorKeyRow[h] : '';
+                const isMetadata = GoogleIntegrationService.isMetadataHeader(h);
+                // Hitung nomor urut soal (hanya kolom yang dicentang dan berada sebelum ini)
+                const soalNum = columnSelectorHeaders
+                  .slice(0, idx)
+                  .filter(k => !!columnSelectorChecked[k])
+                  .length + 1;
+                return (
+                  <label
+                    key={h}
+                    className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${isChecked ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={e => setColumnSelectorChecked(prev => ({ ...prev, [h]: e.target.checked }))}
+                      className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {isChecked && (
+                          <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-950 px-1.5 py-0.5 rounded">
+                            Soal {soalNum}
+                          </span>
+                        )}
+                        {isMetadata && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                            Identitas
+                          </span>
+                        )}
+                        <span className="text-xs font-medium text-slate-900 dark:text-slate-100 line-clamp-2">{h}</span>
+                      </div>
+                      {keyVal && (
+                        <p className="text-[10px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+                          Kunci: <strong>{keyVal}</strong>
+                        </p>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Centang kolom yang merupakan <strong>butir soal</strong> untuk dianalisis.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setColumnSelectorTryout(null)}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={() => {
+                    const selectedCols = columnSelectorHeaders.filter(h => columnSelectorChecked[h]);
+                    if (selectedCols.length === 0) {
+                      triggerError('Pilih minimal 1 kolom sebagai butir soal.');
+                      return;
+                    }
+                    const tryoutSnapshot = columnSelectorTryout!;
+                    setColumnSelectorTryout(null);
+                    executeSheetSync(
+                      tryoutSnapshot,
+                      columnSelectorHeaders,
+                      columnSelectorRows,
+                      selectedCols,
+                      columnSelectorNisnCol,
+                      columnSelectorNameCol,
+                      columnSelectorScoreCol,
+                      columnSelectorKeyRow
+                    );
+                  }}
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 cursor-pointer transition-colors flex items-center gap-1.5"
+                >
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  Simpan &amp; Mulai Analisis
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
