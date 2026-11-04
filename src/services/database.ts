@@ -866,19 +866,15 @@ export class DatabaseService {
       return (this.state.subjects || []).filter(s => s && s.id).map(s => s.id);
     }
 
-    // Jika seluruh subjectPermissions adalah ID lama yang tidak ada di daftar mata pelajaran aktif sekolah,
-    // berikan fallback ke seluruh mata pelajaran aktif agar akun guru tidak terkunci (403)
+    // Ambil subjectPermissions yang valid (terdaftar di daftar mata pelajaran aktif sekolah)
     const validPerms = teacher.subjectPermissions.filter(pid => (this.state.subjects || []).some(s => s.id === pid));
-    if (validPerms.length === 0 && (this.state.subjects || []).length > 0) {
-      return (this.state.subjects || []).filter(s => s && s.id).map(s => s.id);
+    if (validPerms.length > 0) {
+      return validPerms;
     }
 
-    // Sertakan juga mata pelajaran dari paket tryout aktif di sekolah agar guru dapat mengelola tryout
-    const tryoutSubjectIds = (this.state.tryouts || [])
-      .map(t => t.subjectId)
-      .filter((id): id is string => Boolean(id));
-
-    return Array.from(new Set([...teacher.subjectPermissions, ...tryoutSubjectIds]));
+    // Jika seluruh subjectPermissions adalah ID lama yang tidak ada di daftar mata pelajaran aktif sekolah,
+    // berikan fallback ke seluruh mata pelajaran aktif agar akun guru tidak terkunci (403)
+    return (this.state.subjects || []).filter(s => s && s.id).map(s => s.id);
   }
 
   public getTeacherAllowedClassIds(currentUser: any): string[] {
@@ -965,26 +961,40 @@ export class DatabaseService {
     return this.state.competencies.filter(c => allowed.includes(c.subjectId));
   }
 
+  public static sortClassesNatural(classes: ClassRoom[]): ClassRoom[] {
+    return [...classes].sort((a, b) => {
+      const nameA = a?.name || '';
+      const nameB = b?.name || '';
+      return nameA.localeCompare(nameB, 'id', { numeric: true, sensitivity: 'base' });
+    });
+  }
+
   public getTryoutsForTeacher(currentUser: any): Tryout[] {
     if (!currentUser) return [];
     if (currentUser.role === 'ADMIN') return this.state.tryouts || [];
-    const allowedSubjects = this.getTeacherAllowedSubjectIds(currentUser);
+    const allowedSubjects = new Set(this.getTeacherAllowedSubjectIds(currentUser));
     // Find tryout IDs that include any of the teacher's allowed subjects
     const relevantTryoutIds = new Set(
       (this.state.tryoutSubjects || [])
-        .filter(tsub => tsub && allowedSubjects.includes(tsub.subjectId))
+        .filter(tsub => tsub && allowedSubjects.has(tsub.subjectId))
         .map(tsub => tsub.tryoutId)
     );
-    const filtered = (this.state.tryouts || []).filter(t => t && relevantTryoutIds.has(t.id));
-    return filtered.length > 0 ? filtered : (this.state.tryouts || []);
+    const filtered = (this.state.tryouts || []).filter(t => {
+      if (!t) return false;
+      if (t.subjectId && allowedSubjects.has(t.subjectId)) return true;
+      if (relevantTryoutIds.has(t.id)) return true;
+      if (t.externalSubjectIds && t.externalSubjectIds.some(sid => allowedSubjects.has(sid))) return true;
+      return false;
+    });
+    return filtered;
   }
 
   public getClassesForTeacher(currentUser: any): ClassRoom[] {
     if (!currentUser) return [];
-    if (currentUser.role === 'ADMIN') return this.state.classes || [];
+    if (currentUser.role === 'ADMIN') return DatabaseService.sortClassesNatural(this.state.classes || []);
     const allowedClasses = this.getTeacherAllowedClassIds(currentUser);
     const filtered = (this.state.classes || []).filter(c => c && allowedClasses.includes(c.id));
-    return filtered.length > 0 ? filtered : (this.state.classes || []);
+    return DatabaseService.sortClassesNatural(filtered.length > 0 ? filtered : (this.state.classes || []));
   }
 
   public getStudentsForTeacher(currentUser: any, classIdFilter?: string): Student[] {
@@ -1296,7 +1306,7 @@ export class DatabaseService {
   }
 
   // CLASSES CRUD
-  public getClasses(): ClassRoom[] { return this.state.classes; }
+  public getClasses(): ClassRoom[] { return DatabaseService.sortClassesNatural(this.state.classes || []); }
   public addClass(cls: Omit<ClassRoom, 'id'>, currentUser: any): ClassRoom {
     this.assertAdmin(currentUser, 'CREATE_CLASS');
     if (this.state.classes.some(c => c.name.toLowerCase() === cls.name.trim().toLowerCase() && c.academicYearId === cls.academicYearId)) {

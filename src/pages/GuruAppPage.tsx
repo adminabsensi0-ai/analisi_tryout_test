@@ -483,8 +483,15 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setAllowedClassIds(teacherClasses);
 
     // If active selected subject is not permitted, select first permitted subject
-    if (teacherSubjects.length > 0 && !teacherSubjects.includes(selectedSubjectId)) {
-      setSelectedSubjectId(teacherSubjects[0]);
+    if (teacherSubjects.length > 0) {
+      if (!teacherSubjects.includes(selectedSubjectId)) {
+        setSelectedSubjectId(teacherSubjects[0]);
+      }
+      setQSubjectId(prev => teacherSubjects.includes(prev) ? prev : teacherSubjects[0]);
+      setMatSubjectId(prev => teacherSubjects.includes(prev) ? prev : teacherSubjects[0]);
+      setCompSubjectId(prev => teacherSubjects.includes(prev) ? prev : teacherSubjects[0]);
+      setExpSubjectId(prev => teacherSubjects.includes(prev) ? prev : teacherSubjects[0]);
+      setQuickExpSubjectId(prev => teacherSubjects.includes(prev) ? prev : teacherSubjects[0]);
     }
 
     setAcademicYears(dbService.getAcademicYears());
@@ -880,7 +887,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   // -------------------------------------------------------------
   const handleOpenAddQuestion = () => {
     setEditingQuestionId(null);
-    const subId = allowedSubjectIds[0] || 'subj-mat';
+    const subId = (selectedSubjectId && allowedSubjectIds.includes(selectedSubjectId)) ? selectedSubjectId : (allowedSubjectIds[0] || subjects[0]?.id || '');
     setQSubjectId(subId);
     const filteredMat = materials.filter(m => m.subjectId === subId);
     const filteredComp = competencies.filter(c => c.subjectId === subId);
@@ -1007,8 +1014,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   // -------------------------------------------------------------
   const handleOpenAddMaterial = () => {
     setEditingMaterialId(null);
-    setMatSubjectId(allowedSubjectIds[0] || 'subj-mat');
-    setMatCode(`${activeSubject?.code || 'MAT'}-0${materials.filter(m => m.subjectId === selectedSubjectId).length + 1}`);
+    const subId = (selectedSubjectId && allowedSubjectIds.includes(selectedSubjectId)) ? selectedSubjectId : (allowedSubjectIds[0] || subjects[0]?.id || '');
+    setMatSubjectId(subId);
+    setMatCode(`${activeSubject?.code || 'MAPEL'}-0${materials.filter(m => m.subjectId === selectedSubjectId).length + 1}`);
     setMatTitle('');
     setMatDescription('');
     setMatGoogleFormUrl('');
@@ -1063,7 +1071,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   // -------------------------------------------------------------
   const handleOpenAddCompetency = () => {
     setEditingCompetencyId(null);
-    setCompSubjectId(allowedSubjectIds[0] || 'subj-mat');
+    const subId = (selectedSubjectId && allowedSubjectIds.includes(selectedSubjectId)) ? selectedSubjectId : (allowedSubjectIds[0] || subjects[0]?.id || '');
+    setCompSubjectId(subId);
     setCompCode(`KD-3.${competencies.filter(c => c.subjectId === selectedSubjectId).length + 1}`);
     setCompStatement('');
     setCompGrade('');
@@ -2943,7 +2952,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Pusat Analisis Nilai &amp; Butir Soal</h2>
                         <span className="bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 text-xs font-bold px-2.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 flex items-center space-x-1">
                           <BookOpen className="w-3.5 h-3.5" />
-                          <span>Mapel: {activeSubjectObj?.name || 'Matematika'}</span>
+                          <span>Mapel: {activeSubjectObj?.name || 'Mata Pelajaran'}</span>
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -3044,7 +3053,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             <label className="text-slate-500 dark:text-slate-400 font-medium block mb-1">Mata Pelajaran (Diampu)</label>
                             <div className="w-full bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-lg px-2.5 py-1.5 text-indigo-900 dark:text-indigo-200 font-bold flex items-center space-x-1.5">
                               <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
-                              <span className="truncate">{activeSubjectObj?.name || 'Matematika'}</span>
+                              <span className="truncate">{activeSubjectObj?.name || 'Mata Pelajaran'}</span>
                             </div>
                           </div>
 
@@ -3846,7 +3855,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                           <div className="flex items-center space-x-1.5 bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 rounded-lg px-2.5 py-1 text-indigo-900 dark:text-indigo-200 font-bold ml-1">
                             <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                            <span>{activeSubjectObj?.name || 'Matematika'}</span>
+                            <span>{activeSubjectObj?.name || 'Mata Pelajaran'}</span>
                           </div>
 
                           <span className="text-slate-500 dark:text-slate-400 font-medium ml-2">Kelas / Rombel:</span>
@@ -5222,8 +5231,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <button
                           onClick={() => {
                             setEditingExplanationId(null);
-                            setExpTitle(`Pembahasan ${activeSubject?.name || 'Matematika'} — Solusi Mandiri`);
-                            setExpSubjectId(selectedSubjectId !== 'ALL' ? selectedSubjectId : 'subj-mat');
+                            setExpTitle(`Pembahasan ${activeSubject?.name || 'Mata Pelajaran'} — Solusi Mandiri`);
+                            setExpSubjectId(selectedSubjectId && selectedSubjectId !== 'ALL' && allowedSubjectIds.includes(selectedSubjectId) ? selectedSubjectId : (allowedSubjectIds[0] || subjects[0]?.id || ''));
                             setExpTryoutId(selectedTryoutId !== 'ALL' ? selectedTryoutId : tryouts[0]?.id || '');
                             setExpQuestionId('GENERAL');
                             setExpContentText('');
@@ -5536,7 +5545,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                       onEdit={() => {
                                         setEditingExplanationId(exp.id);
                                         setExpTitle(exp.title);
-                                        setExpSubjectId(exp.subjectId || selectedSubjectId || 'subj-mat');
+                                        setExpSubjectId(exp.subjectId || selectedSubjectId || allowedSubjectIds[0] || subjects[0]?.id || '');
                                         setExpTryoutId(exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '');
                                         setExpQuestionId(exp.questionId || 'GENERAL');
                                         setExpContentText(exp.contentText);
@@ -5702,7 +5711,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                         onClick={() => {
                                           setEditingExplanationId(exp.id);
                                           setExpTitle(exp.title);
-                                          setExpSubjectId(exp.subjectId || selectedSubjectId || 'subj-mat');
+                                          setExpSubjectId(exp.subjectId || selectedSubjectId || allowedSubjectIds[0] || subjects[0]?.id || '');
                                           setExpTryoutId(exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '');
                                           setExpQuestionId(exp.questionId || 'GENERAL');
                                           setExpContentText(exp.contentText);
@@ -7904,7 +7913,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     onChange={e => setExpSubjectId(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 font-medium"
                   >
-                    {subjects.map(s => (
+                    {(permittedSubjects.length > 0 ? permittedSubjects : subjects).map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                     ))}
                   </select>
