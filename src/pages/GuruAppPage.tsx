@@ -587,6 +587,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       if (validationResult.summary.answerKeyDetected) {
         triggerToast(`Kunci Jawaban Resmi diperbarui dari respon "${validationResult.summary.answerKeyStudentName}" (${validationResult.summary.answerKeyExtractedCount} butir soal).`);
         setTryouts(dbService.getTryouts());
+        setQuestions(dbService.getQuestions());
       }
 
       const importableItems = validationResult.previewItems.filter(
@@ -663,9 +664,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           const lk = k.toLowerCase();
           return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk');
         });
+        const nameEntry = Object.entries(r).find(([k]) => {
+          const lk = k.toLowerCase();
+          return lk === 'nama' || lk.includes('nama');
+        });
         const nisnVal = nisnEntry ? nisnEntry[1]?.trim() : '';
+        const nameVal = nameEntry ? nameEntry[1]?.trim() : '';
+
+        if (/kunci|answer\s*key|master\s*key/i.test(nameVal) || /kunci|answer\s*key|master\s*key/i.test(nisnVal) || nisnVal === '0000000000' || nisnVal === '9999999999') {
+          return true;
+        }
         if (!nisnVal) return false;
-        const st = allDbStudents.find(s => s.nisn === nisnVal);
+        const st = allDbStudents.find(s => s.nisn === nisnVal || String(s.nisn).trim() === String(nisnVal).trim());
         return st?.isAnswerKeyAccount;
       }) || null;
 
@@ -747,9 +757,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           const lk = k.toLowerCase();
           return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk');
         });
+        const nameEntry = Object.entries(r).find(([k]) => {
+          const lk = k.toLowerCase();
+          return lk === 'nama' || lk.includes('nama');
+        });
         const nisnVal = nisnEntry ? nisnEntry[1]?.trim() : '';
+        const nameVal = nameEntry ? nameEntry[1]?.trim() : '';
+
+        if (/kunci|answer\s*key|master\s*key/i.test(nameVal) || /kunci|answer\s*key|master\s*key/i.test(nisnVal) || nisnVal === '0000000000' || nisnVal === '9999999999') {
+          return true;
+        }
         if (!nisnVal) return false;
-        const st = allDbStudents.find(s => s.nisn === nisnVal);
+        const st = allDbStudents.find(s => s.nisn === nisnVal || String(s.nisn).trim() === String(nisnVal).trim());
         return st?.isAnswerKeyAccount;
       }) || null;
 

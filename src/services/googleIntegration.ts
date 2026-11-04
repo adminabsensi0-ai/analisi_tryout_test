@@ -515,7 +515,7 @@ export class GoogleIntegrationService {
       };
     }
 
-    // 0. Pre-scan for Official Answer Key row (identified by isAnswerKeyAccount === true)
+    // 0. Pre-scan for Official Answer Key row (identified by isAnswerKeyAccount === true, or name/NISN indicators)
     const allDbStudents = dbService.getStudents();
     let detectedKeyRow: Record<string, string> | null = null;
     let detectedKeyStudent: Student | null = null;
@@ -523,11 +523,31 @@ export class GoogleIntegrationService {
 
     for (const row of parsedRows) {
       const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
-      if (!rawNisn) continue;
-      const matched = students.find(s => s.nisn === rawNisn) || allDbStudents.find(s => s.nisn === rawNisn);
-      if (matched?.isAnswerKeyAccount) {
+      const rawName = (row[mappingConfig.nameColumn] || '').trim();
+      if (!rawNisn && !rawName) continue;
+
+      // 1. Cek kecocokan NISN terhadap akun siswa di database yang bertanda isAnswerKeyAccount
+      const matched = rawNisn
+        ? (students.find(s => s.nisn === rawNisn || s.nisn.trim() === rawNisn || String(s.nisn).trim() === String(rawNisn).trim())
+           || allDbStudents.find(s => s.nisn === rawNisn || s.nisn.trim() === rawNisn || String(s.nisn).trim() === String(rawNisn).trim()))
+        : null;
+
+      // 2. Cek apakah nama atau NISN secara eksplisit menandakan Kunci Jawaban
+      const isKeyByName = /kunci|answer\s*key|master\s*key/i.test(rawName);
+      const isKeyByNisn = /kunci|answer\s*key|master\s*key/i.test(rawNisn) || rawNisn === '0000000000' || rawNisn === '9999999999';
+
+      if (matched?.isAnswerKeyAccount || isKeyByName || isKeyByNisn) {
         detectedKeyRow = row;
-        detectedKeyStudent = matched;
+        detectedKeyStudent = matched || {
+          id: 'temp-key-account',
+          nisn: rawNisn || '0000000000',
+          nis: 'KUNCI',
+          name: rawName || 'KUNCI JAWABAN',
+          gender: 'L',
+          classId: '',
+          targetScore: 100,
+          isAnswerKeyAccount: true,
+        };
         break;
       }
     }
@@ -582,9 +602,15 @@ export class GoogleIntegrationService {
 
     // Filter out the answer key account row from student preview / score calculation
     const studentRows = parsedRows.filter(row => {
+      if (detectedKeyRow && row === detectedKeyRow) return false;
       const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
+      const rawName = (row[mappingConfig.nameColumn] || '').trim();
+      if (/kunci|answer\s*key|master\s*key/i.test(rawName) || /kunci|answer\s*key|master\s*key/i.test(rawNisn) || rawNisn === '0000000000' || rawNisn === '9999999999') {
+        return false;
+      }
       if (!rawNisn) return true;
-      const matched = students.find(s => s.nisn === rawNisn) || allDbStudents.find(s => s.nisn === rawNisn);
+      const matched = students.find(s => s.nisn === rawNisn || String(s.nisn).trim() === String(rawNisn).trim())
+                   || allDbStudents.find(s => s.nisn === rawNisn || String(s.nisn).trim() === String(rawNisn).trim());
       return !matched?.isAnswerKeyAccount;
     });
 
@@ -607,12 +633,25 @@ export class GoogleIntegrationService {
       const rowNumber = index + 1;
       const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
 
-      // Extract raw GForm score
+      // Extract raw GForm score with smart auto-normalization (supporting X/Y format)
       let rawGFormScoreNum = 0;
       if (mappingConfig.scoreColumn && row[mappingConfig.scoreColumn]) {
         const rawScoreStr = row[mappingConfig.scoreColumn].trim();
-        const parsed = parseFloat(rawScoreStr.split('/')[0].trim());
-        rawGFormScoreNum = isNaN(parsed) ? 0 : parsed;
+        if (rawScoreStr.includes('/')) {
+          const parts = rawScoreStr.split('/');
+          const num = parseFloat(parts[0].trim());
+          const denom = parseFloat(parts[1].trim());
+          if (!isNaN(num) && !isNaN(denom) && denom > 0) {
+            // Normalisasi otomatis pecahan Google Form (misal "35 / 40") ke skala maxScore (skala 100)
+            const maxScore = tryout.scoringConfig?.maxScore || 100;
+            rawGFormScoreNum = Math.round(((num / denom) * maxScore) * 100) / 100;
+          } else {
+            rawGFormScoreNum = isNaN(num) ? 0 : num;
+          }
+        } else {
+          const parsed = parseFloat(rawScoreStr.trim());
+          rawGFormScoreNum = isNaN(parsed) ? 0 : parsed;
+        }
       }
 
       // Check NISN format (Indonesian standard: 10 digits numeric)
