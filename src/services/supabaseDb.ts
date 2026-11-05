@@ -12,7 +12,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { isValidUuid } from '../utils/idUtils';
 import {
-  User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout, SchoolProfile, Response, Score
+  User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout, SchoolProfile, Response, Score, Material, Competency, Question, Answer
 } from '../types/database';
 
 // ============================================================
@@ -360,6 +360,133 @@ function fromSupabaseScore(row: Record<string, unknown>): Score {
   };
 }
 
+function toSupabaseMaterial(m: Material): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    subject_id: m.subjectId,
+    code: m.code.trim(),
+    title: m.title.trim(),
+    description: m.description || null,
+    google_form_url: m.googleFormUrl || null,
+  };
+  if (isValidUuid(m.id)) payload.id = m.id;
+  return payload;
+}
+
+function fromSupabaseMaterial(row: Record<string, unknown>): Material {
+  return {
+    id: String(row.id),
+    subjectId: String(row.subject_id),
+    code: String(row.code),
+    title: String(row.title),
+    description: String(row.description || ''),
+    googleFormUrl: row.google_form_url ? String(row.google_form_url) : undefined,
+  };
+}
+
+function toSupabaseCompetency(c: Competency): Record<string, unknown> {
+  let gl = c.gradeLevel || 'X';
+  if (gl === '10') gl = 'X';
+  else if (gl === '11') gl = 'XI';
+  else if (gl === '12') gl = 'XII';
+  else if (!['X', 'XI', 'XII'].includes(gl)) gl = 'X';
+
+  const payload: Record<string, unknown> = {
+    subject_id: c.subjectId,
+    code: c.code.trim(),
+    statement: c.statement.trim(),
+    grade_level: gl,
+  };
+  if (isValidUuid(c.id)) payload.id = c.id;
+  return payload;
+}
+
+function fromSupabaseCompetency(row: Record<string, unknown>): Competency {
+  return {
+    id: String(row.id),
+    subjectId: String(row.subject_id),
+    code: String(row.code),
+    statement: String(row.statement),
+    gradeLevel: String(row.grade_level || 'X'),
+  };
+}
+
+function toSupabaseQuestion(q: Question): Record<string, unknown> {
+  const corr = (q.correctAnswer || 'A').toUpperCase().trim().slice(0, 1);
+  const validCorr = ['A', 'B', 'C', 'D', 'E'].includes(corr) ? corr : 'A';
+  const payload: Record<string, unknown> = {
+    unique_code: q.uniqueCode.trim(),
+    question_number: q.questionNumber || null,
+    subject_id: q.subjectId,
+    material_id: isValidUuid(q.materialId) ? q.materialId : null,
+    competency_id: isValidUuid(q.competencyId) ? q.competencyId : null,
+    question_text: q.questionText || '',
+    options: Array.isArray(q.options) ? q.options : [],
+    correct_answer: validCorr,
+    weight: q.weight ?? 1.0,
+    cognitive_level: q.cognitiveLevel || 'C3',
+    status: q.status || 'ACTIVE',
+  };
+  if (isValidUuid(q.id)) {
+    payload.id = q.id;
+  }
+  return payload;
+}
+
+function fromSupabaseQuestion(row: Record<string, unknown>): Question {
+  return {
+    id: String(row.id),
+    uniqueCode: String(row.unique_code),
+    questionNumber: row.question_number ? Number(row.question_number) : undefined,
+    subjectId: String(row.subject_id),
+    materialId: String(row.material_id),
+    competencyId: String(row.competency_id),
+    questionText: String(row.question_text || ''),
+    options: Array.isArray(row.options) ? (row.options as any) : [],
+    correctAnswer: String(row.correct_answer || 'A').toUpperCase(),
+    weight: Number(row.weight) || 1,
+    cognitiveLevel: (row.cognitive_level as any) || undefined,
+    status: (row.status as any) || 'ACTIVE',
+  };
+}
+
+function toSupabaseAnswer(a: Answer): Record<string, unknown> {
+  const ansLetter = a.studentAnswer ? a.studentAnswer.trim().toUpperCase().slice(0, 1) : null;
+  const validAns = (ansLetter && ['A', 'B', 'C', 'D', 'E'].includes(ansLetter)) ? ansLetter : null;
+  const corrLetter = a.correctAnswer ? a.correctAnswer.trim().toUpperCase().slice(0, 1) : 'A';
+  const validCorr = ['A', 'B', 'C', 'D', 'E'].includes(corrLetter) ? corrLetter : 'A';
+
+  const payload: Record<string, unknown> = {
+    response_id: a.responseId,
+    student_id: a.studentId,
+    tryout_id: a.tryoutId,
+    question_id: a.questionId,
+    student_answer: validAns,
+    correct_answer: validCorr,
+    is_correct: Boolean(a.isCorrect),
+    score: Number(a.score) || 0,
+    submitted_at: a.submittedAt || new Date().toISOString(),
+  };
+  if (isValidUuid(a.id)) {
+    payload.id = a.id;
+  }
+  return payload;
+}
+
+function fromSupabaseAnswer(row: Record<string, unknown>): Answer {
+  return {
+    id: String(row.id),
+    responseId: String(row.response_id),
+    studentId: String(row.student_id),
+    tryoutId: String(row.tryout_id),
+    questionId: String(row.question_id),
+    studentAnswer: row.student_answer ? String(row.student_answer) : '',
+    correctAnswer: String(row.correct_answer || ''),
+    isCorrect: Boolean(row.is_correct),
+    score: Number(row.score) || 0,
+    submittedAt: String(row.submitted_at || new Date().toISOString()),
+  };
+}
+
 // ============================================================
 // CORE SYNC SERVICE
 // ============================================================
@@ -371,8 +498,12 @@ export interface SupabaseCoreState {
   classes: ClassRoom[];
   academicYears: AcademicYear[];
   subjects: Subject[];
+  materials?: Material[];
+  competencies?: Competency[];
   examPackages?: ExamPackage[];
   tryouts?: Tryout[];
+  questions?: Question[];
+  answers?: Answer[];
   schoolProfile?: SchoolProfile;
   responses?: Response[];
   scores?: Score[];
@@ -536,8 +667,12 @@ class SupabaseDbService {
     if (!this.isAvailable() || !supabase) return null;
 
     try {
-      // Fetch semua data secara paralel
-      const [ayRes, classRes, subjectRes, userRes, teacherRes, studentRes, pkgRes, pkgSubRes, toRes, spRes, respRes, scRes] = await Promise.all([
+      // Fetch semua data secara paralel termasuk materi, KD, soal, dan jawaban
+      const [
+        ayRes, classRes, subjectRes, userRes, teacherRes, studentRes,
+        pkgRes, pkgSubRes, toRes, spRes, respRes, scRes,
+        matRes, compRes, qRes, ansRes
+      ] = await Promise.all([
         supabase.from('academic_years').select('*'),
         supabase.from('classes').select('*'),
         supabase.from('subjects').select('*'),
@@ -548,8 +683,12 @@ class SupabaseDbService {
         supabase.from('exam_package_subjects').select('*'),
         supabase.from('tryouts').select('*'),
         supabase.from('school_profile').select('*').limit(1).maybeSingle(),
-        supabase.from('responses').select('*'),
-        supabase.from('scores').select('*'),
+        supabase.from('responses').select('*').limit(50000),
+        supabase.from('scores').select('*').limit(50000),
+        supabase.from('materials').select('*'),
+        supabase.from('competencies').select('*'),
+        supabase.from('questions').select('*').limit(50000),
+        supabase.from('answers').select('*').limit(50000),
       ]);
 
       if (ayRes.error) throw new Error('academic_years: ' + ayRes.error.message);
@@ -667,13 +806,22 @@ class SupabaseDbService {
       const responses: Response[] = (respRes?.data || []).map((row: any) => fromSupabaseResponse(row));
       const scores: Score[] = (scRes?.data || []).map((row: any) => fromSupabaseScore(row));
 
+      const materials: Material[] = (matRes?.data || []).map(fromSupabaseMaterial);
+      const competencies: Competency[] = (compRes?.data || []).map(fromSupabaseCompetency);
+      const questions: Question[] = (qRes?.data || []).map(fromSupabaseQuestion);
+      const answers: Answer[] = (ansRes?.data || []).map(fromSupabaseAnswer);
+
       const schoolProfile: SchoolProfile | undefined = spRes?.data
         ? fromSupabaseSchoolProfile(spRes.data as Record<string, unknown>)
         : undefined;
 
-      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes, ${examPackages.length} packages, ${tryouts.length} tryouts, ${responses.length} responses, ${scores.length} scores${schoolProfile ? ', school profile' : ''}`);
+      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes, ${examPackages.length} packages, ${tryouts.length} tryouts, ${questions.length} questions, ${answers.length} answers, ${responses.length} responses, ${scores.length} scores${schoolProfile ? ', school profile' : ''}`);
 
-      return { users, teachers, students, classes, academicYears, subjects, examPackages, tryouts, schoolProfile, responses, scores };
+      return {
+        users, teachers, students, classes, academicYears, subjects,
+        materials, competencies, questions, answers,
+        examPackages, tryouts, schoolProfile, responses, scores
+      };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('fetchCoreState failed: ' + msg, 'warn');
@@ -1031,20 +1179,45 @@ class SupabaseDbService {
   ): Promise<void> {
     if (!this.isAvailable() || !supabase) return;
     try {
-      if (responses.length > 0) {
-        const respPayloads = responses.map(r => ({
-          id: isValidUuid(r.id) ? r.id : undefined,
-          tryout_id: r.tryoutId,
-          student_id: r.studentId,
-          nisn_input: r.nisnInput,
-          raw_score_gform: r.rawScoreGForm || 0,
-          submitted_at: r.submittedAt || new Date().toISOString(),
-        })).filter(r => isValidUuid(r.tryout_id) && isValidUuid(r.student_id));
+      // 1. Siapkan response payloads
+      const respPayloads = responses.map(r => ({
+        id: isValidUuid(r.id) ? r.id : undefined,
+        tryout_id: r.tryoutId,
+        student_id: r.studentId,
+        nisn_input: r.nisnInput || 'EXTERNAL',
+        raw_score_gform: r.rawScoreGForm || 0,
+        submitted_at: r.submittedAt || new Date().toISOString(),
+      })).filter(r => isValidUuid(r.tryout_id) && isValidUuid(r.student_id));
 
-        if (respPayloads.length > 0) {
+      // 2. Untuk skor eksternal yang belum punya response_id, buatkan placeholder response
+      // agar tidak melanggar foreign key NOT NULL constraint pada PostgreSQL
+      const scoresNeedingResp = scores.filter(s => !s.responseId || !isValidUuid(s.responseId));
+      for (const sc of scoresNeedingResp) {
+        if (!isValidUuid(sc.tryoutId) || !isValidUuid(sc.studentId)) continue;
+        const existingResp = respPayloads.find(r => r.tryout_id === sc.tryoutId && r.student_id === sc.studentId);
+        if (existingResp && existingResp.id) {
+          sc.responseId = existingResp.id;
+        } else {
+          const newRespId = (sc.id && isValidUuid(sc.id)) ? sc.id : undefined;
+          const assignedId = newRespId || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined);
+          sc.responseId = assignedId;
+          respPayloads.push({
+            id: assignedId,
+            tryout_id: sc.tryoutId,
+            student_id: sc.studentId,
+            nisn_input: 'EXTERNAL',
+            raw_score_gform: sc.calculatedScore || 0,
+            submitted_at: sc.createdAt || new Date().toISOString(),
+          });
+        }
+      }
+
+      if (respPayloads.length > 0) {
+        for (let i = 0; i < respPayloads.length; i += 200) {
+          const chunk = respPayloads.slice(i, i + 200);
           const { error: rErr } = await supabase
             .from('responses')
-            .upsert(respPayloads, { onConflict: 'tryout_id,student_id' });
+            .upsert(chunk, { onConflict: 'tryout_id,student_id' });
           if (rErr) this.log('syncResponses error: ' + rErr.message, 'warn');
         }
       }
@@ -1064,13 +1237,16 @@ class SupabaseDbService {
           total_incorrect: s.totalIncorrect || 0,
           total_unanswered: s.totalUnanswered || 0,
           created_at: s.createdAt || new Date().toISOString(),
-        })).filter(s => isValidUuid(s.tryout_id) && isValidUuid(s.student_id) && s.response_id);
+        })).filter(s => isValidUuid(s.tryout_id) && isValidUuid(s.student_id));
 
         if (scorePayloads.length > 0) {
-          const { error: sErr } = await supabase
-            .from('scores')
-            .upsert(scorePayloads, { onConflict: 'response_id' });
-          if (sErr) this.log('syncScores error: ' + sErr.message, 'warn');
+          for (let i = 0; i < scorePayloads.length; i += 200) {
+            const chunk = scorePayloads.slice(i, i + 200);
+            const { error: sErr } = await supabase
+              .from('scores')
+              .upsert(chunk, { onConflict: 'response_id' });
+            if (sErr) this.log('syncScores error: ' + sErr.message, 'warn');
+          }
         }
       }
     } catch (err: unknown) {
@@ -1079,6 +1255,104 @@ class SupabaseDbService {
     }
   }
 
+  public async syncMaterial(m: Material): Promise<string | null> {
+    if (!this.isAvailable() || !supabase) return null;
+    try {
+      const payload = toSupabaseMaterial(m);
+      const { data, error } = await supabase
+        .from('materials')
+        .upsert(payload, { onConflict: 'id' })
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        this.log('syncMaterial error: ' + error.message, 'warn');
+        return null;
+      }
+      return data?.id ? String(data.id) : null;
+    } catch (err: unknown) {
+      this.log('syncMaterial exception: ' + String(err), 'warn');
+      return null;
+    }
+  }
+
+  public async syncCompetency(c: Competency): Promise<string | null> {
+    if (!this.isAvailable() || !supabase) return null;
+    try {
+      const payload = toSupabaseCompetency(c);
+      const { data, error } = await supabase
+        .from('competencies')
+        .upsert(payload, { onConflict: 'id' })
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        this.log('syncCompetency error: ' + error.message, 'warn');
+        return null;
+      }
+      return data?.id ? String(data.id) : null;
+    } catch (err: unknown) {
+      this.log('syncCompetency exception: ' + String(err), 'warn');
+      return null;
+    }
+  }
+
+  public async syncQuestionsBatch(questions: Question[]): Promise<void> {
+    if (!this.isAvailable() || !supabase || questions.length === 0) return;
+    try {
+      const payloads = questions
+        .filter(q => q.uniqueCode && q.subjectId && isValidUuid(q.subjectId))
+        .map(q => toSupabaseQuestion(q));
+
+      if (payloads.length === 0) return;
+
+      for (let i = 0; i < payloads.length; i += 100) {
+        const chunk = payloads.slice(i, i + 100);
+        const { error } = await supabase
+          .from('questions')
+          .upsert(chunk, { onConflict: 'unique_code' });
+        if (error) this.log('syncQuestionsBatch error: ' + error.message, 'warn');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('syncQuestionsBatch exception: ' + msg, 'warn');
+    }
+  }
+
+  public async removeQuestionsBatch(ids: string[]): Promise<void> {
+    if (!this.isAvailable() || !supabase || ids.length === 0) return;
+    try {
+      const validUuids = ids.filter(isValidUuid);
+      if (validUuids.length === 0) return;
+      const { error } = await supabase
+        .from('questions')
+        .delete()
+        .in('id', validUuids);
+      if (error) this.log('removeQuestionsBatch error: ' + error.message, 'warn');
+    } catch (err: unknown) {
+      this.log('removeQuestionsBatch exception: ' + String(err), 'warn');
+    }
+  }
+
+  public async syncAnswersBatch(answers: Answer[]): Promise<void> {
+    if (!this.isAvailable() || !supabase || answers.length === 0) return;
+    try {
+      const payloads = answers
+        .filter(a => isValidUuid(a.responseId) && isValidUuid(a.studentId) && isValidUuid(a.tryoutId) && isValidUuid(a.questionId))
+        .map(a => toSupabaseAnswer(a));
+
+      if (payloads.length === 0) return;
+
+      for (let i = 0; i < payloads.length; i += 200) {
+        const chunk = payloads.slice(i, i + 200);
+        const { error } = await supabase
+          .from('answers')
+          .upsert(chunk, { onConflict: 'id' });
+        if (error) this.log('syncAnswersBatch error: ' + error.message, 'warn');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('syncAnswersBatch exception: ' + msg, 'warn');
+    }
+  }
   // ----------------------------------------------------------
   // DELETE METHODS
   // ----------------------------------------------------------
@@ -1220,7 +1494,8 @@ class SupabaseDbService {
 
     const TABLES = [
       'teachers', 'students', 'classes', 'subjects', 'academic_years', 'users',
-      'exam_packages', 'exam_package_subjects', 'tryouts', 'responses', 'scores', 'school_profile'
+      'exam_packages', 'exam_package_subjects', 'tryouts', 'responses', 'scores', 'school_profile',
+      'questions', 'answers', 'materials', 'competencies'
     ];
     const channel = (supabase as any).channel('db-realtime-sync');
 
@@ -1263,6 +1538,10 @@ class SupabaseDbService {
     classes: ClassRoom[];
     academicYears: AcademicYear[];
     subjects: Subject[];
+    materials?: Material[];
+    competencies?: Competency[];
+    questions?: Question[];
+    answers?: Answer[];
     examPackages?: ExamPackage[];
     tryouts?: Tryout[];
     schoolProfile?: SchoolProfile;
@@ -1367,6 +1646,26 @@ class SupabaseDbService {
           );
         }
       }
+    }
+
+    // 7c. Materials & Competencies
+    if (state.materials && state.materials.length > 0) {
+      for (const m of state.materials) {
+        await attempt('Material ' + m.code, async () => { await this.syncMaterial(m); });
+      }
+    }
+    if (state.competencies && state.competencies.length > 0) {
+      for (const comp of state.competencies) {
+        await attempt('Competency ' + comp.code, async () => { await this.syncCompetency(comp); });
+      }
+    }
+
+    // 7d. Questions & Answers
+    if (state.questions && state.questions.length > 0) {
+      await attempt('Questions (' + state.questions.length + ')', () => this.syncQuestionsBatch(state.questions!));
+    }
+    if (state.answers && state.answers.length > 0) {
+      await attempt('Answers (' + state.answers.length + ')', () => this.syncAnswersBatch(state.answers!));
     }
 
     // 8. School Profile (jika ada)

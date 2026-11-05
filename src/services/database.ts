@@ -68,6 +68,7 @@ export class DatabaseService {
 
   // Supabase cloud sync state
   private supabaseSyncEnabled = false;
+  private isFreshDevice = false;
   private supabaseInitDone = false;
   private realtimeChannel: unknown = null;
   private syncInterval: ReturnType<typeof setInterval> | null = null;
@@ -159,6 +160,51 @@ export class DatabaseService {
         changed = true;
       }
     });
+
+    // 4. Standarisasi Materials ke UUID
+    if (this.state.materials) {
+      this.state.materials.forEach(m => {
+        if (!isValidUuid(m.id)) {
+          const oldId = m.id;
+          const newUuid = generateUuid();
+          m.id = newUuid;
+          changed = true;
+          this.state.questions.forEach(q => {
+            if (q.materialId === oldId) q.materialId = newUuid;
+          });
+        }
+      });
+    }
+
+    // 5. Standarisasi Competencies ke UUID
+    if (this.state.competencies) {
+      this.state.competencies.forEach(c => {
+        if (!isValidUuid(c.id)) {
+          const oldId = c.id;
+          const newUuid = generateUuid();
+          c.id = newUuid;
+          changed = true;
+          this.state.questions.forEach(q => {
+            if (q.competencyId === oldId) q.competencyId = newUuid;
+          });
+        }
+      });
+    }
+
+    // 6. Standarisasi Questions ke UUID
+    if (this.state.questions) {
+      this.state.questions.forEach(q => {
+        if (!isValidUuid(q.id)) {
+          const oldId = q.id;
+          const newUuid = generateUuid();
+          q.id = newUuid;
+          changed = true;
+          this.state.answers.forEach(a => {
+            if (a.questionId === oldId) a.questionId = newUuid;
+          });
+        }
+      });
+    }
 
     if (changed) {
       this.persistState();
@@ -756,6 +802,7 @@ export class DatabaseService {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
+        this.isFreshDevice = false;
         const parsed = JSON.parse(saved);
 
         // Ensure initial users/teachers exist without overwriting updated roles
@@ -854,6 +901,7 @@ export class DatabaseService {
       console.warn('Failed to load DB from localStorage, falling back to initial seed:', err);
     }
 
+    this.isFreshDevice = true;
     const defaultState: DatabaseState = {
       users: INITIAL_USERS,
       teachers: INITIAL_TEACHERS,
