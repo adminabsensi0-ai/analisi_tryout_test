@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   BookOpen, BarChart3, FileSpreadsheet, Plus, CheckCircle,
   AlertTriangle, Upload, Eye, FileText, Download,
@@ -801,18 +801,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         });
       }
 
-      const nisnCol = (headers.find(h => {
-        const lk = h.toLowerCase().trim();
-        return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk siswa nasional');
-      }) || headers.find(h => {
-        const lk = h.toLowerCase().trim();
-        return lk === 'nis' || lk.includes('nomor induk');
-      })) || headers[0] || '';
-      const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
-      const scoreCol = headers.find(h => {
-        const lk = h.toLowerCase().trim();
-        return lk === 'skor' || lk === 'score' || lk === 'nilai' || lk === 'poin' || lk.includes('total point') || lk.includes('total poin') || lk.includes('nilai akhir') || lk.includes('skor') || lk.includes('score') || lk.includes('nilai') || lk.includes('poin');
-      }) || '';
+      const nisnCol = GoogleIntegrationService.autoDetectNisnColumn(headers, rows, allDbStudents);
+      const nameCol = GoogleIntegrationService.autoDetectNameColumn(headers);
+      const scoreCol = GoogleIntegrationService.autoDetectScoreColumn(headers);
 
       setSheetSyncStatus(prev => ({
         ...prev,
@@ -900,18 +891,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       // Jika sudah ada konfigurasi kolom tersimpan → langsung sync tanpa modal
       if (tryout.selectedQuestionColumns && tryout.selectedQuestionColumns.length > 0) {
         const savedCols = tryout.selectedQuestionColumns;
-        const nisnCol = (headers.find(h => {
-        const lk = h.toLowerCase().trim();
-        return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk siswa nasional');
-      }) || headers.find(h => {
-        const lk = h.toLowerCase().trim();
-        return lk === 'nis' || lk.includes('nomor induk');
-      })) || headers[0] || '';
-        const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
-        const scoreCol = headers.find(h => {
-        const lk = h.toLowerCase().trim();
-        return lk === 'skor' || lk === 'score' || lk === 'nilai' || lk === 'poin' || lk.includes('total point') || lk.includes('total poin') || lk.includes('nilai akhir') || lk.includes('skor') || lk.includes('score') || lk.includes('nilai') || lk.includes('poin');
-      }) || '';
+        const nisnCol = GoogleIntegrationService.autoDetectNisnColumn(headers, rows, allDbStudents);
+        const nameCol = GoogleIntegrationService.autoDetectNameColumn(headers);
+        const scoreCol = GoogleIntegrationService.autoDetectScoreColumn(headers);
         await executeSheetSync(tryout, headers, rows, savedCols, nisnCol, nameCol, scoreCol, detectedKeyRow);
         return;
       }
@@ -923,18 +905,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           smartPreselect[h] = !GoogleIntegrationService.isMetadataHeader(h);
         });
 
-        const nisnCol = (headers.find(h => {
-        const lk = h.toLowerCase().trim();
-        return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk siswa nasional');
-      }) || headers.find(h => {
-        const lk = h.toLowerCase().trim();
-        return lk === 'nis' || lk.includes('nomor induk');
-      })) || headers[0] || '';
-        const nameCol = headers.find(h => h.toLowerCase().includes('nama')) || '';
-        const scoreCol = headers.find(h => {
-        const lk = h.toLowerCase().trim();
-        return lk === 'skor' || lk === 'score' || lk === 'nilai' || lk === 'poin' || lk.includes('total point') || lk.includes('total poin') || lk.includes('nilai akhir') || lk.includes('skor') || lk.includes('score') || lk.includes('nilai') || lk.includes('poin');
-      }) || '';
+        const nisnCol = GoogleIntegrationService.autoDetectNisnColumn(headers, rows, allDbStudents);
+        const nameCol = GoogleIntegrationService.autoDetectNameColumn(headers);
+        const scoreCol = GoogleIntegrationService.autoDetectScoreColumn(headers);
 
         setSheetSyncStatus(prev => ({
           ...prev,
@@ -9375,23 +9348,139 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
               </button>
             </div>
 
-            {/* Panel Identitas Terdeteksi */}
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-2 text-xs shrink-0">
-              <p className="font-semibold text-slate-700 dark:text-slate-300">Kolom Identitas Terdeteksi (tidak dianalisis sebagai soal):</p>
-              <div className="flex flex-wrap gap-2">
-                {[columnSelectorNisnCol, columnSelectorNameCol, columnSelectorScoreCol].filter(Boolean).map(col => (
-                  <span key={col} className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono">{col}</span>
-                ))}
-                {![columnSelectorNisnCol, columnSelectorNameCol, columnSelectorScoreCol].some(Boolean) && (
-                  <span className="text-slate-400 italic">Tidak ada kolom identitas yang terdeteksi otomatis</span>
-                )}
-              </div>
-              {columnSelectorKeyRow && (
-                <p className="text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1">
-                  <CheckCircle className="w-3.5 h-3.5" />
-                  Baris Kunci Jawaban Resmi ditemukan. Kunci akan diisi otomatis saat konfirmasi.
+            {/* Panel Interaktif Pemetaan Identitas Siswa */}
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-3 shrink-0">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                  <span>Pemetaan Kolom Identitas Siswa & Kunci Jawaban</span>
                 </p>
-              )}
+                <span className="text-[11px] text-slate-500">
+                  Kolom yang dipilih sebagai identitas otomatis dikecualikan dari soal
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Dropdown Kolom NISN */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Kolom NISN Siswa <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={columnSelectorNisnCol}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setColumnSelectorNisnCol(val);
+                      if (val) setColumnSelectorChecked(prev => ({ ...prev, [val]: false }));
+                    }}
+                    className="w-full text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 font-medium text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                  >
+                    <option value="">-- Pilih Kolom NISN --</option>
+                    {columnSelectorHeaders.map(h => (
+                      <option key={h} value={h}>
+                        {h} {columnSelectorRows[0]?.[h] ? `(Contoh: ${columnSelectorRows[0][h]})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Dropdown Kolom Nama */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Kolom Nama Siswa
+                  </label>
+                  <select
+                    value={columnSelectorNameCol}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setColumnSelectorNameCol(val);
+                      if (val) setColumnSelectorChecked(prev => ({ ...prev, [val]: false }));
+                    }}
+                    className="w-full text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 font-medium text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                  >
+                    <option value="">-- Pilih Kolom Nama --</option>
+                    {columnSelectorHeaders.map(h => (
+                      <option key={h} value={h}>
+                        {h} {columnSelectorRows[0]?.[h] ? `(Contoh: ${columnSelectorRows[0][h]})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Dropdown Kolom Skor GForm */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Kolom Skor GForm (Opsional)
+                  </label>
+                  <select
+                    value={columnSelectorScoreCol}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setColumnSelectorScoreCol(val);
+                      if (val) setColumnSelectorChecked(prev => ({ ...prev, [val]: false }));
+                    }}
+                    className="w-full text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 font-medium text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                  >
+                    <option value="">(Tidak Ada / Dihitung Otomatis)</option>
+                    {columnSelectorHeaders.map(h => (
+                      <option key={h} value={h}>
+                        {h} {columnSelectorRows[0]?.[h] ? `(Contoh: ${columnSelectorRows[0][h]})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Status Validasi Real-time di dalam Modal */}
+              {(() => {
+                const allDbStudents = dbService.getStudents();
+                const currentKeyRow = columnSelectorRows.find(r => {
+                  const rawNisn = columnSelectorNisnCol ? r[columnSelectorNisnCol]?.trim() : '';
+                  const rawName = columnSelectorNameCol ? r[columnSelectorNameCol]?.trim() : '';
+                  if (/kunci|answer\s*key|master\s*key/i.test(rawName) || /kunci|answer\s*key|master\s*key/i.test(rawNisn) || rawNisn === '0000000000' || rawNisn === '9999999999') {
+                    return true;
+                  }
+                  if (!rawNisn && !rawName) return false;
+                  return allDbStudents.some(s =>
+                    s.isAnswerKeyAccount &&
+                    ((rawNisn && GoogleIntegrationService.isNisnMatching(rawNisn, s.nisn)) ||
+                     (rawName && s.name.toLowerCase().trim() === rawName.toLowerCase().trim()))
+                  );
+                }) || null;
+
+                const matchedCount = columnSelectorRows.filter(r => {
+                  if (currentKeyRow && r === currentKeyRow) return false;
+                  const rawNisn = columnSelectorNisnCol ? r[columnSelectorNisnCol]?.trim() : '';
+                  const rawName = columnSelectorNameCol ? r[columnSelectorNameCol]?.trim() : '';
+                  if (!rawNisn && !rawName) return false;
+                  return allDbStudents.some(s =>
+                    !s.isAnswerKeyAccount &&
+                    ((rawNisn && GoogleIntegrationService.isNisnMatching(rawNisn, s.nisn)) ||
+                     (rawName && rawName.length >= 3 && s.name.toLowerCase().trim() === rawName.toLowerCase().trim()))
+                  );
+                }).length;
+
+                return (
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                    {currentKeyRow ? (
+                      <span className="text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 rounded-md">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Kunci Jawaban Resmi: Terdeteksi ({currentKeyRow[columnSelectorNameCol] || currentKeyRow[columnSelectorNisnCol] || 'Baris Kunci'})
+                      </span>
+                    ) : (
+                      <span className="text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2.5 py-1 rounded-md">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Kunci Jawaban belum terdeteksi (Pastikan akun kunci ber-NISN 111122222 ada di Sheet)
+                      </span>
+                    )}
+
+                    <span className="text-indigo-700 dark:text-indigo-400 font-semibold flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2.5 py-1 rounded-md">
+                      <Users className="w-3.5 h-3.5" />
+                      {matchedCount} dari {columnSelectorRows.length - (currentKeyRow ? 1 : 0)} siswa cocok dengan database
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Toolbar aksi cepat */}

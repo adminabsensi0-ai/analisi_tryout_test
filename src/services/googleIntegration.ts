@@ -101,6 +101,122 @@ export class GoogleIntegrationService {
   }
 
   /**
+   * Toleran & Cerdas: Membandingkan NISN dari lembar Google Sheet dengan NISN database sekolah.
+   * Menangani:
+   * - Nilai numerik tanpa nol (misal Excel strip 0: "61234561" vs "0061234561")
+   * - Padded 10-digit
+   * - Format 9 digit khusus akun kunci jawaban ("111122222")
+   */
+  public static isNisnMatching(sheetNisn: string | number | null | undefined, dbNisn: string | number | null | undefined): boolean {
+    if (!sheetNisn || !dbNisn) return false;
+    const s1 = String(sheetNisn).trim();
+    const s2 = String(dbNisn).trim();
+    if (s1 === s2) return true;
+    const d1 = s1.replace(/\D/g, '');
+    const d2 = s2.replace(/\D/g, '');
+    if (!d1 || !d2) return false;
+    if (d1 === d2) return true;
+    if (d1.padStart(10, '0') === d2.padStart(10, '0')) return true;
+    if (d1.replace(/^0+/, '') === d2.replace(/^0+/, '')) return true;
+    return false;
+  }
+
+  /**
+   * Deteksi Cerdas Kolom NISN Berbasis Nama Header DAN Sampel Baris Data:
+   * 1. Menilai bobot keyword header (nisn, nomor peserta, no ujian, nis, dll.)
+   * 2. Memeriksa isi sel dari 10 baris pertama: kolom yang berisi digit angka 7-12 digit
+   *    atau cocok dengan siswa database mendapatkan skor tertinggi!
+   */
+  public static autoDetectNisnColumn(
+    headers: string[],
+    sampleRows: Record<string, string>[] = [],
+    dbStudents: Student[] = []
+  ): string {
+    if (!headers || headers.length === 0) return '';
+
+    const nisnKeywords = [
+      'nisn', 'nomor induk siswa nasional', 'no peserta', 'nomor peserta',
+      'no. peserta', 'no ujian', 'nomor ujian', 'no. ujian', 'nis', 'nomor induk',
+      'no induk', 'no. induk', 'id siswa', 'n.i.s.n', 'n i s n', 'identitas siswa'
+    ];
+
+    const invalidKeywords = ['timestamp', 'waktu', 'tanggal', 'date', 'score', 'skor', 'nilai', 'poin', 'nama', 'name', 'kelas', 'email', 'rombel'];
+
+    const scores = headers.map(h => {
+      const lower = h.toLowerCase().trim();
+      let score = 0;
+
+      if (invalidKeywords.some(k => lower.includes(k))) {
+        score -= 100;
+      }
+
+      for (const kw of nisnKeywords) {
+        if (lower === kw) score += 50;
+        else if (lower.includes(kw)) score += 30;
+      }
+
+      if (sampleRows && sampleRows.length > 0) {
+        const inspectCount = Math.min(sampleRows.length, 10);
+        for (let i = 0; i < inspectCount; i++) {
+          const val = (sampleRows[i][h] || '').trim();
+          const digits = val.replace(/\D/g, '');
+          if (digits.length >= 7 && digits.length <= 12) {
+            score += 5;
+            if (dbStudents.length > 0) {
+              const hasMatch = dbStudents.some(s => GoogleIntegrationService.isNisnMatching(digits, s.nisn));
+              if (hasMatch) score += 25;
+            }
+          }
+        }
+      }
+
+      return { header: h, score };
+    });
+
+    scores.sort((a, b) => b.score - a.score);
+
+    if (scores.length > 0 && scores[0].score > 0) {
+      return scores[0].header;
+    }
+
+    const fallback = headers.find(h => {
+      const l = h.toLowerCase();
+      return !l.includes('timestamp') && !l.includes('waktu') && !l.includes('email') && !l.includes('skor');
+    });
+
+    return fallback || headers[0] || '';
+  }
+
+  public static autoDetectNameColumn(headers: string[]): string {
+    const nameKeywords = ['nama lengkap', 'nama siswa', 'nama peserta', 'nama', 'name', 'full name'];
+    for (const kw of nameKeywords) {
+      const found = headers.find(h => h.toLowerCase().trim() === kw);
+      if (found) return found;
+    }
+    for (const kw of nameKeywords) {
+      const found = headers.find(h => {
+        const l = h.toLowerCase().trim();
+        return l.includes(kw) && !l.includes('sekolah') && !l.includes('guru') && !l.includes('ortu') && !l.includes('ayah') && !l.includes('ibu');
+      });
+      if (found) return found;
+    }
+    return '';
+  }
+
+  public static autoDetectScoreColumn(headers: string[]): string {
+    const scoreKeywords = ['total point', 'total poin', 'skor', 'score', 'nilai akhir', 'total nilai', 'poin', 'nilai'];
+    for (const kw of scoreKeywords) {
+      const found = headers.find(h => h.toLowerCase().trim() === kw);
+      if (found) return found;
+    }
+    for (const kw of scoreKeywords) {
+      const found = headers.find(h => h.toLowerCase().trim().includes(kw));
+      if (found) return found;
+    }
+    return '';
+  }
+
+  /**
    * Cek apakah suatu kolom merupakan metadata / identitas siswa (Bagian 1 Google Form).
    * Kolom metadata TIDAK boleh dijadikan butir soal.
    */
@@ -458,56 +574,9 @@ export class GoogleIntegrationService {
     customOverrides?: Partial<ColumnMappingConfig>,
     selectedColumns?: string[]
   ): ColumnMappingConfig {
-    // Auto-detect NISN column (Prioritaskan kolom khusus NISN, lalu nomor induk siswa nasional)
-    const nisnHeader =
-      customOverrides?.nisnColumn ||
-      headers.find(h => {
-        const lower = h.toLowerCase().trim();
-        return lower === 'nisn' || lower.includes('nisn') || lower.includes('nomor induk siswa nasional');
-      }) ||
-      headers.find(h => {
-        const lower = h.toLowerCase().trim();
-        return lower === 'nis' || lower.includes('nomor induk');
-      }) ||
-      headers[0] ||
-      'NISN';
-
-    // Auto-detect Google Form Score column
-    const scoreHeader =
-      customOverrides?.scoreColumn ||
-      headers.find(h => {
-        const lower = h.toLowerCase().trim();
-        return (
-          lower === 'skor' ||
-          lower === 'score' ||
-          lower === 'nilai' ||
-          lower === 'poin' ||
-          lower.includes('total point') ||
-          lower.includes('total poin') ||
-          lower.includes('nilai akhir') ||
-          lower.includes('skor') ||
-          lower.includes('score') ||
-          lower.includes('nilai') ||
-          lower.includes('poin')
-        );
-      });
-
-    // Auto-detect Name column
-    const nameHeader =
-      customOverrides?.nameColumn ||
-      headers.find(h => {
-        const lower = h.toLowerCase().trim();
-        return (
-          lower === 'nama' ||
-          lower === 'name' ||
-          lower.includes('nama lengkap') ||
-          lower.includes('nama siswa') ||
-          lower.includes('nama peserta') ||
-          lower.includes('nama') ||
-          lower.includes('name') ||
-          lower.includes('siswa')
-        );
-      });
+    const nisnHeader = customOverrides?.nisnColumn || GoogleIntegrationService.autoDetectNisnColumn(headers);
+    const scoreHeader = customOverrides?.scoreColumn !== undefined ? customOverrides.scoreColumn : GoogleIntegrationService.autoDetectScoreColumn(headers);
+    const nameHeader = customOverrides?.nameColumn || GoogleIntegrationService.autoDetectNameColumn(headers);
 
     // Auto-detect Timestamp column
     const timestampHeader =
@@ -793,34 +862,22 @@ export class GoogleIntegrationService {
       // 4. Match by NIS (Nomor Induk Siswa)
       // 5. Fallback match by Name if unambiguous
       let matchedStudent: Student | undefined =
-        students.find(s => s.nisn === rawNisn || s.nisn.trim() === rawNisn) ||
-        allDbStudents.find(s => s.nisn === rawNisn || s.nisn.trim() === rawNisn);
+        students.find(s => GoogleIntegrationService.isNisnMatching(rawNisn, s.nisn)) ||
+        allDbStudents.find(s => GoogleIntegrationService.isNisnMatching(rawNisn, s.nisn));
 
       if (!matchedStudent && cleanNisn) {
-        const padded10 = cleanNisn.padStart(10, '0');
         matchedStudent =
-          students.find(s => GoogleIntegrationService.normalizeNisn(s.nisn) === padded10) ||
-          allDbStudents.find(s => GoogleIntegrationService.normalizeNisn(s.nisn) === padded10);
-
-        if (!matchedStudent) {
-          const stripped = cleanNisn.replace(/^0+/, '');
-          if (stripped) {
-            matchedStudent =
-              students.find(s => s.nisn.replace(/\D/g, '').replace(/^0+/, '') === stripped) ||
-              allDbStudents.find(s => s.nisn.replace(/\D/g, '').replace(/^0+/, '') === stripped);
-          }
-        }
+          students.find(s => GoogleIntegrationService.isNisnMatching(cleanNisn, s.nisn)) ||
+          allDbStudents.find(s => GoogleIntegrationService.isNisnMatching(cleanNisn, s.nisn));
       }
 
       if (!matchedStudent && rawNisn) {
-        // Cek NIS
         matchedStudent =
-          students.find(s => s.nis && s.nis.trim() === rawNisn) ||
-          allDbStudents.find(s => s.nis && s.nis.trim() === rawNisn);
+          students.find(s => s.nis && (s.nis.trim() === rawNisn || GoogleIntegrationService.isNisnMatching(rawNisn, s.nis))) ||
+          allDbStudents.find(s => s.nis && (s.nis.trim() === rawNisn || GoogleIntegrationService.isNisnMatching(rawNisn, s.nis)));
       }
 
       if (!matchedStudent && rawName && rawName.length >= 3) {
-        // Fallback nama siswa
         const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
         const nameMatches = allDbStudents.filter(s => {
           const sn = s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
