@@ -570,9 +570,24 @@ export class DatabaseService {
         if (idx === -1) {
           this.state.scores.push(cloudScore);
           changed = true;
-        } else if (this.state.scores[idx].calculatedScore !== cloudScore.calculatedScore) {
-          this.state.scores[idx] = { ...this.state.scores[idx], ...cloudScore };
-          changed = true;
+        } else {
+          const local = this.state.scores[idx];
+          const to = this.state.tryouts.find(t => t.id === cloudScore.tryoutId);
+          const isGFormSource = to?.scoringConfig?.scoreSource === 'GOOGLE_FORM';
+
+          // Jika tryout disetel memakai Google Form dan lokal sudah disinkronkan, jangan revert ke nilai lama cloud
+          if (isGFormSource && local.scoringStatus === 'MATCH' && cloudScore.scoringStatus === 'SCORING_MISMATCH') {
+            return;
+          }
+
+          if (local.calculatedScore !== cloudScore.calculatedScore || local.scoringStatus !== cloudScore.scoringStatus) {
+            this.state.scores[idx] = { ...local, ...cloudScore };
+            if (isGFormSource && this.state.scores[idx].googleFormScore && this.state.scores[idx].googleFormScore > 0) {
+              this.state.scores[idx].calculatedScore = this.state.scores[idx].googleFormScore;
+              this.state.scores[idx].scoringStatus = 'MATCH';
+            }
+            changed = true;
+          }
         }
       });
     }
@@ -2037,12 +2052,63 @@ export class DatabaseService {
    * Rekonsiliasi Skor dengan Google Form:
    * Menyelaraskan seluruh skor pada tryout dengan nilai resmi Google Form (mengakhiri status SCORING_MISMATCH secara sah).
    */
+  public setTryoutScoreSource(
+    tryoutId: string,
+    scoreSource: 'GOOGLE_FORM' | 'CUSTOM_ENGINE',
+    currentUser?: any
+  ): void {
+    const to = this.state.tryouts.find(t => t.id === tryoutId);
+    if (!to) return;
+
+    to.scoringConfig = {
+      ...(to.scoringConfig || {}),
+      scoreSource,
+    };
+
+    if (scoreSource === 'GOOGLE_FORM') {
+      this.state.scores = this.state.scores.map(s => {
+        if (s.tryoutId === tryoutId && s.googleFormScore !== undefined && s.googleFormScore > 0) {
+          const updatedSubjectScores = { ...(s.subjectScores || {}) };
+          Object.keys(updatedSubjectScores).forEach(subjId => {
+            updatedSubjectScores[subjId] = s.googleFormScore!;
+          });
+          return {
+            ...s,
+            calculatedScore: s.googleFormScore,
+            subjectScores: updatedSubjectScores,
+            scoreDifference: 0,
+            scoringStatus: 'MATCH',
+          };
+        }
+        return s;
+      });
+    }
+
+    this.persistState();
+    this.notifyListeners();
+
+    if (this.supabaseSyncEnabled) {
+      sdb.syncTryout(to).catch(() => {});
+      const toResponses = (this.state.responses || []).filter(r => r.tryoutId === tryoutId);
+      const toScores = this.state.scores.filter(s => s.tryoutId === tryoutId);
+      sdb.syncResponsesAndScores(tryoutId, toResponses, toScores).catch(() => {});
+    }
+
+    this.logAudit(
+      currentUser || { id: 'teacher', name: 'Guru Mata Pelajaran', role: 'GURU' },
+      'UPDATE_SCORING_CONFIG',
+      'TRYOUT',
+      `Mengubah mode acuan nilai Try Out ${to.code} ke: ${scoreSource === 'GOOGLE_FORM' ? 'Nilai Google Form' : 'Aturan Kunci Jawaban Sekolah'}`
+    );
+  }
+
   public reconcileScoresWithGForm(
     tryoutId: string,
     currentUser?: any
   ): { reconciledCount: number } {
     let reconciledCount = 0;
 
+    // 1. Selaraskan nilai skor siswa
     this.state.scores = this.state.scores.map(s => {
       if (s.tryoutId === tryoutId && s.googleFormScore !== undefined && s.googleFormScore > 0) {
         if (s.scoringStatus === 'SCORING_MISMATCH' || Math.abs(s.calculatedScore - s.googleFormScore) > 0.01) {
@@ -2065,15 +2131,36 @@ export class DatabaseService {
       return s;
     });
 
+    // 2. Kunci mode acuan tryout ke GOOGLE_FORM secara permanen agar tidak di-revert
+    const to = this.state.tryouts.find(t => t.id === tryoutId);
+    if (to) {
+      to.scoringConfig = {
+        ...(to.scoringConfig || {}),
+        scoreSource: 'GOOGLE_FORM',
+      };
+      if (this.supabaseSyncEnabled) {
+        sdb.syncTryout(to).catch(() => {});
+      }
+    }
+
     if (reconciledCount > 0) {
       this.persistState();
       this.logAudit(
         currentUser || { id: 'teacher', name: 'Guru Mata Pelajaran', role: 'GURU' },
         'RECONCILE_SCORES_WITH_GFORM',
         'TRYOUT_SCORES',
-        `Menyelaraskan ${reconciledCount} nilai siswa pada Tryout ${tryoutId} dengan nilai resmi Google Form.`
+        `Menyelaraskan ${reconciledCount} nilai siswa pada Tryout ${tryoutId} dengan nilai resmi Google Form (Permanen).`
       );
       this.notifyListeners();
+
+      // 3. Dorong pembaruan nilai ke Supabase agar persisten lintas perangkat
+      if (this.supabaseSyncEnabled) {
+        const toResponses = (this.state.responses || []).filter(r => r.tryoutId === tryoutId);
+        const toScores = this.state.scores.filter(s => s.tryoutId === tryoutId);
+        sdb.syncResponsesAndScores(tryoutId, toResponses, toScores).catch(err => {
+          console.warn('[DB] syncResponsesAndScores error saat rekonsiliasi:', err);
+        });
+      }
     }
 
     return { reconciledCount };

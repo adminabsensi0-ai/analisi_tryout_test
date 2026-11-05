@@ -480,10 +480,12 @@ export class AnalyticsService {
     const studentResponse = responses.find(r => r.studentId === studentId && r.tryoutId === tryout.id);
     const studentAnswers = answers.filter(a => a.studentId === studentId && a.tryoutId === tryout.id);
 
-    const calculatedScore = studentScore?.calculatedScore ?? 0;
+    const isGFormSource = tryout.scoringConfig?.scoreSource === 'GOOGLE_FORM';
     const rawScoreGForm = studentScore?.googleFormScore ?? studentResponse?.rawScoreGForm ?? 0;
-    const scoreDiff = studentScore?.scoreDifference ?? Math.round(Math.abs(rawScoreGForm - calculatedScore) * 10) / 10;
-    const scoringStatus = studentScore?.scoringStatus ?? (scoreDiff > 0.01 ? 'SCORING_MISMATCH' : 'MATCH');
+    const calculatedScore = studentScore?.calculatedScore ?? 0;
+    const effectiveScore = (isGFormSource && rawScoreGForm > 0) ? rawScoreGForm : calculatedScore;
+    const scoreDiff = isGFormSource ? 0 : (studentScore?.scoreDifference ?? Math.round(Math.abs(rawScoreGForm - calculatedScore) * 10) / 10);
+    const scoringStatus = isGFormSource ? 'MATCH' : (studentScore?.scoringStatus ?? (scoreDiff > 0.01 ? 'SCORING_MISMATCH' : 'MATCH'));
 
     const totalQuestions = questions.length;
     let correctCount = 0;
@@ -505,9 +507,9 @@ export class AnalyticsService {
     });
 
     const targetScore = student.targetScore || 80.0;
-    const attainmentPercentage = Math.round((calculatedScore / targetScore) * 100 * 10) / 10;
-    const attainmentStatus: 'TERCAPAI' | 'BELUM_TERCAPAI' = calculatedScore >= targetScore ? 'TERCAPAI' : 'BELUM_TERCAPAI';
-    const gap = Math.round((calculatedScore - targetScore) * 10) / 10;
+    const attainmentPercentage = Math.round((effectiveScore / targetScore) * 100 * 10) / 10;
+    const attainmentStatus: 'TERCAPAI' | 'BELUM_TERCAPAI' = effectiveScore >= targetScore ? 'TERCAPAI' : 'BELUM_TERCAPAI';
+    const gap = Math.round((effectiveScore - targetScore) * 10) / 10;
 
     // Material mastery calculation
     const materialStatsMap = new Map<string, { total: number; correct: number }>();
@@ -631,10 +633,10 @@ export class AnalyticsService {
       tryoutTitle: tryout.title,
       tryoutCode: tryout.code,
       score: {
-        calculatedScore,
+        calculatedScore: effectiveScore,
         rawScoreGForm,
         maxScore: tryout.scoringConfig?.maxScore || 100,
-        percentage: calculatedScore,
+        percentage: effectiveScore,
         scoringStatus,
         scoreDifference: scoreDiff,
       },
@@ -685,8 +687,14 @@ export class AnalyticsService {
     const classStudentIds = new Set(classStudents.map(s => s.id));
     const classScores = scores.filter(s => s && s.tryoutId === tryout.id && classStudentIds.has(s.studentId));
 
+    const isGFormSource = tryout.scoringConfig?.scoreSource === 'GOOGLE_FORM';
     const studentCount = classScores.length;
-    const scoreValues = classScores.map(s => s.calculatedScore).sort((a, b) => a - b);
+    const scoreValues = classScores.map(s => {
+      if (isGFormSource && s.googleFormScore !== undefined && s.googleFormScore > 0) {
+        return s.googleFormScore;
+      }
+      return s.calculatedScore;
+    }).sort((a, b) => a - b);
 
     const sum = scoreValues.reduce((a, b) => a + b, 0);
     const average = studentCount > 0 ? Math.round((sum / studentCount) * 10) / 10 : 0;
@@ -694,7 +702,7 @@ export class AnalyticsService {
     const highest = studentCount > 0 ? Math.max(...scoreValues) : 0;
     const lowest = studentCount > 0 ? Math.min(...scoreValues) : 0;
 
-    const passedScores = classScores.filter(s => s.calculatedScore >= passingGrade);
+    const passedScores = scoreValues.filter(v => v >= passingGrade);
     const passedCount = passedScores.length;
     const passedPercentage = studentCount > 0 ? Math.round((passedCount / studentCount) * 100 * 10) / 10 : 0;
 
@@ -703,7 +711,10 @@ export class AnalyticsService {
     classScores.forEach(sc => {
       const st = classStudents.find(s => s.id === sc.studentId);
       const target = st?.targetScore || passingGrade;
-      if (sc.calculatedScore >= target) targetAttainedCount++;
+      const effectiveScore = (isGFormSource && sc.googleFormScore !== undefined && sc.googleFormScore > 0)
+        ? sc.googleFormScore
+        : sc.calculatedScore;
+      if (effectiveScore >= target) targetAttainedCount++;
     });
     const targetAttainmentPercentage = studentCount > 0
       ? Math.round((targetAttainedCount / studentCount) * 100 * 10) / 10
@@ -803,13 +814,18 @@ export class AnalyticsService {
       .map(sc => {
         const st = classStudents.find(s => s.id === sc.studentId);
         const target = st?.targetScore || passingGrade;
-        const attainmentPct = Math.round((sc.calculatedScore / target) * 100 * 10) / 10;
+        const effectiveScore = (isGFormSource && sc.googleFormScore !== undefined && sc.googleFormScore > 0)
+          ? sc.googleFormScore
+          : sc.calculatedScore;
+        const attainmentPct = Math.round((effectiveScore / target) * 100 * 10) / 10;
 
         // Re-kalkulasi status scoring saat runtime:
-        // 1. Jika tryout tidak memiliki googleFormScore atau bernilai 0 / undefined, status selalu 'MATCH' (karena bersumber dari sistem internal).
-        // 2. Jika ada googleFormScore, hitung selisihnya terhadap calculatedScore.
+        // 1. Jika mode acuan nilai adalah GOOGLE_FORM, status otomatis MATCH (resmi menggunakan nilai Google Form)
+        // 2. Jika mode CUSTOM_ENGINE dan ada googleFormScore, bandingkan untuk mendeteksi selisih
         let resolvedStatus: ScoringStatus = 'MATCH';
-        if (sc.googleFormScore !== undefined && sc.googleFormScore > 0) {
+        if (isGFormSource) {
+          resolvedStatus = 'MATCH';
+        } else if (sc.googleFormScore !== undefined && sc.googleFormScore > 0) {
           const scoreDiff = Math.abs(sc.googleFormScore - sc.calculatedScore);
           resolvedStatus = scoreDiff <= 0.01 ? 'MATCH' : (sc.scoringStatus === 'MATCH' ? 'MATCH' : 'SCORING_MISMATCH');
         } else {
@@ -821,11 +837,11 @@ export class AnalyticsService {
           studentId: sc.studentId,
           name: st?.name || 'Siswa',
           nisn: st?.nisn || '-',
-          score: sc.calculatedScore,
+          score: effectiveScore,
           targetScore: target,
           attainmentPercentage: attainmentPct,
           status: resolvedStatus,
-          isTargetAttained: sc.calculatedScore >= target,
+          isTargetAttained: effectiveScore >= target,
         };
       })
       .sort((a, b) => b.score - a.score)
