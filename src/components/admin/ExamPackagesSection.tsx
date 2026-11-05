@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FolderKanban, Plus, Search, Filter, CheckCircle2, AlertCircle,
   Calendar, School, BookOpen, Link as LinkIcon, ExternalLink,
@@ -69,6 +69,11 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
       setSelectedPackage(updated);
     }
   };
+
+  useEffect(() => {
+    refreshData();
+    return dbService.subscribe(refreshData);
+  }, []);
 
   // Group classes by gradeLevel (e.g. 7, 8, 9 or X, XI, XII)
   const availableGrades = Array.from(new Set(classes.map(c => c.gradeLevel))).sort();

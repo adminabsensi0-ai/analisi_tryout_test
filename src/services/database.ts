@@ -305,11 +305,8 @@ export class DatabaseService {
       const set = new Set<string>();
       (Array.isArray(parsed) ? parsed : []).forEach((x: string) => {
         const val = String(x).toLowerCase().trim();
-        // Filter out kode tryout (misal 'to-202...') agar tidak memblokir kode tryout baru lintas perangkat
-        if (val.startsWith('to-202')) return;
-        set.add(val);
+        if (val) set.add(val);
       });
-      // Default tombstone untuk dummy / seed tryout bawaan jika belum ada
       set.add('to000000-0000-0000-0000-000000000001');
       return set;
     } catch {
@@ -325,10 +322,7 @@ export class DatabaseService {
       const set = this.getDeletedTryoutIdentifiers();
       idsOrCodes.forEach(item => {
         if (item && item.trim()) {
-          const val = item.toLowerCase().trim();
-          if (!val.startsWith('to-202')) {
-            set.add(val);
-          }
+          set.add(item.toLowerCase().trim());
         }
       });
       if (typeof window !== 'undefined') {
@@ -336,6 +330,26 @@ export class DatabaseService {
       }
     } catch (e) {
       console.warn('[DB] Gagal menyimpan tombstone tryout yang dihapus:', e);
+    }
+  }
+
+  /**
+   * Helper: Membebaskan kembali identifier/kode tryout dari tombstone saat pengguna membuat tryout baru.
+   * Ini memastikan kode yang pernah dihapus dapat digunakan kembali (reusable) secara bersih.
+   */
+  private removeDeletedTryoutIdentifier(...idsOrCodes: (string | undefined)[]): void {
+    try {
+      const set = this.getDeletedTryoutIdentifiers();
+      idsOrCodes.forEach(item => {
+        if (item && item.trim()) {
+          set.delete(item.toLowerCase().trim());
+        }
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(DELETED_TRYOUTS_KEY, JSON.stringify(Array.from(set)));
+      }
+    } catch (e) {
+      console.warn('[DB] Gagal membersihkan tombstone tryout:', e);
     }
   }
 
@@ -552,7 +566,8 @@ export class DatabaseService {
       const deletedTryouts = this.getDeletedTryoutIdentifiers();
       cloud.tryouts.forEach(cloudTo => {
         const toId = (cloudTo.id || '').toLowerCase().trim();
-        if (deletedTryouts.has(toId)) {
+        const toCode = (cloudTo.code || '').toLowerCase().trim();
+        if (deletedTryouts.has(toId) || (toCode && deletedTryouts.has(toCode))) {
           // Jangan pernah mengimpor / membangkitkan kembali tryout yang sudah dihapus pengguna!
           return;
         }
@@ -1969,6 +1984,8 @@ export class DatabaseService {
   // TRYOUTS CRUD & MANAGEMENT
   public getTryouts(): Tryout[] { return this.state.tryouts; }
   public saveTryout(to: Tryout): Tryout {
+    // Bebaskan kode dan ID dari tombstone agar kode ini aktif dan bisa digunakan kembali (reusable)
+    this.removeDeletedTryoutIdentifier(to.id, to.code);
     const existingByCodeIdx = this.state.tryouts.findIndex(
       t => t.code.toLowerCase().trim() === to.code.toLowerCase().trim() && t.id !== to.id
     );
@@ -2038,10 +2055,10 @@ export class DatabaseService {
   public deleteTryout(id: string, currentUser: any) {
     this.assertAdminOrTeacher(currentUser, 'DELETE_TRYOUT');
     const to = this.state.tryouts.find(t => t.id === id);
-    this.recordDeletedTryoutIdentifier(id, to?.id);
+    this.recordDeletedTryoutIdentifier(id, to?.id, to?.code);
     this.state.tryouts = this.state.tryouts.filter(t => t.id !== id);
 
-    // Hapus semua data terkait tryout ini (scores, answers, responses)
+    // Hapus semua data terkait tryout ini (scores, answers, responses, tryoutSubjects)
     // agar tidak ada data orphan yang masih muncul di grafik & perkembangan
     const deletedScoreIds = new Set(
       this.state.scores.filter(s => s.tryoutId === id).map(s => s.id)
@@ -2051,11 +2068,34 @@ export class DatabaseService {
     if (this.state.responses) {
       this.state.responses = this.state.responses.filter((r: any) => r.tryoutId !== id);
     }
+    if (this.state.tryoutSubjects) {
+      this.state.tryoutSubjects = this.state.tryoutSubjects.filter((ts: any) => ts.tryoutId !== id);
+    }
+
+    // Sesuaikan status mapel paket ujian jika tryout di dalam wadah ini dihapus
+    if (to?.packageId && this.state.examPackages) {
+      const remainingInPkg = this.state.tryouts.filter(t => t.packageId === to.packageId);
+      if (remainingInPkg.length === 0) {
+        this.state.examPackages = this.state.examPackages.map(pkg => {
+          if (pkg.id === to.packageId) {
+            return {
+              ...pkg,
+              subjects: pkg.subjects.map(sub => ({
+                ...sub,
+                syncStatus: sub.googleSheetUrl ? 'SYNCED' : 'PENDING'
+              }))
+            };
+          }
+          return pkg;
+        });
+      }
+    }
 
     this.logAudit(currentUser, 'DELETE_TRYOUT', 'TRYOUT',
-      `Menghapus Try Out: ${to?.title || id} beserta ${deletedScoreIds.size} nilai dan jawaban terkait`);
+      `Menghapus Try Out: ${to?.title || id} (${to?.code || ''}) beserta ${deletedScoreIds.size} nilai dan jawaban terkait`);
     this.persistState();
-    if (this.supabaseSyncEnabled && to?.code) sdb.removeTryoutByCode(to.code).catch(() => {});
+    this.notifyListeners();
+    if (this.supabaseSyncEnabled) sdb.removeTryout(id, to?.code).catch(() => {});
   }
 
   // QUESTIONS CRUD

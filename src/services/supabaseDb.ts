@@ -1249,15 +1249,35 @@ class SupabaseDbService {
     }
   }
 
-  public async removeTryoutByCode(code: string): Promise<void> {
+  public async removeTryout(id?: string, code?: string): Promise<void> {
     if (!this.isAvailable() || !supabase) return;
     try {
-      const { error } = await supabase.from('tryouts').delete().eq('code', code.trim());
-      if (error) this.log('removeTryoutByCode error: ' + error.message, 'warn');
+      let targetId = id && isValidUuid(id) ? id : null;
+      if (!targetId && code) {
+        const { data } = await supabase.from('tryouts').select('id').ilike('code', code.trim()).maybeSingle();
+        if (data?.id) targetId = data.id;
+      }
+
+      if (targetId) {
+        // Hapus entitas relasi anak terlebih dahulu agar foreign key cascade bersih
+        await supabase.from('scores').delete().eq('tryout_id', targetId);
+        await supabase.from('responses').delete().eq('tryout_id', targetId);
+        await supabase.from('answers').delete().eq('tryout_id', targetId);
+        const { error } = await supabase.from('tryouts').delete().eq('id', targetId);
+        if (error) this.log('removeTryout by id error: ' + error.message, 'warn');
+      }
+
+      if (code) {
+        await supabase.from('tryouts').delete().ilike('code', code.trim());
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.log('removeTryoutByCode exception: ' + msg, 'warn');
+      this.log('removeTryout exception: ' + msg, 'warn');
     }
+  }
+
+  public async removeTryoutByCode(code: string): Promise<void> {
+    return this.removeTryout(undefined, code);
   }
 
   public async syncResponsesAndScores(
