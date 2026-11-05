@@ -200,7 +200,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setNewToSubjectId(permittedSubjects[0]?.id || subjects[0]?.id || '');
     setNewToEntryMode('INTERNAL');
     setNewToTargetClasses([]);
-    setNewToExternalSubjectIds(subjects.map(s => s.id));
+    // Default mapel eksternal disesuaikan persis dengan wewenang mapel guru
+    const defaultExtSubjects = permittedSubjects.length > 0 ? permittedSubjects.map(s => s.id) : subjects.map(s => s.id);
+    setNewToExternalSubjectIds(defaultExtSubjects);
     setNewToStartDate(new Date().toISOString().slice(0, 10));
     setNewToEndDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
     setNewToStatus('ACTIVE');
@@ -234,8 +236,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     const isExternal = newToEntryMode === 'EXTERNAL';
     const internalSubjectId = isExternal ? undefined : (newToSubjectId || permittedSubjects[0]?.id || subjects[0]?.id);
     const selectedPkg = newToPackageId ? dbService.getExamPackageById(newToPackageId) : undefined;
+    const fallbackExtIds = permittedSubjects.length > 0 ? permittedSubjects.map(s => s.id) : subjects.map(s => s.id);
     const selectedExtSubjectIds = isExternal
-      ? (newToExternalSubjectIds.length > 0 ? newToExternalSubjectIds : subjects.map(s => s.id))
+      ? (newToExternalSubjectIds.length > 0 ? newToExternalSubjectIds : fallbackExtIds)
       : undefined;
     const selectedExtSubjectNames = selectedExtSubjectIds
       ? selectedExtSubjectIds.map(id => subjects.find(s => s.id === id)?.name).filter(Boolean) as string[]
@@ -9221,7 +9224,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setNewToExternalSubjectIds(subjects.map(s => s.id))}
+                          onClick={() => setNewToExternalSubjectIds(permittedSubjects.length > 0 ? permittedSubjects.map(s => s.id) : subjects.map(s => s.id))}
                           className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                         >
                           Pilih Semua
