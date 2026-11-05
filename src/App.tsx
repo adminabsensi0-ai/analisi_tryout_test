@@ -175,7 +175,7 @@ function AppContent() {
             onLogout={handleLogout}
           >
             <ErrorBoundary>
-              <GuruAppPage currentUser={currentUser!} onNavigate={navigateTo} />
+              <GuruAppPage key={currentUser?.id} currentUser={currentUser!} onNavigate={navigateTo} />
             </ErrorBoundary>
           </ProtectedRoute>
         )}
@@ -189,7 +189,7 @@ function AppContent() {
             onLogout={handleLogout}
           >
             <ErrorBoundary>
-              <WaliKelasAppPage currentUser={currentUser!} onNavigate={navigateTo} />
+              <WaliKelasAppPage key={currentUser?.id} currentUser={currentUser!} onNavigate={navigateTo} />
             </ErrorBoundary>
           </ProtectedRoute>
         )}
@@ -203,7 +203,7 @@ function AppContent() {
             onLogout={handleLogout}
           >
             <ErrorBoundary>
-              <AdminAppPage currentUser={currentUser!} onNavigate={navigateTo} />
+              <AdminAppPage key={currentUser?.id} currentUser={currentUser!} onNavigate={navigateTo} />
             </ErrorBoundary>
           </ProtectedRoute>
         )}

@@ -337,8 +337,8 @@ export class DatabaseService {
         changed = true;
       } else {
         const local = this.state.subjects[idx];
-        if (local.name !== cloudSub.name || local.category !== cloudSub.category) {
-          this.state.subjects[idx] = { ...local, name: cloudSub.name, category: cloudSub.category };
+        if (local.name !== cloudSub.name || local.category !== cloudSub.category || local.id !== cloudSub.id) {
+          this.state.subjects[idx] = { ...local, ...cloudSub };
           changed = true;
         }
       }
@@ -974,6 +974,31 @@ export class DatabaseService {
     const validPerms = teacher.subjectPermissions.filter(pid => (this.state.subjects || []).some(s => s.id === pid));
     if (validPerms.length > 0) {
       return validPerms;
+    }
+
+    // Resolusi Cerdas: Jika subjectPermissions berisi ID lama atau format berbeda (misal 'subj-bin', 'subj-mat'),
+    // atau jika belum tercocokkan, cari kesesuaian berdasarkan kode/nama mapel atau nama guru
+    const smartMatched = (this.state.subjects || []).filter(s => {
+      const sName = (s.name || '').toLowerCase();
+      const sCode = (s.code || '').toLowerCase();
+      const tName = (teacher.name || '').toLowerCase();
+
+      // Cek apakah permission lama memiliki kemiripan kode/nama (misal 'subj-bin' -> code 'bin')
+      const matchesOldPerm = teacher.subjectPermissions.some(pid => {
+        const pLower = pid.toLowerCase();
+        return (sCode && pLower.includes(sCode)) || (sName && sName.length >= 3 && pLower.includes(sName.slice(0, 3)));
+      });
+      if (matchesOldPerm) return true;
+
+      // Cek apakah nama guru mencerminkan mata pelajaran
+      if (tName.includes('matematika') && (sName.includes('matematika') || sCode === 'mat')) return true;
+      if ((tName.includes('bahasa') || tName.includes('indo')) && (sName.includes('bahasa') || sName.includes('indonesia') || sCode === 'bin')) return true;
+
+      return false;
+    }).map(s => s.id);
+
+    if (smartMatched.length > 0) {
+      return smartMatched;
     }
 
     // Jika seluruh subjectPermissions adalah ID lama yang tidak ada di daftar mata pelajaran aktif sekolah,

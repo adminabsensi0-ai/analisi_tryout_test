@@ -58,6 +58,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   // Allow switching teacher persona in UI for verification of strict isolation
   const [currentUser, setCurrentUser] = useState<User>(initialUser);
 
+  // Synchronize internal currentUser when prop initialUser changes
+  useEffect(() => {
+    setCurrentUser(initialUser);
+  }, [initialUser]);
+
   // Dual-Role Mode State: 'GURU_MAPEL' vs 'WALI_KELAS'
   const teacherObj = dbService.getTeacherByUserId(currentUser);
   const isWaliKelasUser = currentUser.role === 'WALI_KELAS' || !!teacherObj?.isWaliKelas;
