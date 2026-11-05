@@ -265,14 +265,17 @@ export class DatabaseService {
         const unsyncedTryouts = (this.state.tryouts || []).filter(
           t => !(cloudState.tryouts || []).some(ct => ct.code.toLowerCase() === t.code.toLowerCase())
         );
+        const unsyncedScores = (this.state.scores || []).filter(
+          s => !(cloudState.scores || []).some(cs => cs.tryoutId === s.tryoutId && cs.studentId === s.studentId)
+        );
         const hasUnsyncedWaliKelas = this.state.classes.some(
           c => c.homeRoomTeacherId && !cloudState.classes.some(cc => cc.name.toLowerCase() === c.name.toLowerCase() && cc.homeRoomTeacherId)
         ) || this.state.teachers.some(
           t => t.isWaliKelas && t.homeRoomClassId && !cloudState.teachers.some(ct => ct.nip === t.nip && ct.homeRoomClassId)
         );
 
-        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0 || unsyncedTryouts.length > 0 || hasUnsyncedWaliKelas) {
-          console.info(`[DB] Terdeteksi data (kelas/siswa/tryout/wali kelas) belum tersinkron di cloud. Otomatis menyinkronkan ke Supabase...`);
+        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0 || unsyncedTryouts.length > 0 || unsyncedScores.length > 0 || hasUnsyncedWaliKelas) {
+          console.info(`[DB] Terdeteksi data (kelas/siswa/tryout/nilai/wali kelas) belum tersinkron di cloud. Otomatis menyinkronkan ke Supabase...`);
           await this.exportToSupabase();
         }
       } else {
@@ -290,13 +293,9 @@ export class DatabaseService {
   }
 
   /**
-   * Helper tombstone: Mendapatkan daftar identifier (id dan kode) tryout yang sudah dihapus.
+   * Helper tombstone: Mendapatkan daftar identifier (hanya UUID permanen) tryout yang sudah dihapus.
    * Ini mencegah tryout dummy / seed yang telah dihapus oleh pengguna bangkit kembali saat merge dari cloud.
-   */
-  /**
-   * Helper tombstone: Mendapatkan daftar identifier (hanya ID permanen) tryout yang sudah dihapus.
-   * Ini mencegah tryout dummy / seed yang telah dihapus oleh pengguna bangkit kembali saat merge dari cloud.
-   * PENTING: Jangan pernah memblokir format kode dinamis seperti 'to-202...' agar kode tryout baru tidak terhalang.
+   * PENTING: Jangan pernah memblokir format kode dinamis seperti 'TO-202...' agar kode tryout baru tidak terhalang lintas device.
    */
   private getDeletedTryoutIdentifiers(): Set<string> {
     try {
@@ -305,7 +304,7 @@ export class DatabaseService {
       const set = new Set<string>();
       (Array.isArray(parsed) ? parsed : []).forEach((x: string) => {
         const val = String(x).toLowerCase().trim();
-        if (val) set.add(val);
+        if (val && isValidUuid(val)) set.add(val);
       });
       set.add('to000000-0000-0000-0000-000000000001');
       return set;
@@ -316,13 +315,15 @@ export class DatabaseService {
 
   /**
    * Helper tombstone: Mencatat tryout yang dihapus ke localStorage agar persisten lintas sesi & cloud sync.
+   * Hanya mencatat UUID yang valid, bukan kode dinamis.
    */
   private recordDeletedTryoutIdentifier(...idsOrCodes: (string | undefined)[]): void {
     try {
       const set = this.getDeletedTryoutIdentifiers();
       idsOrCodes.forEach(item => {
         if (item && item.trim()) {
-          set.add(item.toLowerCase().trim());
+          const val = item.toLowerCase().trim();
+          if (isValidUuid(val)) set.add(val);
         }
       });
       if (typeof window !== 'undefined') {
@@ -566,8 +567,7 @@ export class DatabaseService {
       const deletedTryouts = this.getDeletedTryoutIdentifiers();
       cloud.tryouts.forEach(cloudTo => {
         const toId = (cloudTo.id || '').toLowerCase().trim();
-        const toCode = (cloudTo.code || '').toLowerCase().trim();
-        if (deletedTryouts.has(toId) || (toCode && deletedTryouts.has(toCode))) {
+        if (deletedTryouts.has(toId)) {
           // Jangan pernah mengimpor / membangkitkan kembali tryout yang sudah dihapus pengguna!
           return;
         }
@@ -648,7 +648,14 @@ export class DatabaseService {
             return;
           }
 
-          if (local.calculatedScore !== cloudScore.calculatedScore || local.scoringStatus !== cloudScore.scoringStatus) {
+          const localSubScores = JSON.stringify(local.subjectScores || {});
+          const cloudSubScores = JSON.stringify(cloudScore.subjectScores || {});
+          if (
+            local.calculatedScore !== cloudScore.calculatedScore ||
+            local.scoringStatus !== cloudScore.scoringStatus ||
+            localSubScores !== cloudSubScores ||
+            local.id !== cloudScore.id
+          ) {
             this.state.scores[idx] = { ...local, ...cloudScore };
             if (isGFormSource && this.state.scores[idx].googleFormScore && this.state.scores[idx].googleFormScore > 0) {
               this.state.scores[idx].calculatedScore = this.state.scores[idx].googleFormScore;
@@ -706,8 +713,14 @@ export class DatabaseService {
       classes: this.state.classes,
       academicYears: this.state.academicYears,
       subjects: this.state.subjects,
+      materials: this.state.materials,
+      competencies: this.state.competencies,
+      questions: this.state.questions,
+      answers: this.state.answers,
       examPackages: this.state.examPackages,
       tryouts: this.state.tryouts,
+      responses: this.state.responses,
+      scores: this.state.scores,
       schoolProfile: this.getSchoolProfile(),
     });
     const ok = result.failed === 0;
@@ -2055,7 +2068,7 @@ export class DatabaseService {
   public deleteTryout(id: string, currentUser: any) {
     this.assertAdminOrTeacher(currentUser, 'DELETE_TRYOUT');
     const to = this.state.tryouts.find(t => t.id === id);
-    this.recordDeletedTryoutIdentifier(id, to?.id, to?.code);
+    this.recordDeletedTryoutIdentifier(id, to?.id);
     this.state.tryouts = this.state.tryouts.filter(t => t.id !== id);
 
     // Hapus semua data terkait tryout ini (scores, answers, responses, tryoutSubjects)
@@ -2667,6 +2680,15 @@ export class DatabaseService {
     }
 
     this.persistState();
+    this.rebuildIndexes();
+    this.notifyListeners();
+
+    if (this.supabaseSyncEnabled) {
+      sdb.syncResponsesAndScores(tryoutId, [], newScores).catch(err => {
+        console.warn('[DB] syncExternalScores error:', err);
+      });
+    }
+
     return { savedCount, updatedCount };
   }
   // -------------------------------------------------------------

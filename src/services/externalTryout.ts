@@ -358,11 +358,18 @@ export class ExternalTryoutService {
       .map(item => {
         const studentId = item.studentId!;
         const existing = existingScores.find(s => s.studentId === studentId);
-        const scoreId = existing?.id || `score-ext-${tryoutId}-${studentId}`;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const scoreId = (existing?.id && uuidRegex.test(existing.id))
+          ? existing.id
+          : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined) || `score-ext-${tryoutId}-${studentId}`;
+
+        const responseId = (existing?.responseId && uuidRegex.test(existing.responseId))
+          ? existing.responseId
+          : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined);
 
         return {
           id: scoreId,
-          responseId: `ext-resp-${tryoutId}-${studentId}`,
+          responseId,
           studentId,
           tryoutId,
           subjectScores: item.subjectScores,

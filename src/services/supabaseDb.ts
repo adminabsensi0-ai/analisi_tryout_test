@@ -1331,28 +1331,53 @@ class SupabaseDbService {
       }
 
       if (scores.length > 0) {
-        const scorePayloads = scores.map(s => ({
-          id: isValidUuid(s.id) ? s.id : undefined,
-          response_id: (s.responseId && isValidUuid(s.responseId)) ? s.responseId : undefined,
-          student_id: s.studentId,
-          tryout_id: s.tryoutId,
-          subject_scores: s.subjectScores || {},
-          google_form_score: s.googleFormScore !== undefined ? s.googleFormScore : 0,
-          calculated_score: s.calculatedScore || 0,
-          score_difference: s.scoreDifference !== undefined ? s.scoreDifference : 0,
-          scoring_status: s.scoringStatus || 'MATCH',
-          total_correct: s.totalCorrect || 0,
-          total_incorrect: s.totalIncorrect || 0,
-          total_unanswered: s.totalUnanswered || 0,
-          created_at: s.createdAt || new Date().toISOString(),
-        })).filter(s => isValidUuid(s.tryout_id) && isValidUuid(s.student_id));
+        // Ambil pemetaan ID skor yang sudah ada di cloud untuk tryout ini agar update tepat sasaran
+        let cloudScoreMap = new Map<string, string>();
+        try {
+          const { data: existingCloudScores } = await supabase
+            .from('scores')
+            .select('id, student_id, tryout_id')
+            .eq('tryout_id', tryoutId);
+
+          (existingCloudScores || []).forEach((cs: any) => {
+            if (cs.student_id && cs.id) cloudScoreMap.set(cs.student_id, cs.id);
+          });
+        } catch (e) {
+          // Abaikan error fetch mapping jika tabel masih kosong
+        }
+
+        const scorePayloads = scores.map(s => {
+          const resolvedId = (s.id && isValidUuid(s.id))
+            ? s.id
+            : cloudScoreMap.get(s.studentId) || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined);
+
+          if (resolvedId && s.id !== resolvedId) {
+            s.id = resolvedId;
+          }
+
+          return {
+            id: resolvedId,
+            response_id: (s.responseId && isValidUuid(s.responseId)) ? s.responseId : null,
+            student_id: s.studentId,
+            tryout_id: s.tryoutId,
+            subject_scores: s.subjectScores || {},
+            google_form_score: s.googleFormScore !== undefined ? s.googleFormScore : 0,
+            calculated_score: s.calculatedScore || 0,
+            score_difference: s.scoreDifference !== undefined ? s.scoreDifference : 0,
+            scoring_status: s.scoringStatus || 'MATCH',
+            total_correct: s.totalCorrect || 0,
+            total_incorrect: s.totalIncorrect || 0,
+            total_unanswered: s.totalUnanswered || 0,
+            created_at: s.createdAt || new Date().toISOString(),
+          };
+        }).filter(s => isValidUuid(s.tryout_id) && isValidUuid(s.student_id) && s.id);
 
         if (scorePayloads.length > 0) {
           for (let i = 0; i < scorePayloads.length; i += 200) {
             const chunk = scorePayloads.slice(i, i + 200);
             const { error: sErr } = await supabase
               .from('scores')
-              .upsert(chunk, { onConflict: 'response_id' });
+              .upsert(chunk, { onConflict: 'id' });
             if (sErr) this.log('syncScores error: ' + sErr.message, 'warn');
           }
         }
@@ -1743,10 +1768,10 @@ class SupabaseDbService {
       }
     }
 
-    // 7b. Responses & Scores (jika ada)
-    if (state.tryouts && state.tryouts.length > 0 && state.responses && state.responses.length > 0) {
+    // 7b. Responses & Scores (jika ada, termasuk nilai TO Eksternal)
+    if (state.tryouts && state.tryouts.length > 0) {
       for (const to of state.tryouts) {
-        const toResponses = state.responses.filter(r => r.tryoutId === to.id);
+        const toResponses = (state.responses || []).filter(r => r.tryoutId === to.id);
         const toScores = (state.scores || []).filter(s => s.tryoutId === to.id);
         if (toResponses.length > 0 || toScores.length > 0) {
           await attempt(`Responses/Scores ${to.code}`, () =>
