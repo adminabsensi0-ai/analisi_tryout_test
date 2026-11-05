@@ -126,7 +126,7 @@ export class ProgressService {
    * 1. STUDENT PROGRESS TRACKING (Score, Attainment, Competency, Strong/Weak Areas)
    * Sequence comparison: TO-1 -> TO-2 -> TO-3 -> TO-4
    */
-  public static getStudentProgress(studentId: string, dbState: any): StudentProgressResult | null {
+  public static getStudentProgress(studentId: string, dbState: any, currentUser?: User, subjectId?: string): StudentProgressResult | null {
     const student = dbState.students.find((s: Student) => s.id === studentId);
     if (!student) return null;
 
@@ -140,8 +140,27 @@ export class ProgressService {
       ...studentAnswers.map((a: Answer) => a.tryoutId),
     ]);
 
+    // Filter tryouts berdasarkan subjek atau hak akses guru mapel jika ditentukan
+    let targetSubjectId = subjectId;
+    if (!targetSubjectId && currentUser && currentUser.role === 'GURU') {
+      const teacher = (dbState.teachers || []).find((t: any) =>
+        (currentUser.id && (t.userId === currentUser.id || t.id === currentUser.id)) ||
+        (currentUser.email && t.email && t.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+        (currentUser.nip && t.nip === currentUser.nip)
+      );
+      if (teacher && teacher.subjectPermissions && teacher.subjectPermissions.length > 0) {
+        targetSubjectId = teacher.subjectPermissions[0];
+      }
+    }
+
     // Filter tryouts: Singkirkan tryout kosong (dummy/ghost) yang tidak memiliki skor/jawaban dari siapapun
     const allTryouts: Tryout[] = (dbState.tryouts || []).filter((t: Tryout) => {
+      if (targetSubjectId) {
+        const isMatch = t.subjectId === targetSubjectId ||
+          (t.externalSubjectIds && t.externalSubjectIds.includes(targetSubjectId)) ||
+          (!t.subjectId && (!t.externalSubjectIds || t.externalSubjectIds.length === 0));
+        if (!isMatch) return false;
+      }
       const hasAnyScore = (dbState.scores || []).some((s: Score) => s.tryoutId === t.id);
       const hasAnyAnswer = (dbState.answers || []).some((a: Answer) => a.tryoutId === t.id);
       return hasAnyScore || hasAnyAnswer;
@@ -285,8 +304,27 @@ export class ProgressService {
       ...allClassAnswers.map((a: Answer) => a.tryoutId),
     ]);
 
+    // Jika pengguna adalah Guru Mapel, batasi tryout hanya pada mata pelajaran yang diizinkan untuk guru ini
+    let teacherAllowedSubjects: Set<string> | null = null;
+    if (currentUser && currentUser.role === 'GURU') {
+      const teacher = (dbState.teachers || []).find((t: any) =>
+        (currentUser.id && (t.userId === currentUser.id || t.id === currentUser.id)) ||
+        (currentUser.email && t.email && t.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+        (currentUser.nip && t.nip === currentUser.nip)
+      );
+      if (teacher && teacher.subjectPermissions && teacher.subjectPermissions.length > 0) {
+        teacherAllowedSubjects = new Set(teacher.subjectPermissions);
+      }
+    }
+
     // Singkirkan tryout dummy/kosong tanpa nilai dari kelas ini
     const allTryouts: Tryout[] = (dbState.tryouts || []).filter((t: Tryout) => {
+      if (teacherAllowedSubjects) {
+        const isMatch = (t.subjectId && teacherAllowedSubjects.has(t.subjectId)) ||
+          (t.externalSubjectIds && t.externalSubjectIds.some(sid => teacherAllowedSubjects!.has(sid))) ||
+          (!t.subjectId && (!t.externalSubjectIds || t.externalSubjectIds.length === 0));
+        if (!isMatch) return false;
+      }
       const hasAnyScore = (dbState.scores || []).some((s: Score) => s.tryoutId === t.id);
       const hasAnyAnswer = (dbState.answers || []).some((a: Answer) => a.tryoutId === t.id);
       return hasAnyScore || hasAnyAnswer;
@@ -409,14 +447,54 @@ export class ProgressService {
       }
     }
 
-    // Hanya tampilkan tryout yang memiliki setidaknya 1 nilai atau jawaban terkait subjek ini
-    const relevantScores = (dbState.scores || []).filter((s: Score) =>
-      allowedStudentIds ? allowedStudentIds.has(s.studentId) : true
+    // 1. Tentukan apakah sebuah tryout relevan secara ketat untuk mata pelajaran ini
+    const isTryoutForSubject = (t: Tryout): boolean => {
+      if (t.subjectId === subjectId) return true;
+      if (t.externalSubjectIds && t.externalSubjectIds.includes(subjectId)) return true;
+      if (t.packageId) {
+        const pkg = (dbState.examPackages || []).find((p: any) => p.id === t.packageId);
+        if (pkg?.subjects?.some((ps: any) => ps.subjectId === subjectId)) return true;
+      }
+      const hasSubjectScore = (dbState.scores || []).some(
+        (s: Score) => s.tryoutId === t.id && s.subjectScores && s.subjectScores[subjectId] !== undefined
+      );
+      if (hasSubjectScore) return true;
+
+      const hasTryoutSubj = (dbState.tryoutSubjects || []).some(
+        (ts: any) => ts.tryoutId === t.id && ts.subjectId === subjectId
+      );
+      if (hasTryoutSubj) return true;
+
+      // Jika tryout memiliki subjectId spesifik dan BUKAN subjectId ini, maka abaikan (jangan campurkan mapel lain)
+      if (t.subjectId && t.subjectId !== subjectId) return false;
+
+      // Tryout tanpa subjectId (paket global / legacy) hanya relevan jika memiliki soal mapel ini
+      const hasQuestionsForSubject = questionIds.size > 0 && (dbState.answers || []).some(
+        (a: Answer) => a.tryoutId === t.id && questionIds.has(a.questionId)
+      );
+      return hasQuestionsForSubject;
+    };
+
+    const subjectTryouts = (dbState.tryouts || []).filter((t: Tryout) => isTryoutForSubject(t));
+
+    // 2. Ambil tryout yang memiliki data nilai atau jawaban untuk subjek ini
+    const tryoutIdsWithData = new Set(
+      (dbState.scores || [])
+        .filter((s: Score) => {
+          if (allowedStudentIds && !allowedStudentIds.has(s.studentId)) return false;
+          if (s.subjectScores && s.subjectScores[subjectId] !== undefined) return true;
+          const to = subjectTryouts.find(t => t.id === s.tryoutId);
+          return !!to && (s.calculatedScore !== undefined || s.googleFormScore !== undefined);
+        })
+        .map((s: Score) => s.tryoutId)
     );
-    const tryoutIdsWithData = new Set(relevantScores.map((s: Score) => s.tryoutId));
-    const tryouts = this.sortTryoutsChronologically(
-      (dbState.tryouts || []).filter((t: Tryout) => tryoutIdsWithData.has(t.id))
-    );
+
+    let candidateTryouts = subjectTryouts.filter((t: Tryout) => tryoutIdsWithData.has(t.id));
+    // Jika belum ada nilai terimpor, tampilkan tryout aktif mata pelajaran ini
+    if (candidateTryouts.length === 0) {
+      candidateTryouts = subjectTryouts;
+    }
+    const tryouts = this.sortTryoutsChronologically(candidateTryouts);
 
     const points = tryouts.map((to: Tryout) => {
       // 1. Ambil dari tabel scores (Google Form import & Admin entry)

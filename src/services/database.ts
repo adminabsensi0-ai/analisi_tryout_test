@@ -2579,8 +2579,8 @@ export class DatabaseService {
   // -------------------------------------------------------------
   // PHASE 12 — PROGRESS TRACKING API
   // -------------------------------------------------------------
-  public getStudentProgress(studentId: string): StudentProgressResult | null {
-    return ProgressService.getStudentProgress(studentId, this.state);
+  public getStudentProgress(studentId: string, currentUser?: any, subjectId?: string): StudentProgressResult | null {
+    return ProgressService.getStudentProgress(studentId, this.state, currentUser, subjectId);
   }
 
   public getClassProgress(classId: string, currentUser?: any): ClassProgressResult | null {

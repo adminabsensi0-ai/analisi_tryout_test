@@ -4735,7 +4735,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       ? selectedStudentForProgress
                       : (studentWithScore?.id || filteredStudents[0]?.id || students[0]?.id || '');
 
-                    const studentProg = activeStudentId ? dbService.getStudentProgress(activeStudentId) : null;
+                    const studentProg = activeStudentId ? dbService.getStudentProgress(activeStudentId, currentUser, selectedSubjectId) : null;
                     const currentStudentObj = students.find(s => s.id === activeStudentId);
 
                     return (

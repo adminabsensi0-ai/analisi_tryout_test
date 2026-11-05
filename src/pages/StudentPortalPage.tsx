@@ -357,7 +357,10 @@ export const StudentPortalPage: React.FC = () => {
       }
 
       if (studentScoreObj) {
-        return studentScoreObj.calculatedScore;
+        // Hanya gunakan calculatedScore jika tryout ini memang untuk mapel ini atau lintas mapel
+        if (!targetTryout.subjectId || targetTryout.subjectId === subjId) {
+          return studentScoreObj.calculatedScore;
+        }
       }
     }
 

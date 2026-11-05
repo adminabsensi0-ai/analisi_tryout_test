@@ -167,7 +167,12 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
 
               {/* SINGLE SUBJECT VIEW */}
               {selectedSubjectChartId !== 'ALL' && activeRow && (() => {
-                const points = progressHistory.map((item, idx) => {
+                const relevantHistory = progressHistory.filter(item => {
+                  const score = activeRow.toScores[item.code];
+                  return score !== undefined && score > 0;
+                });
+                const displayHistory = relevantHistory.length > 0 ? relevantHistory : progressHistory;
+                const points = displayHistory.map((item, idx, arr) => {
                   const score = activeRow.toScores[item.code] ?? 0;
                   const classAvg = item.classAverage ?? 75.0;
                   return {
@@ -175,7 +180,7 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                     date: item.date,
                     score,
                     classAvg,
-                    x: 80 + (idx / Math.max(1, progressHistory.length - 1)) * 840,
+                    x: 80 + (idx / Math.max(1, arr.length - 1)) * 840,
                     y: 260 - (Math.min(100, Math.max(0, score)) / 100) * 220,
                     classAvgY: 260 - (Math.min(100, Math.max(0, classAvg)) / 100) * 220,
                   };
