@@ -104,7 +104,7 @@ export const ExternalTryoutUploadModal: React.FC<ExternalTryoutUploadModalProps>
     }
   };
 
-  const handleSaveScores = () => {
+  const handleSaveScores = async () => {
     if (!parseResult) return;
 
     const validItems = parseResult.items.filter(
@@ -117,17 +117,30 @@ export const ExternalTryoutUploadModal: React.FC<ExternalTryoutUploadModalProps>
     }
 
     setIsSaving(true);
+    setParseError(null);
     try {
-      const res = ExternalTryoutService.commitScores(
+      const res = await ExternalTryoutService.commitScores(
         tryout.id,
         validItems,
         dbService,
         currentUser
       );
 
-      onToast(
-        `Sukses! Berhasil menyimpan ${res.savedCount + res.updatedCount} nilai siswa (${res.savedCount} baru, ${res.updatedCount} diperbarui).`
-      );
+      const totalCount = res.savedCount + res.updatedCount;
+      if (res.cloudSynced) {
+        onToast(
+          `Sukses! ${totalCount} nilai siswa berhasil disimpan & tersinkron otomatis ke database cloud multi-device.`
+        );
+      } else if (res.cloudError) {
+        onToast(
+          `Nilai disimpan lokal (${totalCount} siswa). Info cloud: ${res.cloudError}. Akan otomatis disinkronkan saat terhubung.`
+        );
+      } else {
+        onToast(
+          `Sukses! Berhasil menyimpan ${totalCount} nilai siswa (${res.savedCount} baru, ${res.updatedCount} diperbarui).`
+        );
+      }
+
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -419,7 +432,7 @@ export const ExternalTryoutUploadModal: React.FC<ExternalTryoutUploadModalProps>
               className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 transition-colors cursor-pointer"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{isSaving ? 'Menyimpan Nilai...' : 'Simpan Nilai ke Sistem'}</span>
+              <span>{isSaving ? 'Menyimpan & Menyinkronkan ke Cloud...' : 'Simpan Nilai ke Sistem'}</span>
             </button>
           </div>
         </div>

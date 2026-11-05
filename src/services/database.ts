@@ -511,7 +511,10 @@ export class DatabaseService {
         changed = true;
       } else {
         const local = this.state.students[idx];
+        const oldId = local.id;
+        const idDiff = Boolean(cloudStudent.id && local.id !== cloudStudent.id);
         if (
+          idDiff ||
           local.name !== cloudStudent.name ||
           local.classId !== cloudStudent.classId ||
           local.gender !== cloudStudent.gender ||
@@ -520,6 +523,18 @@ export class DatabaseService {
           local.isAnswerKeyAccount !== cloudStudent.isAnswerKeyAccount
         ) {
           this.state.students[idx] = { ...local, ...cloudStudent };
+          if (idDiff && cloudStudent.id) {
+            // Selaraskan referensi ID siswa pada scores & responses agar sinkron lintas perangkat
+            (this.state.scores || []).forEach(sc => {
+              if (sc.studentId === oldId) sc.studentId = cloudStudent.id;
+            });
+            (this.state.responses || []).forEach(r => {
+              if (r.studentId === oldId) r.studentId = cloudStudent.id;
+            });
+            (this.state.answers || []).forEach(a => {
+              if (a.studentId === oldId) a.studentId = cloudStudent.id;
+            });
+          }
           changed = true;
         }
       }
@@ -590,9 +605,11 @@ export class DatabaseService {
               : local.answerKey;
 
           const authoritativeId = cloudTo.id || local.id;
+          const oldToId = local.id;
+          const idDiff = Boolean(authoritativeId && local.id !== authoritativeId);
 
           if (
-            local.id !== authoritativeId ||
+            idDiff ||
             local.title !== cloudTo.title ||
             local.status !== cloudTo.status ||
             local.googleSheetUrl !== cloudTo.googleSheetUrl ||
@@ -622,6 +639,16 @@ export class DatabaseService {
               externalSubjectIds: cloudTo.externalSubjectIds || local.externalSubjectIds,
               externalScoreScale: cloudTo.externalScoreScale || local.externalScoreScale || (resolvedIsExternal ? 'SCALE_100' : undefined),
             };
+
+            if (idDiff && authoritativeId) {
+              (this.state.scores || []).forEach(sc => {
+                if (sc.tryoutId === oldToId) sc.tryoutId = authoritativeId;
+              });
+              (this.state.responses || []).forEach(r => {
+                if (r.tryoutId === oldToId) r.tryoutId = authoritativeId;
+              });
+            }
+
             changed = true;
           }
         }
@@ -2636,12 +2663,14 @@ export class DatabaseService {
 
   /**
    * Menyimpan nilai Try Out Eksternal (rekap skor per siswa dan nilai per mata pelajaran)
+   * Otomatis menyimpan ke state lokal dan menyinkronkan ke Supabase database untuk multi-device sync.
    */
-  public saveExternalScores(
+  public async saveExternalScores(
     tryoutId: string,
     newScores: Score[],
+    newResponses: Response[] = [],
     currentUser?: any
-  ): { savedCount: number; updatedCount: number } {
+  ): Promise<{ savedCount: number; updatedCount: number; cloudSynced: boolean; cloudError?: string }> {
     const studentTryoutKeys = new Set(newScores.map(s => `${s.studentId}___${s.tryoutId}`));
     const scoreIdsToRemove = new Set(newScores.map(s => s.id));
 
@@ -2664,6 +2693,17 @@ export class DatabaseService {
       ...newScores,
     ];
 
+    if (newResponses && newResponses.length > 0) {
+      const respKeys = new Set(newResponses.map(r => `${r.studentId}___${r.tryoutId}`));
+      const respIdsToRemove = new Set(newResponses.map(r => r.id));
+      this.state.responses = [
+        ...(this.state.responses || []).filter(
+          r => !respKeys.has(`${r.studentId}___${r.tryoutId}`) && !respIdsToRemove.has(r.id)
+        ),
+        ...newResponses,
+      ];
+    }
+
     // Rebuild cache index
     this.scoresByTryout.set(
       tryoutId,
@@ -2683,13 +2723,26 @@ export class DatabaseService {
     this.rebuildIndexes();
     this.notifyListeners();
 
+    let cloudSynced = false;
+    let cloudError: string | undefined;
+
     if (this.supabaseSyncEnabled) {
-      sdb.syncResponsesAndScores(tryoutId, [], newScores).catch(err => {
-        console.warn('[DB] syncExternalScores error:', err);
-      });
+      try {
+        // Pastikan juga entitas Tryout sudah tersimpan di cloud sebelum menyinkronkan skor
+        const currentTo = this.state.tryouts.find(t => t.id === tryoutId);
+        if (currentTo) {
+          await sdb.syncTryout(currentTo);
+        }
+        await sdb.syncResponsesAndScores(tryoutId, newResponses, newScores);
+        cloudSynced = true;
+        console.info(`[DB] Berhasil menyinkronkan ${newScores.length} nilai TO Eksternal ke cloud Supabase.`);
+      } catch (err: any) {
+        cloudError = err.message || 'Gagal tersambung ke Supabase.';
+        console.warn('[DB] syncExternalScores cloud sync error:', err);
+      }
     }
 
-    return { savedCount, updatedCount };
+    return { savedCount, updatedCount, cloudSynced, cloudError };
   }
   // -------------------------------------------------------------
   public getExplanations(): Explanation[] { return this.state.explanations; }

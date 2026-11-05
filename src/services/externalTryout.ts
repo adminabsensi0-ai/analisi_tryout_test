@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
-import { Tryout, Student, ClassRoom, Subject, Score, User } from '../types/database';
+import { Tryout, Student, ClassRoom, Subject, Score, Response, User } from '../types/database';
 import { DatabaseService } from './database';
+import { generateUuid, isValidUuid } from '../utils/idUtils';
 
 export interface ExternalScorePreviewItem {
   rowNumber: number;
@@ -342,32 +343,48 @@ export class ExternalTryoutService {
   }
 
   /**
-   * Menyimpan hasil parsing skor eksternal yang valid ke database
+   * Menyimpan hasil parsing skor eksternal yang valid ke database dan otomatis sinkron ke Supabase cloud
    */
-  public static commitScores(
+  public static async commitScores(
     tryoutId: string,
     validItems: ExternalScorePreviewItem[],
     dbService: DatabaseService,
     currentUser: User
-  ): { savedCount: number; updatedCount: number } {
+  ): Promise<{ savedCount: number; updatedCount: number; cloudSynced: boolean; cloudError?: string }> {
     const now = new Date().toISOString();
     const existingScores = dbService.getScoresByTryout(tryoutId);
+    const existingResponses = (dbService.getResponses() || []).filter(r => r.tryoutId === tryoutId);
 
-    const scoresToSave: Score[] = validItems
+    const scoresToSave: Score[] = [];
+    const responsesToSave: Response[] = [];
+
+    validItems
       .filter(item => (item.status === 'VALID' || item.status === 'WARNING_NO_SCORES') && item.studentId)
-      .map(item => {
+      .forEach(item => {
         const studentId = item.studentId!;
-        const existing = existingScores.find(s => s.studentId === studentId);
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const scoreId = (existing?.id && uuidRegex.test(existing.id))
-          ? existing.id
-          : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined) || `score-ext-${tryoutId}-${studentId}`;
+        const existingScore = existingScores.find(s => s.studentId === studentId);
+        const existingResp = existingResponses.find(r => r.studentId === studentId);
 
-        const responseId = (existing?.responseId && uuidRegex.test(existing.responseId))
-          ? existing.responseId
-          : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined);
+        const scoreId = (existingScore?.id && isValidUuid(existingScore.id))
+          ? existingScore.id
+          : generateUuid();
 
-        return {
+        const responseId = (existingResp?.id && isValidUuid(existingResp.id))
+          ? existingResp.id
+          : ((existingScore?.responseId && isValidUuid(existingScore.responseId))
+              ? existingScore.responseId
+              : generateUuid());
+
+        responsesToSave.push({
+          id: responseId,
+          tryoutId,
+          studentId,
+          nisnInput: item.nisn || 'EXTERNAL',
+          rawScoreGForm: item.calculatedScore,
+          submittedAt: existingResp?.submittedAt || existingScore?.createdAt || now,
+        });
+
+        scoresToSave.push({
           id: scoreId,
           responseId,
           studentId,
@@ -380,10 +397,10 @@ export class ExternalTryoutService {
           totalCorrect: 0,
           totalIncorrect: 0,
           totalUnanswered: 0,
-          createdAt: existing?.createdAt || now,
-        };
+          createdAt: existingScore?.createdAt || now,
+        });
       });
 
-    return dbService.saveExternalScores(tryoutId, scoresToSave, currentUser);
+    return await dbService.saveExternalScores(tryoutId, scoresToSave, responsesToSave, currentUser);
   }
 }

@@ -8,7 +8,7 @@ import {
   ArrowRight, Lock, RefreshCw, Key, ExternalLink, Link, AlertCircle, Check,
   Calculator, Scale, Play, CheckCheck, Sliders, PieChart, TrendingUp,
   Gauge, Zap, Target, Cpu, Clock, ArrowUp, ArrowDown, Activity, Info,
-  Youtube, Copy, LayoutGrid
+  Youtube, Copy, LayoutGrid, Cloud
 } from 'lucide-react';
 import { dbService } from '../services/database';
 import { GoogleIntegrationService } from '../services/googleIntegration';
@@ -172,6 +172,20 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
   // State untuk modal upload nilai TO eksternal
   const [uploadExternalTo, setUploadExternalTo] = useState<Tryout | null>(null);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+
+  const handleManualCloudSync = async () => {
+    setIsCloudSyncing(true);
+    try {
+      await dbService.pullFromCloud();
+      refreshData();
+      triggerToast('Sinkronisasi cloud berhasil: data telah diselaraskan dengan database terpusat.');
+    } catch (err: any) {
+      triggerError('Gagal menyinkronkan data cloud: ' + (err.message || 'Koneksi bermasalah.'));
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
 
   /**
    * Helper untuk menghasilkan kode Try Out unik berikutnya secara global lintas guru dan mapel.
@@ -667,7 +681,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
   useEffect(() => {
     refreshData();
-    return dbService.subscribe(refreshData);
+    const unsubscribeLocal = dbService.subscribe(refreshData);
+    const stopRealtimeSync = dbService.startRealtimeSync();
+
+    return () => {
+      unsubscribeLocal();
+      stopRealtimeSync();
+    };
   }, [currentUser]);
 
   const triggerToast = (msg: string) => {
@@ -2291,13 +2311,25 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       </p>
                     </div>
 
-                    <button
-                      onClick={handleOpenAddTryout}
-                      className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-colors cursor-pointer shrink-0"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Tambah Paket TryOut Baru</span>
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={handleManualCloudSync}
+                        disabled={isCloudSyncing}
+                        className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Tarik data terbaru dari database cloud"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin text-teal-600' : 'text-slate-500'}`} />
+                        <span>{isCloudSyncing ? 'Menyinkronkan...' : 'Sinkronkan Cloud'}</span>
+                      </button>
+
+                      <button
+                        onClick={handleOpenAddTryout}
+                        className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-colors cursor-pointer shrink-0"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Tambah Paket TryOut Baru</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

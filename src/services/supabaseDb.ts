@@ -1286,31 +1286,78 @@ class SupabaseDbService {
     scores: Score[]
   ): Promise<void> {
     if (!this.isAvailable() || !supabase) return;
-    try {
-      // 1. Siapkan response payloads
-      const respPayloads = responses.map(r => ({
-        id: isValidUuid(r.id) ? r.id : undefined,
-        tryout_id: r.tryoutId,
-        student_id: r.studentId,
-        nisn_input: r.nisnInput || 'EXTERNAL',
-        raw_score_gform: r.rawScoreGForm || 0,
-        submitted_at: r.submittedAt || new Date().toISOString(),
-      })).filter(r => isValidUuid(r.tryout_id) && isValidUuid(r.student_id));
+    if (!isValidUuid(tryoutId)) {
+      this.log('syncResponsesAndScores: invalid tryoutId: ' + tryoutId, 'warn');
+      return;
+    }
 
-      // 2. Untuk skor eksternal yang belum punya response_id, buatkan placeholder response
-      // agar tidak melanggar foreign key NOT NULL constraint pada PostgreSQL
-      const scoresNeedingResp = scores.filter(s => !s.responseId || !isValidUuid(s.responseId));
-      for (const sc of scoresNeedingResp) {
-        if (!isValidUuid(sc.tryoutId) || !isValidUuid(sc.studentId)) continue;
-        const existingResp = respPayloads.find(r => r.tryout_id === sc.tryoutId && r.student_id === sc.studentId);
-        if (existingResp && existingResp.id) {
-          sc.responseId = existingResp.id;
-        } else {
-          const newRespId = (sc.id && isValidUuid(sc.id)) ? sc.id : undefined;
-          const assignedId = newRespId || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined);
-          sc.responseId = assignedId;
-          respPayloads.push({
-            id: assignedId,
+    try {
+      // 1. Ambil pemetaan response dan score yang sudah ada di Supabase untuk tryout ini
+      // agar tidak melanggar foreign key maupun unique constraint saat multi-device sync
+      const cloudRespMap = new Map<string, string>(); // student_id -> response_id
+      try {
+        const { data: existingCloudResp } = await supabase
+          .from('responses')
+          .select('id, student_id')
+          .eq('tryout_id', tryoutId);
+
+        (existingCloudResp || []).forEach((cr: any) => {
+          if (cr.student_id && cr.id) cloudRespMap.set(cr.student_id, cr.id);
+        });
+      } catch (e) {
+        // Abaikan fetch error jika tabel masih kosong
+      }
+
+      const cloudScoreMap = new Map<string, string>(); // student_id -> score_id
+      try {
+        const { data: existingCloudScores } = await supabase
+          .from('scores')
+          .select('id, student_id')
+          .eq('tryout_id', tryoutId);
+
+        (existingCloudScores || []).forEach((cs: any) => {
+          if (cs.student_id && cs.id) cloudScoreMap.set(cs.student_id, cs.id);
+        });
+      } catch (e) {
+        // Abaikan fetch error
+      }
+
+      // 2. Susun response payloads:
+      // Setiap score (khususnya nilai TO Eksternal) wajib memiliki record di tabel responses
+      // untuk memenuhi foreign key constraint PostgreSQL
+      const respPayloadsMap = new Map<string, any>(); // student_id -> payload
+
+      // A. Masukkan respons dari parameter responses
+      responses.forEach(r => {
+        if (!isValidUuid(r.studentId) || !isValidUuid(r.tryoutId)) return;
+        const resolvedRespId = cloudRespMap.get(r.studentId) || (isValidUuid(r.id) ? r.id : generateUuid());
+        r.id = resolvedRespId;
+        respPayloadsMap.set(r.studentId, {
+          id: resolvedRespId,
+          tryout_id: r.tryoutId,
+          student_id: r.studentId,
+          nisn_input: r.nisnInput || 'EXTERNAL',
+          raw_score_gform: r.rawScoreGForm || 0,
+          submitted_at: r.submittedAt || new Date().toISOString(),
+        });
+      });
+
+      // B. Untuk setiap score yang belum memiliki response, buatkan response record
+      scores.forEach(sc => {
+        if (!isValidUuid(sc.studentId) || !isValidUuid(sc.tryoutId)) return;
+        let assignedRespId = cloudRespMap.get(sc.studentId);
+        if (!assignedRespId) {
+          if (sc.responseId && isValidUuid(sc.responseId)) {
+            assignedRespId = sc.responseId;
+          } else {
+            assignedRespId = generateUuid();
+          }
+        }
+        sc.responseId = assignedRespId;
+
+        if (!respPayloadsMap.has(sc.studentId)) {
+          respPayloadsMap.set(sc.studentId, {
+            id: assignedRespId,
             tryout_id: sc.tryoutId,
             student_id: sc.studentId,
             nisn_input: 'EXTERNAL',
@@ -1318,59 +1365,52 @@ class SupabaseDbService {
             submitted_at: sc.createdAt || new Date().toISOString(),
           });
         }
-      }
+      });
 
-      if (respPayloads.length > 0) {
-        for (let i = 0; i < respPayloads.length; i += 200) {
-          const chunk = respPayloads.slice(i, i + 200);
+      const respPayloadList = Array.from(respPayloadsMap.values());
+      if (respPayloadList.length > 0) {
+        for (let i = 0; i < respPayloadList.length; i += 200) {
+          const chunk = respPayloadList.slice(i, i + 200);
           const { error: rErr } = await supabase
             .from('responses')
-            .upsert(chunk, { onConflict: 'tryout_id,student_id' });
-          if (rErr) this.log('syncResponses error: ' + rErr.message, 'warn');
+            .upsert(chunk, { onConflict: 'id' });
+          if (rErr) {
+            const { error: rErr2 } = await supabase
+              .from('responses')
+              .upsert(chunk, { onConflict: 'tryout_id,student_id' });
+            if (rErr2) this.log('syncResponses error: ' + rErr2.message, 'warn');
+          }
         }
       }
 
+      // 3. Susun score payloads dan sinkronkan ke tabel scores
       if (scores.length > 0) {
-        // Ambil pemetaan ID skor yang sudah ada di cloud untuk tryout ini agar update tepat sasaran
-        let cloudScoreMap = new Map<string, string>();
-        try {
-          const { data: existingCloudScores } = await supabase
-            .from('scores')
-            .select('id, student_id, tryout_id')
-            .eq('tryout_id', tryoutId);
+        const scorePayloads = scores
+          .filter(s => isValidUuid(s.tryoutId) && isValidUuid(s.studentId))
+          .map(s => {
+            const resolvedScoreId = cloudScoreMap.get(s.studentId) || (isValidUuid(s.id) ? s.id : generateUuid());
+            s.id = resolvedScoreId;
 
-          (existingCloudScores || []).forEach((cs: any) => {
-            if (cs.student_id && cs.id) cloudScoreMap.set(cs.student_id, cs.id);
+            const resolvedResponseId = s.responseId && isValidUuid(s.responseId)
+              ? s.responseId
+              : respPayloadsMap.get(s.studentId)?.id || cloudRespMap.get(s.studentId) || null;
+
+            return {
+              id: resolvedScoreId,
+              response_id: resolvedResponseId,
+              student_id: s.studentId,
+              tryout_id: s.tryoutId,
+              subject_scores: s.subjectScores || {},
+              google_form_score: s.googleFormScore !== undefined ? s.googleFormScore : 0,
+              calculated_score: s.calculatedScore || 0,
+              score_difference: s.scoreDifference !== undefined ? s.scoreDifference : 0,
+              scoring_status: s.scoringStatus || 'MATCH',
+              total_correct: s.totalCorrect || 0,
+              total_incorrect: s.totalIncorrect || 0,
+              total_unanswered: s.totalUnanswered || 0,
+              created_at: s.createdAt || new Date().toISOString(),
+            };
           });
-        } catch (e) {
-          // Abaikan error fetch mapping jika tabel masih kosong
-        }
-
-        const scorePayloads = scores.map(s => {
-          const resolvedId = (s.id && isValidUuid(s.id))
-            ? s.id
-            : cloudScoreMap.get(s.studentId) || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined);
-
-          if (resolvedId && s.id !== resolvedId) {
-            s.id = resolvedId;
-          }
-
-          return {
-            id: resolvedId,
-            response_id: (s.responseId && isValidUuid(s.responseId)) ? s.responseId : null,
-            student_id: s.studentId,
-            tryout_id: s.tryoutId,
-            subject_scores: s.subjectScores || {},
-            google_form_score: s.googleFormScore !== undefined ? s.googleFormScore : 0,
-            calculated_score: s.calculatedScore || 0,
-            score_difference: s.scoreDifference !== undefined ? s.scoreDifference : 0,
-            scoring_status: s.scoringStatus || 'MATCH',
-            total_correct: s.totalCorrect || 0,
-            total_incorrect: s.totalIncorrect || 0,
-            total_unanswered: s.totalUnanswered || 0,
-            created_at: s.createdAt || new Date().toISOString(),
-          };
-        }).filter(s => isValidUuid(s.tryout_id) && isValidUuid(s.student_id) && s.id);
 
         if (scorePayloads.length > 0) {
           for (let i = 0; i < scorePayloads.length; i += 200) {
@@ -1378,13 +1418,23 @@ class SupabaseDbService {
             const { error: sErr } = await supabase
               .from('scores')
               .upsert(chunk, { onConflict: 'id' });
-            if (sErr) this.log('syncScores error: ' + sErr.message, 'warn');
+            if (sErr) {
+              this.log('syncScores upsert by id: ' + sErr.message + ', retrying onConflict tryout_id,student_id', 'warn');
+              const { error: sErr2 } = await supabase
+                .from('scores')
+                .upsert(chunk, { onConflict: 'tryout_id,student_id' });
+              if (sErr2) {
+                this.log('syncScores critical error: ' + sErr2.message, 'warn');
+                throw new Error('Gagal menyimpan nilai ke Supabase: ' + sErr2.message);
+              }
+            }
           }
         }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('syncResponsesAndScores exception: ' + msg, 'warn');
+      throw err;
     }
   }
 
