@@ -167,13 +167,11 @@ class AuthService {
       identifier = 'admin@sekolah.com';
     }
 
-    // === PASTIKAN DATA CLOUD TERBARU TERSEDIA JIKA SUPABASE AKTIF ===
+    // Sinkronisasi data cloud dijalankan di background (non-blocking) agar proses login instan (< 100ms)
     if (isSupabaseConfigured() && supabase) {
-      try {
-        await dbService.pullFromCloud();
-      } catch (err) {
-        console.warn('[Auth] pullFromCloud saat login diabaikan:', err);
-      }
+      dbService.pullFromCloud().catch(err => {
+        console.warn('[Auth] Background pullFromCloud saat login diabaikan:', err);
+      });
     }
 
     // Verifikasi kredensial akun sistem (online Supabase & database terintegrasi)
@@ -362,7 +360,28 @@ class AuthService {
       validPasswords.add('gurumapel123');
     }
 
-    const isPasswordValid = validPasswords.has(password);
+    let isPasswordValid = validPasswords.has(password);
+
+    // Fallback: Jika kata sandi tidak cocok dengan cache lokal, cek langsung ke Supabase (single query sangat cepat < 100ms)
+    // untuk mengantisipasi jika pengguna baru saja mengganti kata sandi di perangkat lain
+    if (!isPasswordValid && isSupabaseConfigured() && supabase) {
+      try {
+        const { data: tData } = await supabase
+          .from('teachers')
+          .select('password_hint, is_wali_kelas')
+          .or(`nip.eq.${targetId},email.ilike.${targetId}`)
+          .maybeSingle();
+
+        if (tData?.password_hint && tData.password_hint === password) {
+          isPasswordValid = true;
+          if (matchedTeacher) {
+            matchedTeacher.password = tData.password_hint;
+          }
+        }
+      } catch (checkErr) {
+        console.warn('[Auth] Password fallback check error:', checkErr);
+      }
+    }
 
     if (!isPasswordValid) {
       throw new Error('Kata sandi yang Anda masukkan salah. Periksa kembali kata sandi Anda.');
