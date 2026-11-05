@@ -351,7 +351,17 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
       {/* Grid of Exam Packages */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredPackages.map(pkg => {
-          const filledSheetsCount = pkg.subjects.filter(s => s.googleSheetUrl?.trim()).length;
+          const attachedTryouts = (dbService.getTryouts() || []).filter(t => t.packageId === pkg.id);
+          const internalCount = attachedTryouts.filter(t => !t.isExternal).length;
+          const externalCount = attachedTryouts.filter(t => t.isExternal).length;
+          const externalSubjectIdSet = new Set(
+            attachedTryouts.filter(t => t.isExternal).flatMap(t => t.externalSubjectIds || [])
+          );
+
+          // Subjek terisi jika ada Google Sheet URL atau tercakup dalam TO Eksternal
+          const filledSheetsCount = pkg.subjects.filter(
+            s => Boolean(s.googleSheetUrl?.trim()) || externalSubjectIdSet.has(s.subjectId)
+          ).length;
           const totalSubjects = pkg.subjects.length;
           const isComplete = totalSubjects > 0 && filledSheetsCount === totalSubjects;
           const targetClassNames = classes
@@ -398,6 +408,18 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1 line-clamp-1">
                   {pkg.title}
                 </h3>
+
+                {/* Tryout Composition Badges */}
+                <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300 border border-teal-200/60 dark:border-teal-800/60 flex items-center gap-1">
+                    <Layers className="w-3 h-3" />
+                    <span>{internalCount} TO Internal</span>
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60 flex items-center gap-1">
+                    <FileSpreadsheet className="w-3 h-3" />
+                    <span>{externalCount} TO Eksternal</span>
+                  </span>
+                </div>
                 {pkg.description && (
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mb-3">
                     {pkg.description}
@@ -495,20 +517,25 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
       </div>
 
       {/* Drawer Detail: Mapel & Link Spreadsheet di Dalam Paket yang Dipilih */}
-      {selectedPackage && (
-        <div className="bg-white dark:bg-slate-900 border-2 border-indigo-500/40 rounded-3xl p-6 shadow-lg space-y-4 animate-in fade-in duration-200">
+      {selectedPackage && (() => {
+        const pkgTryouts = (dbService.getTryouts() || []).filter(t => t.packageId === selectedPackage.id);
+        const internalTos = pkgTryouts.filter(t => !t.isExternal);
+        const externalTos = pkgTryouts.filter(t => t.isExternal);
+
+        return (
+        <div className="bg-white dark:bg-slate-900 border-2 border-indigo-500/40 rounded-3xl p-6 shadow-lg space-y-6 animate-in fade-in duration-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-indigo-600 text-white">
+                <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-indigo-600 text-white font-mono">
                   {selectedPackage.code}
                 </span>
                 <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Daftar Mapel & Link Spreadsheet: {selectedPackage.title}
+                  Kelola Wadah: {selectedPackage.title}
                 </h3>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Admin atau guru dapat memasukkan/memperbarui link spreadsheet untuk tiap mata pelajaran di bawah ini.
+                Rekapitulasi seluruh Try Out (Internal &amp; Eksternal) dan status link spreadsheet tiap mata pelajaran.
               </p>
             </div>
 
@@ -520,7 +547,88 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* ── SECTION A: DAFTAR TRY OUT TERDAFTAR DI WADAH INI ── */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Try Out Terdaftar di Wadah Ini ({pkgTryouts.length} Paket TO)
+                </h4>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950 px-2.5 py-0.5 rounded-lg border border-teal-200/60 dark:border-teal-800/60">
+                  {internalTos.length} Internal
+                </span>
+                <span className="text-[11px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950 px-2.5 py-0.5 rounded-lg border border-purple-200/60 dark:border-purple-800/60">
+                  {externalTos.length} Eksternal
+                </span>
+              </div>
+            </div>
+
+            {pkgTryouts.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {pkgTryouts.map(toItem => {
+                  const toScores = dbService.getScoresByTryout(toItem.id);
+                  const isExt = Boolean(toItem.isExternal || toItem.source === 'EXTERNAL');
+
+                  return (
+                    <div
+                      key={toItem.id}
+                      className="p-3.5 rounded-2xl border bg-slate-50/80 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 space-y-2 flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200">
+                            {toItem.code}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              isExt
+                                ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+                                : 'bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border-teal-300 dark:border-teal-800'
+                            }`}
+                          >
+                            {isExt ? 'TO Eksternal' : 'TO Internal'}
+                          </span>
+                        </div>
+
+                        <div className="text-xs font-bold text-slate-900 dark:text-slate-100 line-clamp-1">
+                          {toItem.title}
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center justify-between">
+                          <span>Status: <strong className="uppercase">{toItem.status}</strong></span>
+                          <span className="font-semibold text-indigo-600 dark:text-indigo-400">{toScores.length} Siswa Dinilai</span>
+                        </div>
+                      </div>
+
+                      {isExt && toItem.externalSubjects && toItem.externalSubjects.length > 0 && (
+                        <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[10px] text-slate-500">
+                          <span className="font-medium text-slate-600 dark:text-slate-400">Mapel: </span>
+                          <span className="line-clamp-1">{toItem.externalSubjects.join(', ')}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-xs text-slate-500">
+                Belum ada Try Out yang dimasukkan ke wadah ini. Guru dapat memilih wadah ini saat membuat TO Internal maupun TO Eksternal.
+              </div>
+            )}
+          </div>
+
+          {/* ── SECTION B: DAFTAR MAPEL & STATUS INTEGRASI ── */}
+          <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Status Mata Pelajaran &amp; Sumber Nilai ({selectedPackage.subjects.length} Mapel)</span>
+              </h4>
+            </div>
+
+            <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase text-[10px]">
@@ -535,6 +643,13 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
                 {selectedPackage.subjects.map(item => {
                   const subj = subjects.find(s => s.id === item.subjectId);
                   const hasSheet = Boolean(item.googleSheetUrl?.trim());
+                  const extToForSubj = pkgTryouts.find(t =>
+                    t.isExternal && (
+                      (t.externalSubjectIds && t.externalSubjectIds.includes(item.subjectId)) ||
+                      (t.externalSubjects && subj && t.externalSubjects.includes(subj.name))
+                    )
+                  );
+                  const isSyncedViaExternal = Boolean(!hasSheet && extToForSubj);
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
@@ -551,7 +666,12 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
                         {hasSheet ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                             <CheckCircle2 className="w-3 h-3" />
-                            <span>Terhubung</span>
+                            <span>Terhubung (GSheet)</span>
+                          </span>
+                        ) : isSyncedViaExternal ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>TO Eksternal ({extToForSubj?.code})</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
@@ -587,6 +707,11 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
                             <ExternalLink className="w-3 h-3 shrink-0" />
                             <span className="truncate">{item.googleSheetUrl}</span>
                           </a>
+                        ) : isSyncedViaExternal ? (
+                          <span className="text-purple-700 dark:text-purple-300 text-[11px] font-medium flex items-center gap-1">
+                            <FileSpreadsheet className="w-3.5 h-3.5" />
+                            <span>Rekap Nilai Eksternal ({extToForSubj?.title || extToForSubj?.code})</span>
+                          </span>
                         ) : (
                           <span className="text-slate-400 text-[11px] italic">
                             Belum ada link spreadsheet
@@ -615,9 +740,11 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* MODAL 1: BUAT / EDIT PAKET UJIAN */}
       {showPackageModal && (

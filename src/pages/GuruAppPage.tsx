@@ -293,6 +293,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           },
           currentUser
         );
+      } else if (isExternal && selectedPkg && selectedExtSubjectIds && selectedExtSubjectIds.length > 0) {
+        // Tandai mapel-mapel yang diujikan dalam TO Eksternal sebagai SYNCED di wadah paket
+        selectedExtSubjectIds.forEach(subId => {
+          dbService.updateExamPackageSubject(
+            selectedPkg.id,
+            subId,
+            {
+              syncStatus: 'SYNCED',
+            },
+            currentUser
+          );
+        });
       }
 
       setTryouts(dbService.getTryoutsForTeacher(currentUser));
@@ -359,6 +371,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         },
         currentUser
       );
+    } else if (isExternal && selectedPkg && selectedExtSubjectIds && selectedExtSubjectIds.length > 0) {
+      // Tandai mapel-mapel yang diujikan dalam TO Eksternal sebagai SYNCED di wadah paket
+      selectedExtSubjectIds.forEach(subId => {
+        dbService.updateExamPackageSubject(
+          selectedPkg.id,
+          subId,
+          {
+            syncStatus: 'SYNCED',
+          },
+          currentUser
+        );
+      });
     }
 
     setTryouts(dbService.getTryoutsForTeacher(currentUser));

@@ -234,13 +234,14 @@ function fromSupabaseExamPackage(row: Record<string, unknown>, subjects: ExamPac
   };
 }
 
-function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<string, unknown> {
+function toSupabaseTryoutCoreOnly(to: Tryout, supabaseAcademicYearId?: string): Record<string, unknown> {
+  const isExt = Boolean(to.isExternal || to.source === 'EXTERNAL');
   const meta: Record<string, unknown> = {
     selectedQuestionColumns: to.selectedQuestionColumns,
     answerKey: to.answerKey,
     subjectId: to.subjectId,
-    isExternal: to.isExternal,
-    source: to.source,
+    isExternal: isExt,
+    source: isExt ? 'EXTERNAL' : 'INTERNAL',
     externalSubjects: to.externalSubjects,
     externalSubjectIds: to.externalSubjectIds,
     externalScoreScale: to.externalScoreScale,
@@ -274,9 +275,76 @@ function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<s
   return payload;
 }
 
+function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<string, unknown> {
+  const isExt = Boolean(to.isExternal || to.source === 'EXTERNAL');
+  const meta: Record<string, unknown> = {
+    selectedQuestionColumns: to.selectedQuestionColumns,
+    answerKey: to.answerKey,
+    subjectId: to.subjectId,
+    isExternal: isExt,
+    source: isExt ? 'EXTERNAL' : 'INTERNAL',
+    externalSubjects: to.externalSubjects,
+    externalSubjectIds: to.externalSubjectIds,
+    externalScoreScale: to.externalScoreScale,
+  };
+
+  const enhancedScoringConfig = {
+    ...(to.scoringConfig || {}),
+    _meta: meta,
+  };
+
+  const payload: Record<string, unknown> = {
+    code: to.code,
+    title: to.title,
+    assessment_type: to.assessmentType || 'TRYOUT',
+    academic_year_id: supabaseAcademicYearId || to.academicYearId,
+    start_date: to.startDate || new Date().toISOString(),
+    end_date: to.endDate || new Date().toISOString(),
+    scoring_config: enhancedScoringConfig,
+    status: to.status || 'DRAFT',
+    description: to.description || null,
+    google_form_url: to.googleFormUrl || null,
+    google_sheet_url: to.googleSheetUrl || null,
+    package_id: (to.packageId && isValidUuid(to.packageId)) ? to.packageId : null,
+    target_class_ids: to.targetClassIds || [],
+    is_external: isExt,
+    source: isExt ? 'EXTERNAL' : 'INTERNAL',
+    external_subjects: to.externalSubjects || [],
+    external_subject_ids: to.externalSubjectIds || [],
+    external_score_scale: to.externalScoreScale || 'SCALE_100',
+  };
+
+  if (to.subjectId && isValidUuid(to.subjectId)) {
+    payload.subject_id = to.subjectId;
+  } else {
+    payload.subject_id = null;
+  }
+
+  if (to.selectedQuestionColumns && to.selectedQuestionColumns.length > 0) {
+    payload.selected_question_columns = to.selectedQuestionColumns;
+  }
+  if (to.answerKey && to.answerKey.length > 0) {
+    payload.answer_key = to.answerKey;
+  }
+
+  if (isValidUuid(to.id)) {
+    payload.id = to.id;
+  }
+
+  return payload;
+}
+
 function fromSupabaseTryout(row: Record<string, unknown>): Tryout {
   const scoringConfigRaw = ((row.scoring_config as any) || { scoringType: 'ROUND_DOWN', maxScore: 100, correctScore: 1, wrongScore: 0, emptyScore: 0 });
   const meta = scoringConfigRaw._meta || {};
+
+  // Periksa apakah ini TO Eksternal baik dari kolom tabel Supabase maupun dari metadata scoring_config
+  const isExternal = Boolean(
+    row.is_external === true ||
+    meta.isExternal === true ||
+    row.source === 'EXTERNAL' ||
+    meta.source === 'EXTERNAL'
+  );
 
   return {
     id: String(row.id),
@@ -293,16 +361,24 @@ function fromSupabaseTryout(row: Record<string, unknown>): Tryout {
     googleSheetUrl: row.google_sheet_url ? String(row.google_sheet_url) : undefined,
     packageId: row.package_id ? String(row.package_id) : undefined,
     targetClassIds: Array.isArray(row.target_class_ids) ? (row.target_class_ids as string[]) : [],
-    answerKey: Array.isArray(row.answer_key) ? (row.answer_key as string[]) : (Array.isArray(meta.answerKey) ? meta.answerKey : undefined),
-    selectedQuestionColumns: Array.isArray(row.selected_question_columns)
+    answerKey: (Array.isArray(row.answer_key) && row.answer_key.length > 0)
+      ? (row.answer_key as string[])
+      : (Array.isArray(meta.answerKey) ? meta.answerKey : undefined),
+    selectedQuestionColumns: (Array.isArray(row.selected_question_columns) && row.selected_question_columns.length > 0)
       ? (row.selected_question_columns as string[])
       : (Array.isArray(meta.selectedQuestionColumns) ? meta.selectedQuestionColumns : undefined),
-    subjectId: (row.subject_id as string) || meta.subjectId || undefined,
-    isExternal: row.is_external !== undefined ? Boolean(row.is_external) : (meta.isExternal !== undefined ? Boolean(meta.isExternal) : undefined),
-    source: (row.source as any) || meta.source || undefined,
-    externalSubjects: Array.isArray(row.external_subjects) ? (row.external_subjects as string[]) : (Array.isArray(meta.externalSubjects) ? meta.externalSubjects : undefined),
-    externalSubjectIds: Array.isArray(row.external_subject_ids) ? (row.external_subject_ids as string[]) : (Array.isArray(meta.externalSubjectIds) ? meta.externalSubjectIds : undefined),
-    externalScoreScale: (row.external_score_scale as any) || meta.externalScoreScale || undefined,
+    subjectId: (row.subject_id && isValidUuid(String(row.subject_id)))
+      ? String(row.subject_id)
+      : (meta.subjectId || undefined),
+    isExternal,
+    source: isExternal ? 'EXTERNAL' : ((row.source as any) || meta.source || 'INTERNAL'),
+    externalSubjects: (Array.isArray(row.external_subjects) && row.external_subjects.length > 0)
+      ? (row.external_subjects as string[])
+      : (Array.isArray(meta.externalSubjects) ? meta.externalSubjects : undefined),
+    externalSubjectIds: (Array.isArray(row.external_subject_ids) && row.external_subject_ids.length > 0)
+      ? (row.external_subject_ids as string[])
+      : (Array.isArray(meta.externalSubjectIds) ? meta.externalSubjectIds : undefined),
+    externalScoreScale: (row.external_score_scale as any) || meta.externalScoreScale || (isExternal ? 'SCALE_100' : undefined),
   };
 }
 
@@ -1150,10 +1226,22 @@ class SupabaseDbService {
       const payload = toSupabaseTryout(to, ayId);
       if (existingId) {
         const { error } = await supabase.from('tryouts').update(payload).eq('id', existingId);
-        if (error) this.log('syncTryout update error: ' + error.message, 'warn');
+        if (error) {
+          this.log('syncTryout update error: ' + error.message, 'warn');
+          if (error.message.includes('column') || error.code === '42703' || error.code === 'PGRST204') {
+            const fallbackPayload = toSupabaseTryoutCoreOnly(to, ayId);
+            await supabase.from('tryouts').update(fallbackPayload).eq('id', existingId);
+          }
+        }
       } else {
         const { error } = await supabase.from('tryouts').insert(payload);
-        if (error) this.log('syncTryout insert error: ' + error.message, 'warn');
+        if (error) {
+          this.log('syncTryout insert error: ' + error.message, 'warn');
+          if (error.message.includes('column') || error.code === '42703' || error.code === 'PGRST204') {
+            const fallbackPayload = toSupabaseTryoutCoreOnly(to, ayId);
+            await supabase.from('tryouts').insert(fallbackPayload);
+          }
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

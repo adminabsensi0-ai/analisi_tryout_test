@@ -586,19 +586,26 @@ export class DatabaseService {
             JSON.stringify(local.selectedQuestionColumns) !== JSON.stringify(mergedSelectedCols) ||
             JSON.stringify(local.answerKey) !== JSON.stringify(mergedAnswerKey) ||
             local.subjectId !== (cloudTo.subjectId || local.subjectId) ||
-            local.isExternal !== cloudTo.isExternal
+            local.isExternal !== cloudTo.isExternal ||
+            local.source !== cloudTo.source
           ) {
+            const resolvedIsExternal = Boolean(
+              cloudTo.isExternal === true ||
+              (cloudTo.isExternal === undefined && local.isExternal === true) ||
+              cloudTo.source === 'EXTERNAL'
+            );
             this.state.tryouts[idx] = {
               ...local,
               ...cloudTo,
               id: authoritativeId,
               selectedQuestionColumns: mergedSelectedCols,
               answerKey: mergedAnswerKey,
-              subjectId: cloudTo.subjectId || local.subjectId,
-              isExternal: cloudTo.isExternal !== undefined ? cloudTo.isExternal : local.isExternal,
+              subjectId: resolvedIsExternal ? (cloudTo.subjectId || undefined) : (cloudTo.subjectId || local.subjectId),
+              isExternal: resolvedIsExternal,
+              source: resolvedIsExternal ? 'EXTERNAL' : 'INTERNAL',
               externalSubjects: cloudTo.externalSubjects || local.externalSubjects,
               externalSubjectIds: cloudTo.externalSubjectIds || local.externalSubjectIds,
-              externalScoreScale: cloudTo.externalScoreScale || local.externalScoreScale,
+              externalScoreScale: cloudTo.externalScoreScale || local.externalScoreScale || (resolvedIsExternal ? 'SCALE_100' : undefined),
             };
             changed = true;
           }
@@ -1202,6 +1209,8 @@ export class DatabaseService {
     );
     const filtered = (this.state.tryouts || []).filter(t => {
       if (!t) return false;
+      // TO Eksternal adalah rekapitulasi nilai multi-mapel / asesmen terbuka untuk seluruh staf pengajar
+      if (t.isExternal) return true;
       if (t.subjectId) {
         if (allowedSubjects.has(t.subjectId)) return true;
         const subj = (this.state.subjects || []).find(s => s.id === t.subjectId);
