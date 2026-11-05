@@ -270,30 +270,6 @@ function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<s
   if (isValidUuid(to.id)) {
     payload.id = to.id;
   }
-  if (to.subjectId && isValidUuid(to.subjectId)) {
-    payload.subject_id = to.subjectId;
-  }
-  if (Array.isArray(to.selectedQuestionColumns)) {
-    payload.selected_question_columns = to.selectedQuestionColumns;
-  }
-  if (Array.isArray(to.answerKey)) {
-    payload.answer_key = to.answerKey;
-  }
-  if (to.isExternal !== undefined) {
-    payload.is_external = to.isExternal;
-  }
-  if (to.source) {
-    payload.source = to.source;
-  }
-  if (to.externalSubjects) {
-    payload.external_subjects = to.externalSubjects;
-  }
-  if (to.externalSubjectIds) {
-    payload.external_subject_ids = to.externalSubjectIds;
-  }
-  if (to.externalScoreScale) {
-    payload.external_score_scale = to.externalScoreScale;
-  }
 
   return payload;
 }
@@ -1012,7 +988,7 @@ class SupabaseDbService {
   public async syncTryout(to: Tryout, supabaseAcademicYearId?: string): Promise<void> {
     if (!this.isAvailable() || !supabase) return;
     try {
-      const ayId = supabaseAcademicYearId || to.academicYearId;
+      const ayId = await this.resolveAcademicYearId(supabaseAcademicYearId || to.academicYearId);
       const { data: existing } = await supabase
         .from('tryouts')
         .select('id')
@@ -1240,7 +1216,7 @@ class SupabaseDbService {
 
     const TABLES = [
       'teachers', 'students', 'classes', 'subjects', 'academic_years', 'users',
-      'exam_packages', 'exam_package_subjects', 'tryouts', 'scores', 'school_profile'
+      'exam_packages', 'exam_package_subjects', 'tryouts', 'responses', 'scores', 'school_profile'
     ];
     const channel = (supabase as any).channel('db-realtime-sync');
 
@@ -1286,6 +1262,8 @@ class SupabaseDbService {
     examPackages?: ExamPackage[];
     tryouts?: Tryout[];
     schoolProfile?: SchoolProfile;
+    responses?: Response[];
+    scores?: Score[];
   }): Promise<{ success: number; failed: number; errors: string[] }> {
     if (!this.isAvailable() || !supabase) {
       return { success: 0, failed: 0, errors: ['Supabase tidak terkonfigurasi.'] };
@@ -1371,6 +1349,19 @@ class SupabaseDbService {
     if (state.tryouts && state.tryouts.length > 0) {
       for (const to of state.tryouts) {
         await attempt(`Tryout ${to.code}`, () => this.syncTryout(to));
+      }
+    }
+
+    // 7b. Responses & Scores (jika ada)
+    if (state.tryouts && state.tryouts.length > 0 && state.responses && state.responses.length > 0) {
+      for (const to of state.tryouts) {
+        const toResponses = state.responses.filter(r => r.tryoutId === to.id);
+        const toScores = (state.scores || []).filter(s => s.tryoutId === to.id);
+        if (toResponses.length > 0 || toScores.length > 0) {
+          await attempt(`Responses/Scores ${to.code}`, () =>
+            this.syncResponsesAndScores(to.id, toResponses, toScores)
+          );
+        }
       }
     }
 

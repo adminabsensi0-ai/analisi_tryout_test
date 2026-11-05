@@ -216,14 +216,17 @@ export class DatabaseService {
         const unsyncedStudents = this.state.students.filter(
           s => !cloudState.students.some(cs => cs.nisn === s.nisn)
         );
+        const unsyncedTryouts = (this.state.tryouts || []).filter(
+          t => !(cloudState.tryouts || []).some(ct => ct.code.toLowerCase() === t.code.toLowerCase())
+        );
         const hasUnsyncedWaliKelas = this.state.classes.some(
           c => c.homeRoomTeacherId && !cloudState.classes.some(cc => cc.name.toLowerCase() === c.name.toLowerCase() && cc.homeRoomTeacherId)
         ) || this.state.teachers.some(
           t => t.isWaliKelas && t.homeRoomClassId && !cloudState.teachers.some(ct => ct.nip === t.nip && ct.homeRoomClassId)
         );
 
-        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0 || hasUnsyncedWaliKelas) {
-          console.info(`[DB] Terdeteksi data (kelas/siswa/wali kelas) belum tersinkron di cloud. Otomatis menyinkronkan ke Supabase...`);
+        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0 || unsyncedTryouts.length > 0 || hasUnsyncedWaliKelas) {
+          console.info(`[DB] Terdeteksi data (kelas/siswa/tryout/wali kelas) belum tersinkron di cloud. Otomatis menyinkronkan ke Supabase...`);
           await this.exportToSupabase();
         }
       } else {
@@ -1073,8 +1076,19 @@ export class DatabaseService {
   public getTryoutsForTeacher(currentUser: any): Tryout[] {
     if (!currentUser) return [];
     if (currentUser.role === 'ADMIN') return this.state.tryouts || [];
-    const allowedSubjects = new Set(this.getTeacherAllowedSubjectIds(currentUser));
-    // Find tryout IDs that include any of the teacher's allowed subjects
+    const teacher = this.getTeacherByUserId(currentUser);
+    const hasUnrestrictedSubjects = !teacher || !teacher.subjectPermissions || teacher.subjectPermissions.length === 0;
+    if (hasUnrestrictedSubjects) {
+      return this.state.tryouts || [];
+    }
+    const allowedSubjectIds = this.getTeacherAllowedSubjectIds(currentUser);
+    const allowedSubjects = new Set(allowedSubjectIds);
+    const allowedCodes = new Set(
+      (this.state.subjects || [])
+        .filter(s => allowedSubjects.has(s.id))
+        .map(s => s.code.toLowerCase().trim())
+    );
+
     const relevantTryoutIds = new Set(
       (this.state.tryoutSubjects || [])
         .filter(tsub => tsub && allowedSubjects.has(tsub.subjectId))
@@ -1082,7 +1096,11 @@ export class DatabaseService {
     );
     const filtered = (this.state.tryouts || []).filter(t => {
       if (!t) return false;
-      if (t.subjectId && allowedSubjects.has(t.subjectId)) return true;
+      if (t.subjectId) {
+        if (allowedSubjects.has(t.subjectId)) return true;
+        const subj = (this.state.subjects || []).find(s => s.id === t.subjectId);
+        if (subj && allowedCodes.has(subj.code.toLowerCase().trim())) return true;
+      }
       if (relevantTryoutIds.has(t.id)) return true;
       if (t.externalSubjectIds && t.externalSubjectIds.some(sid => allowedSubjects.has(sid))) return true;
       if (!t.subjectId && (!t.externalSubjectIds || t.externalSubjectIds.length === 0)) return true;
