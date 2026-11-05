@@ -989,15 +989,19 @@ class SupabaseDbService {
     if (!this.isAvailable() || !supabase) return;
     try {
       const ayId = await this.resolveAcademicYearId(supabaseAcademicYearId || to.academicYearId);
-      const { data: existing } = await supabase
-        .from('tryouts')
-        .select('id')
-        .eq('code', to.code)
-        .maybeSingle();
+      let existingId: string | null = null;
+      if (isValidUuid(to.id)) {
+        const { data: byId } = await supabase.from('tryouts').select('id').eq('id', to.id).maybeSingle();
+        if (byId?.id) existingId = byId.id;
+      }
+      if (!existingId && to.code) {
+        const { data: byCode } = await supabase.from('tryouts').select('id').eq('code', to.code.trim()).maybeSingle();
+        if (byCode?.id) existingId = byCode.id;
+      }
 
       const payload = toSupabaseTryout(to, ayId);
-      if (existing?.id) {
-        const { error } = await supabase.from('tryouts').update(payload).eq('id', existing.id);
+      if (existingId) {
+        const { error } = await supabase.from('tryouts').update(payload).eq('id', existingId);
         if (error) this.log('syncTryout update error: ' + error.message, 'warn');
       } else {
         const { error } = await supabase.from('tryouts').insert(payload);

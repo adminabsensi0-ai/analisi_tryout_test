@@ -173,9 +173,26 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   // State untuk modal upload nilai TO eksternal
   const [uploadExternalTo, setUploadExternalTo] = useState<Tryout | null>(null);
 
+  /**
+   * Helper untuk menghasilkan kode Try Out unik berikutnya secara global lintas guru dan mapel.
+   * Contoh: jika ada TO-2026-01 dan TO-2026-02 di sistem, maka dihasilkan TO-2026-03.
+   */
+  const getNextAvailableTryoutCode = (): string => {
+    const allTryouts = dbService.getTryouts();
+    const currentYear = new Date().getFullYear();
+    const existingNumbers = allTryouts
+      .map(t => {
+        const m = (t.code || '').match(/TO-\d+-(\d+)/i) || (t.code || '').match(/TO-(\d+)/i);
+        return m ? parseInt(m[1], 10) : 0;
+      })
+      .filter(n => !isNaN(n) && n > 0);
+    const nextNum = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : (allTryouts.length + 1);
+    return `TO-${currentYear}-${String(nextNum).padStart(2, '0')}`;
+  };
+
   const handleOpenAddTryout = () => {
     setEditingTryoutId(null);
-    setNewToCode('');
+    setNewToCode(getNextAvailableTryoutCode());
     setNewToTitle('');
     setNewToGFormUrl('');
     setNewToGSheetUrl('');
@@ -224,13 +241,25 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       ? selectedExtSubjectIds.map(id => subjects.find(s => s.id === id)?.name).filter(Boolean) as string[]
       : undefined;
 
+    const allGlobalTryouts = dbService.getTryouts();
+
     if (editingTryoutId) {
-      const existing = tryouts.find(t => t.id === editingTryoutId);
+      const existing = allGlobalTryouts.find(t => t.id === editingTryoutId);
       if (!existing) return;
+
+      const updatedCode = newToCode.trim() || existing.code;
+      // Cek duplikasi kode unik secara global (selain tryout yang sedang diedit)
+      const isDuplicateCode = allGlobalTryouts.some(
+        t => t.id !== editingTryoutId && t.code.toLowerCase().trim() === updatedCode.toLowerCase().trim()
+      );
+      if (isDuplicateCode) {
+        setErrorBanner(`Validasi Gagal: Kode Try Out '${updatedCode}' sudah digunakan di sistem. Gunakan kode unik lain.`);
+        return;
+      }
 
       const updates: Partial<Tryout> = {
         title: newToTitle.trim(),
-        code: newToCode.trim() || existing.code,
+        code: updatedCode,
         packageId: newToPackageId || undefined,
         subjectId: internalSubjectId,
         isExternal,
@@ -274,14 +303,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       return;
     }
 
-    // CREATE NEW TRYOUT — validasi kode unik sebelum menyimpan
-    const nextIdx = tryouts.length + 1;
-    const createdCode = newToCode.trim() || `TO-2026-0${nextIdx}`;
+    // CREATE NEW TRYOUT — validasi kode unik secara GLOBAL di seluruh tryout database
+    const createdCode = newToCode.trim() || getNextAvailableTryoutCode();
 
-    // Cek duplikasi kode (case-insensitive)
-    const isDuplicateCode = tryouts.some(t => t.code.toLowerCase() === createdCode.toLowerCase());
+    // Cek duplikasi kode (case-insensitive) terhadap SEMUA tryout di sistem
+    const isDuplicateCode = allGlobalTryouts.some(t => t.code.toLowerCase().trim() === createdCode.toLowerCase().trim());
     if (isDuplicateCode) {
-      setErrorBanner(`Validasi Gagal: Kode Try Out '${createdCode}' sudah digunakan. Gunakan kode lain.`);
+      setErrorBanner(`Validasi Gagal: Kode Try Out '${createdCode}' sudah digunakan di sistem (oleh mapel atau guru lain). Gunakan kode lain yang unik.`);
       return;
     }
 
@@ -359,6 +387,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         }! Kunci jawaban akan otomatis terdeteksi dari Google Sheet.`
       );
     }
+    refreshData();
   };
 
   // Contextual Confirmation Delete State (Safe replacement for window.confirm)

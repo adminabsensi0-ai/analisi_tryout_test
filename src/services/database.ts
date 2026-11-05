@@ -247,13 +247,22 @@ export class DatabaseService {
    * Helper tombstone: Mendapatkan daftar identifier (id dan kode) tryout yang sudah dihapus.
    * Ini mencegah tryout dummy / seed yang telah dihapus oleh pengguna bangkit kembali saat merge dari cloud.
    */
+  /**
+   * Helper tombstone: Mendapatkan daftar identifier (hanya ID permanen) tryout yang sudah dihapus.
+   * Ini mencegah tryout dummy / seed yang telah dihapus oleh pengguna bangkit kembali saat merge dari cloud.
+   * PENTING: Jangan pernah memblokir format kode dinamis seperti 'to-202...' agar kode tryout baru tidak terhalang.
+   */
   private getDeletedTryoutIdentifiers(): Set<string> {
     try {
       const raw = typeof window !== 'undefined' ? localStorage.getItem(DELETED_TRYOUTS_KEY) : null;
       const parsed = raw ? JSON.parse(raw) : [];
-      const set = new Set<string>(
-        (Array.isArray(parsed) ? parsed : []).map((x: string) => String(x).toLowerCase().trim())
-      );
+      const set = new Set<string>();
+      (Array.isArray(parsed) ? parsed : []).forEach((x: string) => {
+        const val = String(x).toLowerCase().trim();
+        // Filter out kode tryout (misal 'to-202...') agar tidak memblokir kode tryout baru lintas perangkat
+        if (val.startsWith('to-202')) return;
+        set.add(val);
+      });
       // Default tombstone untuk dummy / seed tryout bawaan jika belum ada
       set.add('to000000-0000-0000-0000-000000000001');
       return set;
@@ -270,7 +279,10 @@ export class DatabaseService {
       const set = this.getDeletedTryoutIdentifiers();
       idsOrCodes.forEach(item => {
         if (item && item.trim()) {
-          set.add(item.toLowerCase().trim());
+          const val = item.toLowerCase().trim();
+          if (!val.startsWith('to-202')) {
+            set.add(val);
+          }
         }
       });
       if (typeof window !== 'undefined') {
@@ -488,18 +500,20 @@ export class DatabaseService {
       });
     }
 
-    // Merge tryouts (by code)
+    // Merge tryouts (match by id or code, align with cloud UUID)
     if (cloud.tryouts && Array.isArray(cloud.tryouts)) {
       if (!this.state.tryouts) this.state.tryouts = [];
       const deletedTryouts = this.getDeletedTryoutIdentifiers();
       cloud.tryouts.forEach(cloudTo => {
-        const toCode = (cloudTo.code || '').toLowerCase().trim();
         const toId = (cloudTo.id || '').toLowerCase().trim();
-        if (deletedTryouts.has(toCode) || deletedTryouts.has(toId)) {
+        if (deletedTryouts.has(toId)) {
           // Jangan pernah mengimpor / membangkitkan kembali tryout yang sudah dihapus pengguna!
           return;
         }
-        const idx = this.state.tryouts.findIndex(t => t.code.toLowerCase() === cloudTo.code.toLowerCase());
+        const idx = this.state.tryouts.findIndex(
+          t => (t.id && cloudTo.id && t.id.toLowerCase() === cloudTo.id.toLowerCase()) ||
+               (t.code && cloudTo.code && t.code.toLowerCase().trim() === cloudTo.code.toLowerCase().trim())
+        );
         if (idx === -1) {
           this.state.tryouts.push(cloudTo);
           changed = true;
@@ -514,19 +528,24 @@ export class DatabaseService {
               ? cloudTo.answerKey
               : local.answerKey;
 
+          const authoritativeId = cloudTo.id || local.id;
+
           if (
+            local.id !== authoritativeId ||
             local.title !== cloudTo.title ||
             local.status !== cloudTo.status ||
             local.googleSheetUrl !== cloudTo.googleSheetUrl ||
             local.googleFormUrl !== cloudTo.googleFormUrl ||
             JSON.stringify(local.scoringConfig) !== JSON.stringify(cloudTo.scoringConfig) ||
             JSON.stringify(local.selectedQuestionColumns) !== JSON.stringify(mergedSelectedCols) ||
-            JSON.stringify(local.answerKey) !== JSON.stringify(mergedAnswerKey)
+            JSON.stringify(local.answerKey) !== JSON.stringify(mergedAnswerKey) ||
+            local.subjectId !== (cloudTo.subjectId || local.subjectId) ||
+            local.isExternal !== cloudTo.isExternal
           ) {
             this.state.tryouts[idx] = {
               ...local,
               ...cloudTo,
-              id: local.id,
+              id: authoritativeId,
               selectedQuestionColumns: mergedSelectedCols,
               answerKey: mergedAnswerKey,
               subjectId: cloudTo.subjectId || local.subjectId,
@@ -777,8 +796,7 @@ export class DatabaseService {
           parsed.tryouts = parsed.tryouts.filter((t: any) => {
             if (legacyMockToIds.has(t.id)) return false;
             const toId = (t.id || '').toLowerCase().trim();
-            const toCode = (t.code || '').toLowerCase().trim();
-            if (deletedTryouts.has(toId) || deletedTryouts.has(toCode)) return false;
+            if (deletedTryouts.has(toId)) return false;
             return true;
           });
         }
@@ -1849,13 +1867,22 @@ export class DatabaseService {
   // TRYOUTS CRUD & MANAGEMENT
   public getTryouts(): Tryout[] { return this.state.tryouts; }
   public saveTryout(to: Tryout): Tryout {
-    const existingIdx = this.state.tryouts.findIndex(t => t.id === to.id);
-    if (existingIdx >= 0) {
-      this.state.tryouts[existingIdx] = to;
+    const existingByCodeIdx = this.state.tryouts.findIndex(
+      t => t.code.toLowerCase().trim() === to.code.toLowerCase().trim() && t.id !== to.id
+    );
+    if (existingByCodeIdx >= 0) {
+      to.id = this.state.tryouts[existingByCodeIdx].id;
+      this.state.tryouts[existingByCodeIdx] = to;
     } else {
-      this.state.tryouts.push(to);
+      const existingIdx = this.state.tryouts.findIndex(t => t.id === to.id);
+      if (existingIdx >= 0) {
+        this.state.tryouts[existingIdx] = to;
+      } else {
+        this.state.tryouts.push(to);
+      }
     }
     this.persistState();
+    this.notifyListeners();
     if (this.supabaseSyncEnabled) sdb.syncTryout(to).catch(() => {});
     return to;
   }
@@ -1879,6 +1906,7 @@ export class DatabaseService {
     this.state.tryouts = this.state.tryouts.map(t => t.id === id ? { ...t, ...updates } : t);
     this.logAudit(currentUser, 'UPDATE_TRYOUT', 'TRYOUT', `Memperbarui data Try Out ID: ${id}`);
     this.persistState();
+    this.notifyListeners();
     const updated = this.state.tryouts.find(t => t.id === id);
     if (this.supabaseSyncEnabled && updated) sdb.syncTryout(updated).catch(() => {});
   }
@@ -1887,6 +1915,7 @@ export class DatabaseService {
     this.state.tryouts = this.state.tryouts.map(t => t.id === id ? { ...t, status } : t);
     this.logAudit(currentUser, 'UPDATE_TRYOUT_STATUS', 'TRYOUT', `Mengubah status Try Out ID ${id} menjadi '${status}'`);
     this.persistState();
+    this.notifyListeners();
     const updated = this.state.tryouts.find(t => t.id === id);
     if (this.supabaseSyncEnabled && updated) sdb.syncTryout(updated).catch(() => {});
   }
@@ -1900,13 +1929,14 @@ export class DatabaseService {
       `Memperbarui konfigurasi scoring Try Out ID: ${id} (Tipe: ${scoringConfig.scoringType}, Maks: ${scoringConfig.maxScore}, Benar: ${scoringConfig.correctScore}, Salah: ${scoringConfig.wrongScore})`
     );
     this.persistState();
+    this.notifyListeners();
     const updated = this.state.tryouts.find(t => t.id === id);
     if (this.supabaseSyncEnabled && updated) sdb.syncTryout(updated).catch(() => {});
   }
   public deleteTryout(id: string, currentUser: any) {
     this.assertAdminOrTeacher(currentUser, 'DELETE_TRYOUT');
     const to = this.state.tryouts.find(t => t.id === id);
-    this.recordDeletedTryoutIdentifier(id, to?.id, to?.code);
+    this.recordDeletedTryoutIdentifier(id, to?.id);
     this.state.tryouts = this.state.tryouts.filter(t => t.id !== id);
 
     // Hapus semua data terkait tryout ini (scores, answers, responses)
