@@ -522,36 +522,43 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                       </td>
 
                       {tryoutCodes.map(code => {
-                        const score = row.toScores[code] ?? 0;
-                        const passed = score >= row.passingGrade;
+                        const score = row.toScores[code];
+                        const hasScore = typeof score === 'number' && score > 0;
+                        const passed = hasScore && score >= row.passingGrade;
                         return (
                           <td key={code} className="py-3 px-3.5 text-center font-mono font-bold">
                             <span
                               className={`inline-block px-2.5 py-1 rounded-lg text-xs ${
-                                passed
+                                !hasScore
+                                  ? 'text-slate-400 dark:text-slate-600 bg-slate-100/60 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 font-normal'
+                                  : passed
                                   ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80'
                                   : 'bg-amber-50 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80'
                               }`}
                             >
-                              {score.toFixed(1)}
+                              {hasScore ? score.toFixed(1) : '-'}
                             </span>
                           </td>
                         );
                       })}
 
                       <td className="py-3 px-3.5 text-center font-mono font-black text-indigo-700 dark:text-indigo-300 bg-slate-50 dark:bg-slate-950/60 text-sm">
-                        {row.avgScore.toFixed(1)}
+                        {row.avgScore > 0 ? row.avgScore.toFixed(1) : '-'}
                       </td>
 
                       <td className="py-3 px-3.5 text-center">
                         <span
                           className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full font-mono ${
-                            row.isPassing
+                            row.avgScore === 0
+                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                              : row.isPassing
                               ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                               : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
                           }`}
                         >
-                          {row.isPassing ? (
+                          {row.avgScore === 0 ? (
+                            <span>BELUM ADA DATA</span>
+                          ) : row.isPassing ? (
                             <>
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                               <span>TUNTAS KKM</span>
@@ -649,22 +656,29 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                 {/* Score Pills Grid */}
                 <div className="grid grid-cols-4 gap-2 pt-1">
                   {tryoutCodes.map(code => {
-                    const score = row.toScores[code] ?? 0;
-                    const passed = score >= row.passingGrade;
+                    const score = row.toScores[code];
+                    const hasScore = typeof score === 'number' && score > 0;
+                    const passed = hasScore && score >= row.passingGrade;
                     return (
                       <div
                         key={code}
                         className={`p-2 rounded-xl text-center border ${
-                          passed
+                          !hasScore
+                            ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                            : passed
                             ? 'bg-white dark:bg-slate-900 border-emerald-200 dark:border-emerald-800'
                             : 'bg-white dark:bg-slate-900 border-amber-200 dark:border-amber-800'
                         }`}
                       >
                         <span className="text-[10px] text-slate-400 font-mono block">{code}</span>
                         <strong className={`font-mono text-sm block mt-0.5 ${
-                          passed ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                          !hasScore
+                            ? 'text-slate-400 dark:text-slate-600 font-normal'
+                            : passed
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-amber-600 dark:text-amber-400'
                         }`}>
-                          {score.toFixed(1)}
+                          {hasScore ? score.toFixed(1) : '-'}
                         </strong>
                       </div>
                     );

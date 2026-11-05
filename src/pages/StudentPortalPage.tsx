@@ -9,7 +9,7 @@ import {
 import { ResourceCard } from '../components/ResourceCard';
 import { dbService } from '../services/database';
 import { ExportService } from '../services/export';
-import { Score, Student, Tryout, Explanation, Question, Subject } from '../types/database';
+import { Score, Student, Tryout, Explanation, Question, Subject, ClassRoom } from '../types/database';
 import { StudentVerificationGate } from '../components/student/StudentVerificationGate';
 import { StudentQuestionSheet } from '../components/student/StudentQuestionSheet';
 import { SubjectRecapSection, SubjectRecapRow } from '../components/student/SubjectRecapSection';
@@ -25,6 +25,18 @@ export const StudentPortalPage: React.FC = () => {
   const [activeScore, setActiveScore] = useState<Score | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Realtime Database Reactive State
+  const [allTryouts, setAllTryouts] = useState<Tryout[]>(() => dbService.getTryouts());
+  const [allSubjects, setAllSubjects] = useState<Subject[]>(() => dbService.getSubjects());
+  const [allQuestions, setAllQuestions] = useState<Question[]>(() => dbService.getQuestions());
+  const [allStudents, setAllStudents] = useState<Student[]>(() => dbService.getStudents());
+  const [allScores, setAllScores] = useState<Score[]>(() => dbService.getScores());
+  const [allClasses, setAllClasses] = useState<ClassRoom[]>(() => dbService.getClasses());
+  const [allExplanations, setAllExplanations] = useState<Explanation[]>(() => dbService.getExplanations());
+  const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
+  const [dbVersion, setDbVersion] = useState<number>(0);
 
   // Video Player Modal State
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
@@ -44,15 +56,81 @@ export const StudentPortalPage: React.FC = () => {
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [lockoutTimer, setLockoutTimer] = useState(0);
 
-  // Filter Tryouts strictly scoped to verified student's class
+  // Realtime Database Subscription & Auto Sync with Cloud / Admin / Guru / Walas
+  useEffect(() => {
+    const refreshData = () => {
+      const freshTryouts = dbService.getTryouts();
+      const freshSubjects = dbService.getSubjects();
+      const freshQuestions = dbService.getQuestions();
+      const freshStudents = dbService.getStudents();
+      const freshScores = dbService.getScores();
+      const freshClasses = dbService.getClasses();
+      const freshExplanations = dbService.getExplanations();
+
+      setAllTryouts(freshTryouts);
+      setAllSubjects(freshSubjects);
+      setAllQuestions(freshQuestions);
+      setAllStudents(freshStudents);
+      setAllScores(freshScores);
+      setAllClasses(freshClasses);
+      setAllExplanations(freshExplanations);
+      setDbVersion(v => v + 1);
+      setLastSyncTime(new Date());
+
+      // Jika siswa sedang terverifikasi, sinkronkan data siswa dan nilai terkininya secara realtime
+      const currentId = verifiedStudent?.id || sessionStorage.getItem('verified_student_id');
+      if (currentId) {
+        const freshStudent = freshStudents.find(s => s.id === currentId);
+        if (freshStudent) {
+          setVerifiedStudent(freshStudent);
+          const studentScores = freshScores.filter(s => s.studentId === freshStudent.id);
+          setActiveScore(prev => {
+            if (!prev) {
+              return studentScores.find(s => s.tryoutId === selectedTryoutId) || studentScores[0] || null;
+            }
+            return studentScores.find(s => s.tryoutId === prev.tryoutId) ||
+                   studentScores.find(s => s.tryoutId === selectedTryoutId) ||
+                   studentScores[0] || null;
+          });
+        }
+      }
+    };
+
+    refreshData();
+    const unsubscribe = dbService.subscribe(refreshData);
+    const stopRealtimeSync = dbService.startRealtimeSync();
+
+    return () => {
+      unsubscribe();
+      stopRealtimeSync();
+    };
+  }, [verifiedStudent?.id, selectedTryoutId]);
+
+  // Tombol Manual Trigger Sync Realtime
+  const handleManualSync = async () => {
+    setIsCloudSyncing(true);
+    try {
+      await dbService.pullFromCloud();
+      setLastSyncTime(new Date());
+    } catch {
+      // ignore
+    } finally {
+      setTimeout(() => setIsCloudSyncing(false), 600);
+    }
+  };
+
+  // Filter Tryouts strictly scoped to verified student's class or existing scores
   const tryouts = useMemo(() => {
-    const all = dbService.getTryouts();
-    if (!verifiedStudent) return all;
+    if (!verifiedStudent) return allTryouts;
 
-    const studentClass = dbService.getClasses().find(c => c.id === verifiedStudent.classId);
+    const studentClass = allClasses.find(c => c.id === verifiedStudent.classId);
 
-    return all.filter(t => {
-      // 1. If linked to an ExamPackage (wadah), verify target classes
+    return allTryouts.filter(t => {
+      // 1. Jika siswa memiliki nilai di tryout ini (termasuk hasil upload guru mapel / eksternal), SELALU TAMPILKAN!
+      const hasScore = allScores.some(s => s.studentId === verifiedStudent.id && s.tryoutId === t.id);
+      if (hasScore) return true;
+
+      // 2. If linked to an ExamPackage (wadah), verify target classes
       if (t.packageId) {
         const pkg = dbService.getExamPackageById(t.packageId);
         if (pkg) {
@@ -66,15 +144,15 @@ export const StudentPortalPage: React.FC = () => {
         }
       }
 
-      // 2. Direct targetClassIds on tryout
+      // 3. Direct targetClassIds on tryout
       if (t.targetClassIds && t.targetClassIds.length > 0) {
         return t.targetClassIds.includes(verifiedStudent.classId);
       }
 
-      // 3. Fallback for legacy data without packageId
+      // 4. Fallback for legacy data without packageId
       return true;
     });
-  }, [verifiedStudent]);
+  }, [allTryouts, verifiedStudent, allClasses, allScores]);
 
   // Ensure selectedTryoutId is valid within filtered tryouts
   useEffect(() => {
@@ -83,9 +161,9 @@ export const StudentPortalPage: React.FC = () => {
     }
   }, [tryouts, selectedTryoutId]);
 
-  const activeTryout = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
-  const allSubjects = dbService.getSubjects();
-  const allQuestions = dbService.getQuestions();
+  const activeTryout = useMemo(() => {
+    return tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
+  }, [tryouts, selectedTryoutId]);
 
   // Rate Limiting Countdown
   useEffect(() => {
@@ -109,17 +187,17 @@ export const StudentPortalPage: React.FC = () => {
   useEffect(() => {
     const sessionStudentId = sessionStorage.getItem('verified_student_id');
     if (sessionStudentId && !verifiedStudent) {
-      const student = dbService.getStudents().find(s => s.id === sessionStudentId);
+      const student = allStudents.find(s => s.id === sessionStudentId);
       if (student) {
         setVerifiedStudent(student);
         setBirthDateInput(student.birthDate || '');
         setNisnInput(student.nisn);
-        const scores = dbService.getScoresByStudent(student.id);
+        const scores = allScores.filter(s => s.studentId === student.id);
         const scoreObj = scores.find(s => s.tryoutId === selectedTryoutId) || scores[0];
         setActiveScore(scoreObj || null);
       }
     }
-  }, [selectedTryoutId]);
+  }, [selectedTryoutId, allStudents, allScores, verifiedStudent]);
 
   // Verification Handler (Tanggal Lahir + NISN Siswa)
   const handleVerify = (e?: React.FormEvent, overrideBirthDate?: string, overrideNisn?: string) => {
@@ -139,7 +217,28 @@ export const StudentPortalPage: React.FC = () => {
     }
 
     setTimeout(() => {
-      const student = dbService.getStudentByBirthDateAndNisn(targetDate, targetNisn);
+      // 1. Cek langsung dengan getStudentByBirthDateAndNisn
+      let student = dbService.getStudentByBirthDateAndNisn(targetDate, targetNisn);
+
+      // 2. Normalisasi fallback jika format tanggal lahir tersimpan sedikit berbeda
+      if (!student) {
+        const cleanTargetNisn = targetNisn.replace(/\D/g, '');
+        const matchedByNisn = allStudents.find(s => s.nisn.replace(/\D/g, '') === cleanTargetNisn);
+        if (matchedByNisn) {
+          const sDate = (matchedByNisn.birthDate || '').trim();
+          const targetParts = targetDate.split(/[-/]/).map(p => parseInt(p, 10));
+          const sDateParts = sDate.split(/[-/]/).map(p => parseInt(p, 10));
+
+          const isDateMatch = !sDate || (
+            targetParts.length === 3 && sDateParts.length === 3 &&
+            targetParts.slice().sort().join('-') === sDateParts.slice().sort().join('-')
+          );
+
+          if (isDateMatch) {
+            student = matchedByNisn;
+          }
+        }
+      }
 
       if (!student) {
         handleVerificationFailure(`Data siswa dengan Tanggal Lahir '${targetDate}' dan NISN '${targetNisn}' tidak ditemukan. Harap pastikan data sesuai Dapodik sekolah.`);
@@ -152,12 +251,12 @@ export const StudentPortalPage: React.FC = () => {
       sessionStorage.setItem('verified_student_id', student.id);
 
       // Isolation: Find score matching verified student.id
-      const scores = dbService.getScoresByStudent(student.id);
-      const scoreObj = scores.find(s => s.tryoutId === selectedTryoutId) || scores[0];
+      const studentScores = allScores.filter(s => s.studentId === student.id);
+      const scoreObj = studentScores.find(s => s.tryoutId === selectedTryoutId) || studentScores[0];
 
       if (!scoreObj) {
         setActiveScore(null);
-        setErrorMessage(`Siswa ${student.name} terverifikasi, namun belum memiliki entri nilai pada paket ujian ${activeTryout?.title}.`);
+        setErrorMessage(`Siswa ${student.name} terverifikasi, namun belum memiliki entri nilai pada paket ujian ${activeTryout?.title || 'terpilih'}.`);
       } else {
         setActiveScore(scoreObj);
       }
@@ -170,7 +269,7 @@ export const StudentPortalPage: React.FC = () => {
       );
 
       setLoading(false);
-    }, 350);
+    }, 250);
   };
 
   const handleVerificationFailure = (message: string) => {
@@ -215,21 +314,22 @@ export const StudentPortalPage: React.FC = () => {
   // Sync active score when switching tryouts
   useEffect(() => {
     if (verifiedStudent) {
-      const scores = dbService.getScoresByStudent(verifiedStudent.id);
-      const scoreObj = scores.find(s => s.tryoutId === selectedTryoutId) || scores[0];
+      const studentScores = allScores.filter(s => s.studentId === verifiedStudent.id);
+      const scoreObj = studentScores.find(s => s.tryoutId === selectedTryoutId) || studentScores[0];
       setActiveScore(scoreObj || null);
     }
-  }, [selectedTryoutId, verifiedStudent]);
+  }, [selectedTryoutId, verifiedStudent, allScores]);
 
-  // Real Database Student Analytics
-  const studentAnalytics = verifiedStudent
-    ? dbService.getStudentAnalytics(verifiedStudent.id, selectedTryoutId)
-    : null;
+  // Real Database Student Analytics (menggunakan selectedTryoutId dan reaktif)
+  const studentAnalytics = useMemo(() => {
+    if (!verifiedStudent || !selectedTryoutId) return null;
+    return dbService.getStudentAnalytics(verifiedStudent.id, selectedTryoutId);
+  }, [verifiedStudent, selectedTryoutId, dbVersion]);
 
   // Published Explanations for selected Tryout
-  const publishedExplanations = dbService
-    .getExplanations()
-    .filter(e => e.tryoutId === selectedTryoutId && e.status === 'PUBLISHED');
+  const publishedExplanations = useMemo(() => {
+    return allExplanations.filter(e => e.tryoutId === selectedTryoutId && e.status === 'PUBLISHED');
+  }, [allExplanations, selectedTryoutId]);
 
   // Ranking & Tie-Breaker Calculation (Multi-tier: Total Score -> Total Correct -> Math Correct)
   const mathSubject = allSubjects.find(s => s.code === 'MAT' || s.name.toLowerCase().includes('matematika')) || allSubjects[0];
@@ -259,53 +359,154 @@ export const StudentPortalPage: React.FC = () => {
   };
 
   // Rank Overall (Angkatan/Paralel)
-  const allScoresForActiveTryout = dbService.getScores().filter(s => s.tryoutId === selectedTryoutId);
-  const rankedOverall = sortScoresWithTieBreaker(allScoresForActiveTryout, selectedTryoutId);
+  const allScoresForActiveTryout = useMemo(() => {
+    return allScores.filter(s => s.tryoutId === selectedTryoutId);
+  }, [allScores, selectedTryoutId]);
+
+  const rankedOverall = useMemo(() => {
+    return sortScoresWithTieBreaker(allScoresForActiveTryout, selectedTryoutId);
+  }, [allScoresForActiveTryout, selectedTryoutId]);
+
   const overallRankIndex = verifiedStudent ? rankedOverall.findIndex(s => s.studentId === verifiedStudent.id) : -1;
   const overallRank = overallRankIndex !== -1 ? overallRankIndex + 1 : 1;
   const overallTotalStudents = Math.max(1, rankedOverall.length);
 
   // Rank Class
-  const allStudents = dbService.getStudents();
-  const classStudents = verifiedStudent ? allStudents.filter(st => st.classId === verifiedStudent.classId) : [];
+  const classStudents = useMemo(() => {
+    return verifiedStudent ? allStudents.filter(st => st.classId === verifiedStudent.classId) : [];
+  }, [verifiedStudent, allStudents]);
+
   const classStudentIds = useMemo(() => new Set(classStudents.map(st => st.id)), [classStudents]);
-  const classScoresForActiveTryout = allScoresForActiveTryout.filter(s => classStudentIds.has(s.studentId));
-  const rankedClass = sortScoresWithTieBreaker(classScoresForActiveTryout, selectedTryoutId);
+
+  const classScoresForActiveTryout = useMemo(() => {
+    return allScoresForActiveTryout.filter(s => classStudentIds.has(s.studentId));
+  }, [allScoresForActiveTryout, classStudentIds]);
+
+  const rankedClass = useMemo(() => {
+    return sortScoresWithTieBreaker(classScoresForActiveTryout, selectedTryoutId);
+  }, [classScoresForActiveTryout, selectedTryoutId]);
+
   const classRankIndex = verifiedStudent ? rankedClass.findIndex(s => s.studentId === verifiedStudent.id) : -1;
   const classRank = classRankIndex !== -1 ? classRankIndex + 1 : 1;
   const classTotalStudents = Math.max(1, rankedClass.length);
 
   // Student class metadata
-  const studentClassObj = verifiedStudent ? dbService.getClasses().find(c => c.id === verifiedStudent.classId) : null;
-  const studentClassName = studentClassObj?.name || 'XII IPA 1';
+  const studentClassObj = verifiedStudent ? allClasses.find(c => c.id === verifiedStudent.classId) : null;
+  const studentClassName = studentClassObj?.name || 'Kelas Siswa';
 
-  // Per-Subject Mini Scorecard for Active Tryout
-  const activeTryoutSubjectCards = allSubjects.map(subj => {
-    let scoreVal = activeScore?.subjectScores?.[subj.id];
-    if (scoreVal === undefined && verifiedStudent) {
-      const studentAnswers = dbService.getAnswers().filter(a => a.studentId === verifiedStudent.id && a.tryoutId === selectedTryoutId);
-      const subjQuestions = allQuestions.filter(q => q.subjectId === subj.id);
-      if (subjQuestions.length > 0 && studentAnswers.length > 0) {
-        const qIds = new Set(subjQuestions.map(q => q.id));
-        const matched = studentAnswers.filter(a => qIds.has(a.questionId));
-        if (matched.length > 0) {
-          const correct = matched.filter(a => a.isCorrect).length;
-          scoreVal = Math.round((correct / matched.length) * 100 * 10) / 10;
+  // Helper untuk mengekstrak skor mapel dari Score object dengan matching multi-key (id, nama, kode)
+  const resolveSubjectScoreFromScoreObj = (
+    scoreObj: Score | null | undefined,
+    subj: Subject,
+    studentAnswers: any[] = [],
+    subjQuestions: Question[] = []
+  ): number | null => {
+    if (!scoreObj) return null;
+
+    if (scoreObj.subjectScores) {
+      if (typeof scoreObj.subjectScores[subj.id] === 'number') {
+        return scoreObj.subjectScores[subj.id];
+      }
+      const lowerName = subj.name.toLowerCase().trim();
+      for (const [k, v] of Object.entries(scoreObj.subjectScores)) {
+        if (typeof v === 'number' && k.toLowerCase().trim() === lowerName) {
+          return v;
+        }
+      }
+      const lowerCode = subj.code.toLowerCase().trim();
+      for (const [k, v] of Object.entries(scoreObj.subjectScores)) {
+        if (typeof v === 'number' && k.toLowerCase().trim() === lowerCode) {
+          return v;
         }
       }
     }
-    if (scoreVal === undefined) {
-      scoreVal = activeScore?.calculatedScore || 75.0;
+
+    if (subjQuestions.length > 0 && studentAnswers.length > 0) {
+      const qIds = new Set(subjQuestions.map(q => q.id));
+      const matched = studentAnswers.filter(a => qIds.has(a.questionId));
+      if (matched.length > 0) {
+        const correct = matched.filter(a => a.isCorrect).length;
+        return Math.round((correct / matched.length) * 100 * 10) / 10;
+      }
     }
-    const passingGrade = subj.passingGrade ?? 75.0;
-    const isPassing = scoreVal >= passingGrade;
-    return {
-      subject: subj,
-      score: scoreVal,
-      passingGrade,
-      isPassing,
-    };
-  });
+
+    return null;
+  };
+
+  // Per-Subject Mini Scorecard for Active Tryout - MENAMPILKAN HANYA MAPEL YANG RELEVAN TANPA NILAI DUMMY 75.0!
+  const activeTryoutSubjectCards = useMemo(() => {
+    if (!activeTryout) return [];
+
+    const studentAnswers = verifiedStudent
+      ? dbService.getAnswers().filter(a => a.studentId === verifiedStudent.id && a.tryoutId === activeTryout.id)
+      : [];
+
+    let relevantSubjects: Subject[] = [];
+
+    // 1. Tryout Eksternal
+    if (activeTryout.isExternal) {
+      const targetSubjNames = new Set((activeTryout.externalSubjects || []).map(s => s.toLowerCase().trim()));
+      const targetSubjIds = new Set(activeTryout.externalSubjectIds || []);
+      const scoreSubjKeys = new Set(Object.keys(activeScore?.subjectScores || {}).map(k => k.toLowerCase().trim()));
+
+      relevantSubjects = allSubjects.filter(s =>
+        targetSubjIds.has(s.id) ||
+        targetSubjNames.has(s.name.toLowerCase().trim()) ||
+        scoreSubjKeys.has(s.id.toLowerCase().trim()) ||
+        scoreSubjKeys.has(s.name.toLowerCase().trim()) ||
+        scoreSubjKeys.has(s.code.toLowerCase().trim())
+      );
+    }
+    // 2. Tryout Single Subject
+    else if (activeTryout.subjectId) {
+      const matched = allSubjects.find(s => s.id === activeTryout.subjectId);
+      if (matched) relevantSubjects = [matched];
+    }
+    // 3. Tryout dengan butir soal
+    else {
+      const tryoutQuestions = dbService.getQuestionsForTryout(activeTryout.id);
+      if (tryoutQuestions.length > 0) {
+        const subjIdSet = new Set(tryoutQuestions.map(q => q.subjectId));
+        relevantSubjects = allSubjects.filter(s => subjIdSet.has(s.id));
+      }
+    }
+
+    // 4. Jika masih kosong tapi ada subjectScores pada activeScore
+    if (relevantSubjects.length === 0 && activeScore?.subjectScores && Object.keys(activeScore.subjectScores).length > 0) {
+      const scoreKeys = Object.keys(activeScore.subjectScores).map(k => k.toLowerCase().trim());
+      relevantSubjects = allSubjects.filter(s =>
+        scoreKeys.includes(s.id.toLowerCase().trim()) ||
+        scoreKeys.includes(s.name.toLowerCase().trim()) ||
+        scoreKeys.includes(s.code.toLowerCase().trim())
+      );
+    }
+
+    // 5. Fallback jika tryout umum
+    if (relevantSubjects.length === 0) {
+      relevantSubjects = allSubjects.slice(0, 4);
+    }
+
+    return relevantSubjects.map(subj => {
+      const subjQuestions = allQuestions.filter(q => q.subjectId === subj.id);
+      let scoreVal = resolveSubjectScoreFromScoreObj(activeScore, subj, studentAnswers, subjQuestions);
+
+      if (scoreVal === null && activeTryout.subjectId === subj.id && activeScore) {
+        scoreVal = activeScore.calculatedScore;
+      }
+
+      const finalScore = scoreVal !== null ? scoreVal : (activeScore?.calculatedScore ?? 0);
+      const passingGrade = subj.passingGrade ?? 75.0;
+      const isPassing = finalScore >= passingGrade;
+
+      return {
+        subject: subj,
+        score: finalScore,
+        passingGrade,
+        isPassing,
+        hasRealScore: scoreVal !== null,
+      };
+    });
+  }, [activeTryout, activeScore, verifiedStudent, allSubjects, allQuestions]);
 
   // Class Benchmark metrics
   const classScoresNumbers = classScoresForActiveTryout.map(s => s.calculatedScore);
@@ -325,80 +526,85 @@ export const StudentPortalPage: React.FC = () => {
   }, [activeScore]);
 
   // Multi-Tryout Progress History (Real analytics progress)
-  const progressHistory = studentAnalytics?.progress.map(p => ({
-    code: p.tryoutCode,
-    title: p.tryoutTitle,
-    date: p.date,
-    score: p.score,
-    classAverage: p.classAverage ?? 75.0,
-  })) || [];
+  const progressHistory = useMemo(() => {
+    return studentAnalytics?.progress.map(p => ({
+      code: p.tryoutCode,
+      title: p.tryoutTitle,
+      date: p.date,
+      score: p.score,
+      classAverage: p.classAverage ?? 75.0,
+    })) || [];
+  }, [studentAnalytics]);
 
   // DETERMINISTIC REAL CALCULATION: Compute per-subject scores for student
-  const getSubjectScore = (subjId: string, tryoutIndex: number, tryoutCode: string): number => {
-    if (!verifiedStudent) return 0;
+  const getSubjectScore = (subjId: string, tryoutIndex: number, tryoutCode: string): number | null => {
+    if (!verifiedStudent) return null;
 
     const targetTryout = tryouts.find(t => t.code === tryoutCode || t.id === `to-${tryoutIndex + 1}`) || tryouts[tryoutIndex];
-    if (targetTryout) {
-      const studentScoreObj = dbService.getScoresByStudent(verifiedStudent.id).find(s => s.tryoutId === targetTryout.id);
-      if (studentScoreObj?.subjectScores && studentScoreObj.subjectScores[subjId] !== undefined) {
-        return studentScoreObj.subjectScores[subjId];
-      }
+    if (!targetTryout) return null;
 
-      // Check real student answers for questions of this subject
-      const answers = dbService.getAnswers().filter(a => a.studentId === verifiedStudent.id && a.tryoutId === targetTryout.id);
-      const subjQuestions = allQuestions.filter(q => q.subjectId === subjId);
-      if (subjQuestions.length > 0 && answers.length > 0) {
-        const qIdSet = new Set(subjQuestions.map(q => q.id));
-        const matchedAns = answers.filter(a => qIdSet.has(a.questionId));
-        if (matchedAns.length > 0) {
-          const correct = matchedAns.filter(a => a.isCorrect).length;
-          return Math.round((correct / matchedAns.length) * 100 * 10) / 10;
-        }
-      }
+    const studentScoreObj = allScores.find(s => s.studentId === verifiedStudent.id && s.tryoutId === targetTryout.id);
+    if (!studentScoreObj) return null;
 
-      if (studentScoreObj) {
-        // Hanya gunakan calculatedScore jika tryout ini memang untuk mapel ini atau lintas mapel
-        if (!targetTryout.subjectId || targetTryout.subjectId === subjId) {
-          return studentScoreObj.calculatedScore;
-        }
-      }
+    const subj = allSubjects.find(s => s.id === subjId);
+    if (!subj) return null;
+
+    const studentAnswers = dbService.getAnswers().filter(a => a.studentId === verifiedStudent.id && a.tryoutId === targetTryout.id);
+    const subjQuestions = allQuestions.filter(q => q.subjectId === subjId);
+
+    const val = resolveSubjectScoreFromScoreObj(studentScoreObj, subj, studentAnswers, subjQuestions);
+    if (val !== null) return val;
+
+    if (targetTryout.subjectId === subjId) {
+      return studentScoreObj.calculatedScore;
     }
 
-    return 0;
+    return null;
   };
 
-  // Build real subject recap matrix rows
-  const subjectRecapRows: SubjectRecapRow[] = allSubjects.map(subj => {
-    const toScores: Record<string, number> = {};
-    progressHistory.forEach((item, idx) => {
-      toScores[item.code] = getSubjectScore(subj.id, idx, item.code);
+  // Build real subject recap matrix rows (menghitung rata-rata hanya dari tryout dengan data valid)
+  const subjectRecapRows: SubjectRecapRow[] = useMemo(() => {
+    return allSubjects.map(subj => {
+      const toScores: Record<string, number> = {};
+      const validScores: number[] = [];
+
+      progressHistory.forEach((item, idx) => {
+        const score = getSubjectScore(subj.id, idx, item.code);
+        if (score !== null) {
+          toScores[item.code] = score;
+          validScores.push(score);
+        } else {
+          toScores[item.code] = 0;
+        }
+      });
+
+      const avgScore = validScores.length > 0
+        ? Math.round((validScores.reduce((a, b) => a + b, 0) / validScores.length) * 10) / 10
+        : 0;
+
+      const passingGrade = subj.passingGrade ?? 75.0;
+      const isPassing = avgScore >= passingGrade && validScores.length > 0;
+      const firstVal = validScores[0] || 0;
+      const lastVal = validScores[validScores.length - 1] || 0;
+      const trend = validScores.length > 1 ? Math.round((lastVal - firstVal) * 10) / 10 : 0;
+
+      return {
+        subject: subj,
+        passingGrade,
+        toScores,
+        avgScore,
+        isPassing,
+        trend,
+      };
+    }).filter(r => {
+      return Object.values(r.toScores).some(v => v > 0) || allSubjects.length <= 12;
     });
-
-    const scoreVals = Object.values(toScores);
-    const avgScore = scoreVals.length > 0
-      ? Math.round((scoreVals.reduce((a, b) => a + b, 0) / scoreVals.length) * 10) / 10
-      : 0;
-
-    const passingGrade = subj.passingGrade ?? 75.0;
-    const isPassing = avgScore >= passingGrade;
-    const firstVal = scoreVals[0] || 0;
-    const lastVal = scoreVals[scoreVals.length - 1] || 0;
-    const trend = Math.round((lastVal - firstVal) * 10) / 10;
-
-    return {
-      subject: subj,
-      passingGrade,
-      toScores,
-      avgScore,
-      isPassing,
-      trend,
-    };
-  });
+  }, [allSubjects, progressHistory, verifiedStudent, allScores, allQuestions]);
 
   // PDF Export
   const handleDownloadPDF = () => {
     if (!verifiedStudent || !activeScore || !activeTryout) return;
-    const studentClass = dbService.getClasses().find(c => c.id === verifiedStudent.classId);
+    const studentClass = allClasses.find(c => c.id === verifiedStudent.classId);
     ExportService.exportStudentPDF(
       verifiedStudent,
       activeScore,
@@ -466,9 +672,26 @@ export const StudentPortalPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900/90 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 font-medium shrink-0">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>Isolasi Data Siswa Aktif</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 font-medium shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Sinkron Realtime</span>
+              <span className="text-[10px] text-slate-400 font-mono">({lastSyncTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })})</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleManualSync}
+              disabled={isCloudSyncing}
+              className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900/90 dark:hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-indigo-600 dark:text-indigo-400 font-semibold cursor-pointer transition-colors disabled:opacity-50"
+              title="Segarkan data terbaru dari server sekolah"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isCloudSyncing ? 'Menyinkronkan...' : 'Segarkan'}</span>
+            </button>
+            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 font-medium shrink-0">
+              <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Isolasi Data Siswa Aktif</span>
+            </div>
           </div>
         </div>
       </div>
@@ -513,6 +736,17 @@ export const StudentPortalPage: React.FC = () => {
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleManualSync}
+                  disabled={isCloudSyncing}
+                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-200 dark:border-slate-700 disabled:opacity-50"
+                  title="Segarkan data terbaru secara realtime dari server"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 ${isCloudSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isCloudSyncing ? 'Menyinkronkan...' : 'Segarkan Data'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleDownloadPDF}
@@ -671,8 +905,14 @@ export const StudentPortalPage: React.FC = () => {
                     </div>
                     <div>
                       <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Jawaban Benar</div>
-                      <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono">{activeScore.totalCorrect} Soal</div>
-                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Capaian Berhasil</div>
+                      <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono">
+                        {activeTryout?.isExternal && !activeScore.totalCorrect
+                          ? `${activeTryoutSubjectCards.filter(c => c.isPassing).length} Mapel`
+                          : `${activeScore.totalCorrect ?? 0} Soal`}
+                      </div>
+                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                        {activeTryout?.isExternal && !activeScore.totalCorrect ? 'Tuntas KKM' : 'Capaian Berhasil'}
+                      </div>
                     </div>
                   </div>
 
@@ -682,8 +922,14 @@ export const StudentPortalPage: React.FC = () => {
                     </div>
                     <div>
                       <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Jawaban Salah</div>
-                      <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono">{activeScore.totalIncorrect} Soal</div>
-                      <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">Perlu Evaluasi</div>
+                      <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono">
+                        {activeTryout?.isExternal && !activeScore.totalIncorrect
+                          ? `${activeTryoutSubjectCards.filter(c => !c.isPassing).length} Mapel`
+                          : `${activeScore.totalIncorrect ?? 0} Soal`}
+                      </div>
+                      <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">
+                        {activeTryout?.isExternal && !activeScore.totalIncorrect ? 'Belum KKM' : 'Perlu Evaluasi'}
+                      </div>
                     </div>
                   </div>
 
@@ -692,9 +938,17 @@ export const StudentPortalPage: React.FC = () => {
                       <HelpCircle className="w-6 h-6" />
                     </div>
                     <div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Tidak Dijawab</div>
-                      <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono">{activeScore.totalUnanswered} Soal</div>
-                      <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Opsi Kosong</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        {activeTryout?.isExternal && !activeScore.totalUnanswered ? 'Total Bidang Studi' : 'Tidak Dijawab'}
+                      </div>
+                      <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono">
+                        {activeTryout?.isExternal && !activeScore.totalUnanswered
+                          ? `${activeTryoutSubjectCards.length} Mapel`
+                          : `${activeScore.totalUnanswered ?? 0} Soal`}
+                      </div>
+                      <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                        {activeTryout?.isExternal && !activeScore.totalUnanswered ? 'Diujikan Sekolah' : 'Opsi Kosong'}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1078,21 +1332,46 @@ export const StudentPortalPage: React.FC = () => {
             )}
 
             {/* TAB 3: REKAP BUTIR SOAL YANG DIKERJAKAN */}
-            {portalTab === 'QUESTION_SHEET' && studentAnalytics && (
-              <StudentQuestionSheet
-                questions={allQuestions}
-                questionPerformance={studentAnalytics.questionPerformance}
-                subjects={allSubjects}
-                explanations={publishedExplanations}
-                onWatchVideo={(url, title) => {
-                  setSelectedVideoUrl(url);
-                  setSelectedVideoTitle(title);
-                }}
-                activeTryoutCode={activeTryout?.code || 'Try Out'}
-                tryouts={tryouts}
-                selectedTryoutId={selectedTryoutId}
-                onSelectTryout={id => setSelectedTryoutId(id)}
-              />
+            {portalTab === 'QUESTION_SHEET' && (
+              studentAnalytics && studentAnalytics.questionPerformance.length > 0 ? (
+                <StudentQuestionSheet
+                  questions={allQuestions}
+                  questionPerformance={studentAnalytics.questionPerformance}
+                  subjects={allSubjects}
+                  explanations={publishedExplanations}
+                  onWatchVideo={(url, title) => {
+                    setSelectedVideoUrl(url);
+                    setSelectedVideoTitle(title);
+                  }}
+                  activeTryoutCode={activeTryout?.code || 'Try Out'}
+                  tryouts={tryouts}
+                  selectedTryoutId={selectedTryoutId}
+                  onSelectTryout={id => setSelectedTryoutId(id)}
+                />
+              ) : (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 sm:p-12 text-center space-y-4 animate-fade-in shadow-xs">
+                  <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto">
+                    <BookOpen className="w-8 h-8" />
+                  </div>
+                  <div className="max-w-md mx-auto space-y-2">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                      {activeTryout?.isExternal ? 'Rekapitulasi Nilai Kolektif / Try Out Eksternal' : 'Lembar Soal Belum Tersedia'}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                      {activeTryout?.isExternal
+                        ? `Paket '${activeTryout.title}' diolah langsung dari rekapitulasi nilai kolektif multi-mapel sekolah tanpa formulir lembar soal per butir. Silakan cek rincian nilai tiap mapel pada tab Rapor & Skor TO atau Grafik & Rekap Mapel.`
+                        : `Belum ada butir soal yang dipublikasikan untuk paket ujian ${activeTryout?.title || ''}. Silakan hubungi guru mata pelajaran terkait.`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPortalTab('REPORT')}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                  >
+                    Kembali ke Rapor Siswa
+                  </button>
+                </div>
+              )
             )}
 
             {/* TAB 4: PUSAT MEDIA PEMBAHASAN RESMI (PDF & VIDEO YOUTUBE) */}

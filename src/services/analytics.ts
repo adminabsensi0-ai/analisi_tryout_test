@@ -495,16 +495,26 @@ export class AnalyticsService {
     const answerMap = new Map<string, Answer>();
     studentAnswers.forEach(a => answerMap.set(a.questionId, a));
 
-    questions.forEach(q => {
-      const ans = answerMap.get(q.id);
-      if (!ans || !ans.studentAnswer) {
-        unansweredCount++;
-      } else if (ans.isCorrect) {
-        correctCount++;
-      } else {
-        incorrectCount++;
-      }
-    });
+    if (totalQuestions > 0) {
+      questions.forEach(q => {
+        const ans = answerMap.get(q.id);
+        if (!ans || !ans.studentAnswer || ans.studentAnswer === 'KOSONG' || ans.studentAnswer === 'Kosong') {
+          unansweredCount++;
+        } else if (ans.isCorrect) {
+          correctCount++;
+        } else {
+          incorrectCount++;
+        }
+      });
+    } else if (studentScore) {
+      correctCount = studentScore.totalCorrect ?? 0;
+      incorrectCount = studentScore.totalIncorrect ?? 0;
+      unansweredCount = studentScore.totalUnanswered ?? 0;
+    }
+
+    const finalTotalQuestions = totalQuestions > 0
+      ? totalQuestions
+      : (correctCount + incorrectCount + unansweredCount);
 
     const targetScore = student.targetScore || 80.0;
     const attainmentPercentage = Math.round((effectiveScore / targetScore) * 100 * 10) / 10;

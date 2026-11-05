@@ -146,7 +146,7 @@ export class ProgressService {
       const teacher = (dbState.teachers || []).find((t: any) =>
         (currentUser.id && (t.userId === currentUser.id || t.id === currentUser.id)) ||
         (currentUser.email && t.email && t.email.toLowerCase() === currentUser.email.toLowerCase()) ||
-        (currentUser.nip && t.nip === currentUser.nip)
+        ((currentUser as any).nip && t.nip === (currentUser as any).nip)
       );
       if (teacher && teacher.subjectPermissions && teacher.subjectPermissions.length > 0) {
         targetSubjectId = teacher.subjectPermissions[0];
@@ -310,7 +310,7 @@ export class ProgressService {
       const teacher = (dbState.teachers || []).find((t: any) =>
         (currentUser.id && (t.userId === currentUser.id || t.id === currentUser.id)) ||
         (currentUser.email && t.email && t.email.toLowerCase() === currentUser.email.toLowerCase()) ||
-        (currentUser.nip && t.nip === currentUser.nip)
+        ((currentUser as any).nip && t.nip === (currentUser as any).nip)
       );
       if (teacher && teacher.subjectPermissions && teacher.subjectPermissions.length > 0) {
         teacherAllowedSubjects = new Set(teacher.subjectPermissions);
@@ -483,7 +483,7 @@ export class ProgressService {
         .filter((s: Score) => {
           if (allowedStudentIds && !allowedStudentIds.has(s.studentId)) return false;
           if (s.subjectScores && s.subjectScores[subjectId] !== undefined) return true;
-          const to = subjectTryouts.find(t => t.id === s.tryoutId);
+          const to = subjectTryouts.find((t: any) => t.id === s.tryoutId);
           return !!to && (s.calculatedScore !== undefined || s.googleFormScore !== undefined);
         })
         .map((s: Score) => s.tryoutId)
