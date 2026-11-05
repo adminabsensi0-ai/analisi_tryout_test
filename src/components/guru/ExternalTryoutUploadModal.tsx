@@ -176,7 +176,7 @@ export const ExternalTryoutUploadModal: React.FC<ExternalTryoutUploadModalProps>
         </div>
 
         {/* Scrollable Body */}
-        <div className="overflow-y-auto flex-1 min-h-0 p-6 space-y-5 text-xs">
+        <div className="overflow-y-auto flex-1 min-h-0 p-6 pb-10 space-y-5 text-xs">
           {/* Step 1: Download Template */}
           <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1">

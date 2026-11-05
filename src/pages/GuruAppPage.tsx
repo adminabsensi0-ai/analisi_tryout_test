@@ -1636,7 +1636,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       {/* Sidebar Navigation - Professional Teal Teacher Theme */}
       <aside
         className={`${
-          sidebarOpen ? 'block fixed inset-x-0 top-16 z-30 bg-slate-50 dark:bg-[#071116]' : 'hidden'
+          sidebarOpen ? 'block fixed inset-x-0 top-16 z-30 bg-slate-50 dark:bg-[#071116] max-h-[calc(100vh-4rem)] overflow-y-auto' : 'hidden'
         } md:block md:sticky md:top-16 md:h-[calc(100vh-4rem)] md:overflow-y-auto w-full md:w-64 bg-slate-50/95 dark:bg-[#071116] text-slate-700 dark:text-slate-300 border-r border-slate-200/90 dark:border-slate-800/80 flex-shrink-0 z-20 transition-colors shadow-xs dark:shadow-none`}
       >
         <div className="p-4 border-b border-slate-200 dark:border-slate-800/80 flex items-center space-x-3 bg-white dark:bg-slate-950/60">
@@ -1679,7 +1679,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         </div>
 
         {/* Navigation Menu */}
-        <nav className="p-2 space-y-0.5 text-xs font-medium">
+        <nav className="p-2 pb-28 space-y-0.5 text-xs font-medium">
 
           <button
             onClick={() => {
@@ -1872,7 +1872,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 bg-transparent text-slate-900 dark:text-slate-100 overflow-y-auto transition-colors">
         {/* Content Container */}
-        <div className="p-6 flex-1">
+        <div className="p-4 sm:p-6 pb-28 sm:pb-36 flex-1">
           {isLoading ? (
             <div className="h-64 flex flex-col items-center justify-center text-slate-400">
               <RefreshCw className="w-6 h-6 animate-spin mb-2" />
@@ -8279,152 +8279,155 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       {/* QUESTION MODAL (CREATE / EDIT) */}
       {/* ------------------------------------------------------------- */}
       {showQuestionModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-2">
                 <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                   {editingQuestionId ? 'Edit Butir Soal' : 'Tambah Butir Soal Baru'}
                 </h3>
               </div>
-              <button onClick={() => setShowQuestionModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+              <button onClick={() => setShowQuestionModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveQuestion} className="p-5 overflow-y-auto space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Mata Pelajaran</label>
-                  <select
-                    value={qSubjectId}
-                    onChange={e => setQSubjectId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 focus:ring-1 focus:ring-indigo-500"
-                  >
-                    {permittedSubjects.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Materi</label>
-                  <select
-                    value={qMaterialId}
-                    onChange={e => setQMaterialId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 focus:ring-1 focus:ring-indigo-500"
-                  >
-                    <option value="">Pilih Materi...</option>
-                    {materials
-                      .filter(m => m.subjectId === qSubjectId)
-                      .map(m => (
-                        <option key={m.id} value={m.id}>
-                          {m.code} — {m.title}
+            <form onSubmit={handleSaveQuestion} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 flex-1 min-h-0 overflow-y-auto space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Mata Pelajaran</label>
+                    <select
+                      value={qSubjectId}
+                      onChange={e => setQSubjectId(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {permittedSubjects.map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.code})
                         </option>
                       ))}
-                  </select>
-                </div>
-              </div>
+                    </select>
+                  </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Nomor Soal</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={qNumber}
-                    onChange={e => setQNumber(Number(e.target.value))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Kode Unik</label>
-                  <input
-                    type="text"
-                    value={qUniqueCode}
-                    onChange={e => setQUniqueCode(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Status</label>
-                  <select
-                    value={qStatus}
-                    onChange={e => setQStatus(e.target.value as QuestionStatus)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-semibold"
-                  >
-                    <option value="ACTIVE">ACTIVE</option>
-                    <option value="DRAFT">DRAFT</option>
-                    <option value="ARCHIVED">ARCHIVED</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Teks Pertanyaan / Butir Soal</label>
-                <textarea
-                  rows={3}
-                  value={qText}
-                  onChange={e => setQText(e.target.value)}
-                  placeholder="Tuliskan butir pertanyaan di sini..."
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2.5 leading-relaxed placeholder-slate-400"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold">Pilihan Jawaban (Opsi A s/d E) & Kunci</label>
-                {qOptions.map((opt, idx) => (
-                  <div key={opt.key} className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => setQCorrectAnswer(opt.key)}
-                      className={`w-7 h-7 rounded text-xs font-bold border transition-colors ${
-                        qCorrectAnswer === opt.key
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                      title={qCorrectAnswer === opt.key ? 'Kunci Jawaban Terpilih' : 'Jadikan Kunci Jawaban'}
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Materi</label>
+                    <select
+                      value={qMaterialId}
+                      onChange={e => setQMaterialId(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 focus:ring-1 focus:ring-indigo-500"
                     >
-                      {opt.key}
-                    </button>
+                      <option value="">Pilih Materi...</option>
+                      {materials
+                        .filter(m => m.subjectId === qSubjectId)
+                        .map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.code} — {m.title}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Nomor Soal</label>
                     <input
-                      type="text"
-                      value={opt.text}
-                      onChange={e => {
-                        const next = [...qOptions];
-                        next[idx].text = e.target.value;
-                        setQOptions(next);
-                      }}
-                      placeholder={`Isi pilihan jawaban ${opt.key}...`}
-                      className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 text-xs placeholder-slate-400"
+                      type="number"
+                      min={1}
+                      value={qNumber}
+                      onChange={e => setQNumber(Number(e.target.value))}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-mono"
                       required
                     />
                   </div>
-                ))}
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">
-                  Klik tombol huruf (A/B/C/D/E) yang berwarna hijau untuk menentukan kunci jawaban yang benar.
-                </p>
+
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Kode Unik</label>
+                    <input
+                      type="text"
+                      value={qUniqueCode}
+                      onChange={e => setQUniqueCode(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-mono"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Status</label>
+                    <select
+                      value={qStatus}
+                      onChange={e => setQStatus(e.target.value as QuestionStatus)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-semibold"
+                    >
+                      <option value="ACTIVE">ACTIVE</option>
+                      <option value="DRAFT">DRAFT</option>
+                      <option value="ARCHIVED">ARCHIVED</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Teks Pertanyaan / Butir Soal</label>
+                  <textarea
+                    rows={3}
+                    value={qText}
+                    onChange={e => setQText(e.target.value)}
+                    placeholder="Tuliskan butir pertanyaan di sini..."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2.5 leading-relaxed placeholder-slate-400"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold">Pilihan Jawaban (Opsi A s/d E) & Kunci</label>
+                  {qOptions.map((opt, idx) => (
+                    <div key={opt.key} className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => setQCorrectAnswer(opt.key)}
+                        className={`w-7 h-7 rounded text-xs font-bold border transition-colors cursor-pointer ${
+                          qCorrectAnswer === opt.key
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                        title={qCorrectAnswer === opt.key ? 'Kunci Jawaban Terpilih' : 'Jadikan Kunci Jawaban'}
+                      >
+                        {opt.key}
+                      </button>
+                      <input
+                        type="text"
+                        value={opt.text}
+                        onChange={e => {
+                          const next = [...qOptions];
+                          next[idx].text = e.target.value;
+                          setQOptions(next);
+                        }}
+                        placeholder={`Isi pilihan jawaban ${opt.key}...`}
+                        className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 text-xs placeholder-slate-400"
+                        required
+                      />
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                    Klik tombol huruf (A/B/C/D/E) yang berwarna hijau untuk menentukan kunci jawaban yang benar.
+                  </p>
+                </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end space-x-2">
+              {/* Sticky Footer */}
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex justify-end space-x-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowQuestionModal(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow cursor-pointer transition-colors"
                 >
                   Simpan Butir Soal
                 </button>
@@ -8439,95 +8442,187 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       {/* ------------------------------------------------------------- */}
       {showMaterialModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden animate-fade-in">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                 {editingMaterialId ? 'Edit Materi Pembelajaran' : 'Tambah Materi Pembelajaran'}
               </h3>
-              <button onClick={() => setShowMaterialModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+              <button onClick={() => setShowMaterialModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveMaterial} className="p-5 space-y-3.5 text-xs">
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Mata Pelajaran</label>
-                <select
-                  value={matSubjectId}
-                  onChange={e => setMatSubjectId(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
-                >
-                  {permittedSubjects.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.code})
-                    </option>
-                  ))}
-                </select>
+            <form onSubmit={handleSaveMaterial} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 flex-1 min-h-0 overflow-y-auto space-y-3.5 text-xs">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Mata Pelajaran</label>
+                  <select
+                    value={matSubjectId}
+                    onChange={e => setMatSubjectId(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
+                  >
+                    {permittedSubjects.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Kode Materi</label>
+                  <input
+                    type="text"
+                    value={matCode}
+                    onChange={e => setMatCode(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-mono"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Judul Materi</label>
+                  <input
+                    type="text"
+                    value={matTitle}
+                    onChange={e => setMatTitle(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Deskripsi Ruang Lingkup</label>
+                  <textarea
+                    rows={3}
+                    value={matDescription}
+                    onChange={e => setMatDescription(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
+                  />
+                </div>
+
+                {/* GOOGLE FORM INTEGRATION FIELD */}
+                <div className="p-3 bg-teal-50/80 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 rounded-xl space-y-2">
+                  <label className="block text-teal-900 dark:text-teal-200 font-bold text-xs flex items-center gap-1.5">
+                    <ExternalLink className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                    <span>Tautan / Link Google Form (Soal &amp; Kuis Materi)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={matGoogleFormUrl}
+                    onChange={e => setMatGoogleFormUrl(e.target.value)}
+                    placeholder="https://docs.google.com/forms/d/e/.../viewform"
+                    className="w-full bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 text-xs font-mono"
+                  />
+                  <p className="text-[11px] text-teal-700 dark:text-teal-300 leading-tight">
+                    Siswa akan mengerjakan soal/kuis materi ini secara terhubung melalui Google Form.
+                  </p>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Kode Materi</label>
-                <input
-                  type="text"
-                  value={matCode}
-                  onChange={e => setMatCode(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-mono"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Judul Materi</label>
-                <input
-                  type="text"
-                  value={matTitle}
-                  onChange={e => setMatTitle(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Deskripsi Ruang Lingkup</label>
-                <textarea
-                  rows={3}
-                  value={matDescription}
-                  onChange={e => setMatDescription(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
-                />
-              </div>
-
-              {/* GOOGLE FORM INTEGRATION FIELD */}
-              <div className="p-3 bg-teal-50/80 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 rounded-xl space-y-2">
-                <label className="block text-teal-900 dark:text-teal-200 font-bold text-xs flex items-center gap-1.5">
-                  <ExternalLink className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                  <span>Tautan / Link Google Form (Soal &amp; Kuis Materi)</span>
-                </label>
-                <input
-                  type="url"
-                  value={matGoogleFormUrl}
-                  onChange={e => setMatGoogleFormUrl(e.target.value)}
-                  placeholder="https://docs.google.com/forms/d/e/.../viewform"
-                  className="w-full bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 text-xs font-mono"
-                />
-                <p className="text-[11px] text-teal-700 dark:text-teal-300 leading-tight">
-                  Siswa akan mengerjakan soal/kuis materi ini secara terhubung melalui Google Form.
-                </p>
-              </div>
-
-              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end space-x-2">
+              {/* Sticky Footer */}
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex justify-end space-x-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowMaterialModal(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold rounded-lg shadow-xs"
+                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold rounded-lg shadow-xs cursor-pointer transition-colors"
                 >
                   Simpan Materi &amp; Form
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* COMPETENCY MODAL (CREATE / EDIT) */}
+      {/* ------------------------------------------------------------- */}
+      {showCompetencyModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                {editingCompetencyId ? 'Edit Kompetensi / Indikator' : 'Tambah Kompetensi Baru'}
+              </h3>
+              <button onClick={() => setShowCompetencyModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCompetency} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 flex-1 min-h-0 overflow-y-auto space-y-3.5 text-xs">
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Mata Pelajaran</label>
+                  <select
+                    value={compSubjectId}
+                    onChange={e => setCompSubjectId(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
+                  >
+                    {permittedSubjects.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Kode Kompetensi / KD</label>
+                  <input
+                    type="text"
+                    value={compCode}
+                    onChange={e => setCompCode(e.target.value)}
+                    placeholder="Contoh: KD-3.1"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-mono"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Pernyataan Kompetensi / Indikator</label>
+                  <textarea
+                    rows={3}
+                    value={compStatement}
+                    onChange={e => setCompStatement(e.target.value)}
+                    placeholder="Tuliskan indikator pencapaian kompetensi atau materi uji..."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Tingkat Kelas (Opsional)</label>
+                  <input
+                    type="text"
+                    value={compGrade}
+                    onChange={e => setCompGrade(e.target.value)}
+                    placeholder="Contoh: Kelas 10 / X"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
+                  />
+                </div>
+              </div>
+
+              {/* Sticky Footer */}
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex justify-end space-x-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowCompetencyModal(false)}
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold rounded-lg shadow-xs cursor-pointer transition-colors"
+                >
+                  Simpan Kompetensi
                 </button>
               </div>
             </form>
@@ -8592,8 +8687,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       {/* ------------------------------------------------------------- */}
       {showExplanationModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden animate-fade-in">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-2">
                 <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -8667,8 +8762,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   triggerError(err.message || 'Gagal menyimpan pembahasan.');
                 }
               }}
-              className="p-5 space-y-4 text-xs max-h-[85vh] overflow-y-auto"
+              className="flex flex-col flex-1 min-h-0 overflow-hidden"
             >
+              <div className="p-5 space-y-4 text-xs flex-1 min-h-0 overflow-y-auto">
               {/* Tryout & Subject Selector */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -8848,18 +8944,20 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 />
               </div>
 
-              {/* Submit / Cancel Buttons */}
-              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end space-x-2">
+              </div>
+
+              {/* Submit / Cancel Sticky Buttons */}
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex justify-end space-x-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowExplanationModal(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-xs cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-xs cursor-pointer transition-colors"
                 >
                   {editingExplanationId ? 'Simpan Perubahan' : 'Terbitkan Link Pembahasan'}
                 </button>
@@ -8954,7 +9052,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
             </div>
 
             {/* Scrollable Body — min-h-0 wajib agar flex-1 + overflow-y-auto bekerja di semua browser */}
-            <div className="overflow-y-auto flex-1 min-h-0 px-6 py-5 space-y-4 text-xs">
+            <div className="overflow-y-auto flex-1 min-h-0 px-6 py-5 pb-8 space-y-4 text-xs overscroll-contain">
 
               {/* ── Pilihan Tipe Try Out ── */}
               <div>
@@ -9185,7 +9283,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
                       Target Kelas Peserta <span className="font-normal text-slate-400">(Pilih satu atau lebih)</span>
                     </label>
-                    <div className="flex flex-wrap gap-2 p-2 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 max-h-32 overflow-y-auto">
+                    <div className="flex flex-wrap gap-2 p-2 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 max-h-36 overflow-y-auto overscroll-contain">
                       {classes.map(c => {
                         const isChecked = newToTargetClasses.includes(c.id);
                         return (
@@ -9243,7 +9341,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       Centang mata pelajaran resmi dari Master Admin yang ada di lembar nilai. Kolom template Excel otomatis disesuaikan dengan mapel yang dicentang.
                     </p>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 max-h-48 overflow-y-auto">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 max-h-52 overflow-y-auto overscroll-contain">
                       {subjects.map(s => {
                         const isChecked = newToExternalSubjectIds.includes(s.id);
                         return (
@@ -9652,7 +9750,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
             </div>
 
             {/* Daftar kolom scrollable */}
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 pb-4">
               {columnSelectorHeaders.map((h, idx) => {
                 const isChecked = !!columnSelectorChecked[h];
                 const keyVal = columnSelectorKeyRow ? columnSelectorKeyRow[h] : '';
@@ -9699,7 +9797,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0 bg-slate-50/90 dark:bg-slate-900/90">
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Centang kolom yang merupakan <strong>butir soal</strong> untuk dianalisis.
               </p>
