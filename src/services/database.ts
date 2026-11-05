@@ -1201,26 +1201,56 @@ export class DatabaseService {
         .filter(s => allowedSubjects.has(s.id))
         .map(s => s.code.toLowerCase().trim())
     );
+    const allowedNames = new Set(
+      (this.state.subjects || [])
+        .filter(s => allowedSubjects.has(s.id))
+        .map(s => s.name.toLowerCase().trim())
+    );
 
     const relevantTryoutIds = new Set(
       (this.state.tryoutSubjects || [])
         .filter(tsub => tsub && allowedSubjects.has(tsub.subjectId))
         .map(tsub => tsub.tryoutId)
     );
+
     const filtered = (this.state.tryouts || []).filter(t => {
       if (!t) return false;
-      // TO Eksternal adalah rekapitulasi nilai multi-mapel / asesmen terbuka untuk seluruh staf pengajar
-      if (t.isExternal) return true;
+
+      // 1. KASUS TO EKSTERNAL:
+      // Guru mapel HANYA boleh melihat TO Eksternal JIKA mata pelajaran yang diampunya
+      // termasuk di dalam daftar mata pelajaran yang diujikan dalam paket tersebut.
+      if (t.isExternal) {
+        if (t.externalSubjectIds && t.externalSubjectIds.some(sid => allowedSubjects.has(sid))) {
+          return true;
+        }
+        if (t.externalSubjects && t.externalSubjects.some(subName => {
+          const norm = subName.toLowerCase().trim();
+          return allowedNames.has(norm) || allowedCodes.has(norm);
+        })) {
+          return true;
+        }
+        // Jika tidak ada mapel guru di dalam TO Eksternal ini, sembunyikan!
+        return false;
+      }
+
+      // 2. KASUS TO INTERNAL (Google Form / Sheet):
+      // Guru mapel HANYA boleh melihat TO Internal yang mata pelajarannya sesuai wewenangnya.
       if (t.subjectId) {
         if (allowedSubjects.has(t.subjectId)) return true;
         const subj = (this.state.subjects || []).find(s => s.id === t.subjectId);
-        if (subj && allowedCodes.has(subj.code.toLowerCase().trim())) return true;
+        if (subj && (allowedCodes.has(subj.code.toLowerCase().trim()) || allowedNames.has(subj.name.toLowerCase().trim()))) {
+          return true;
+        }
+        return false;
       }
+
+      // 3. KASUS MULTI-SUBJEK TERSINKRON (via tabel tryoutSubjects):
       if (relevantTryoutIds.has(t.id)) return true;
-      if (t.externalSubjectIds && t.externalSubjectIds.some(sid => allowedSubjects.has(sid))) return true;
-      if (!t.subjectId && (!t.externalSubjectIds || t.externalSubjectIds.length === 0)) return true;
+
+      // Jika tryout sama sekali tidak memiliki identitas mapel, jangan bocorkan ke guru mapel spesifik
       return false;
     });
+
     return filtered;
   }
 
