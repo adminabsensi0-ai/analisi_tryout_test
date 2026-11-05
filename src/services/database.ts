@@ -252,11 +252,10 @@ export class DatabaseService {
         (Array.isArray(parsed) ? parsed : []).map((x: string) => String(x).toLowerCase().trim())
       );
       // Default tombstone untuk dummy / seed tryout bawaan jika belum ada
-      set.add('to-2026-01');
       set.add('to000000-0000-0000-0000-000000000001');
       return set;
     } catch {
-      return new Set<string>(['to-2026-01', 'to000000-0000-0000-0000-000000000001']);
+      return new Set<string>(['to000000-0000-0000-0000-000000000001']);
     }
   }
 
@@ -292,6 +291,8 @@ export class DatabaseService {
     examPackages?: ExamPackage[];
     tryouts?: Tryout[];
     schoolProfile?: SchoolProfile;
+    responses?: Response[];
+    scores?: Score[];
   }): boolean {
     let changed = false;
 
@@ -533,6 +534,37 @@ export class DatabaseService {
             };
             changed = true;
           }
+        }
+      });
+    }
+
+    // Merge scores
+    if (cloud.scores && Array.isArray(cloud.scores) && cloud.scores.length > 0) {
+      if (!this.state.scores) this.state.scores = [];
+      cloud.scores.forEach(cloudScore => {
+        const idx = this.state.scores.findIndex(
+          s => s.tryoutId === cloudScore.tryoutId && s.studentId === cloudScore.studentId
+        );
+        if (idx === -1) {
+          this.state.scores.push(cloudScore);
+          changed = true;
+        } else if (this.state.scores[idx].calculatedScore !== cloudScore.calculatedScore) {
+          this.state.scores[idx] = { ...this.state.scores[idx], ...cloudScore };
+          changed = true;
+        }
+      });
+    }
+
+    // Merge responses
+    if (cloud.responses && Array.isArray(cloud.responses) && cloud.responses.length > 0) {
+      if (!this.state.responses) this.state.responses = [];
+      cloud.responses.forEach(cloudResp => {
+        const idx = this.state.responses.findIndex(
+          r => r.tryoutId === cloudResp.tryoutId && r.studentId === cloudResp.studentId
+        );
+        if (idx === -1) {
+          this.state.responses.push(cloudResp);
+          changed = true;
         }
       });
     }
@@ -1053,6 +1085,7 @@ export class DatabaseService {
       if (t.subjectId && allowedSubjects.has(t.subjectId)) return true;
       if (relevantTryoutIds.has(t.id)) return true;
       if (t.externalSubjectIds && t.externalSubjectIds.some(sid => allowedSubjects.has(sid))) return true;
+      if (!t.subjectId && (!t.externalSubjectIds || t.externalSubjectIds.length === 0)) return true;
       return false;
     });
     return filtered;
@@ -1870,7 +1903,7 @@ export class DatabaseService {
 
     const newQ: Question = {
       ...q,
-      id: `q-${Date.now()}`,
+      id: isValidUuid((q as any)?.id) ? (q as any).id : generateUuid(),
       status: q.status || 'ACTIVE',
       weight: q.weight ?? 1,
     };
@@ -2294,6 +2327,11 @@ export class DatabaseService {
     ];
 
     this.persistState();
+    this.rebuildIndexes();
+    this.notifyListeners();
+    if (this.supabaseSyncEnabled) {
+      sdb.syncResponsesAndScores(tryoutId, newResponses, newScores).catch(() => {});
+    }
   }
 
   /**

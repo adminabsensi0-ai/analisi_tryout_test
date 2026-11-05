@@ -4,6 +4,7 @@ import {
 } from '../types/database';
 import { ScoringService } from './scoring';
 import { dbService } from './database';
+import { generateUuid, isValidUuid } from '../utils/idUtils';
 
 export interface ParseResult {
   headers: string[];
@@ -107,6 +108,11 @@ export class GoogleIntegrationService {
     const raw = (header || '').trim();
     if (!raw) return true;
 
+    // Header yang diawali penomoran soal (misal: "1. Soal", "No. 1", "Soal 1", "1) ...", "[1] ...") pasti soal
+    if (/^(soal\b|no\.?\b|nomor\b|\d+[\.\)\:\s]|\[\d+\])/i.test(raw)) {
+      return false;
+    }
+
     // Header yang merupakan kalimat tanya panjang atau bertanda tanya pasti soal (Bagian 2)
     if (raw.endsWith('?') || raw.includes('?') || raw.length > 75) {
       return false;
@@ -115,17 +121,21 @@ export class GoogleIntegrationService {
     const lower = raw.toLowerCase();
 
     // Pertanyaan yang diawali kata tanya umum bahasa Indonesia pasti soal
-    const questionStarters = ['apakah', 'siapakah', 'berapakah', 'manakah', 'bagaimanakah', 'sebutkan', 'jelaskan', 'tentukan', 'hitunglah', 'perhatikan'];
-    if (questionStarters.some(starter => lower.startsWith(starter + ' '))) {
+    const questionStarters = [
+      'apakah', 'siapakah', 'berapakah', 'manakah', 'bagaimanakah', 'sebutkan', 'jelaskan',
+      'tentukan', 'hitunglah', 'perhatikan', 'analisis', 'berikut', 'di bawah', 'pada',
+      'fungsi', 'hasil', 'jika', 'mengapa', 'kenapa', 'bagaimana', 'apa'
+    ];
+    if (questionStarters.some(starter => lower.startsWith(starter + ' ') || lower.startsWith(starter + ':') || lower === starter)) {
       return false;
     }
 
     // 1. Timestamp / Waktu pengiriman
-    if (lower.includes('timestamp') || lower === 'waktu' || lower.startsWith('waktu ') || lower === 'tanggal' || lower === 'date' || lower === 'time') {
+    if (lower.includes('timestamp') || lower === 'waktu' || lower.startsWith('waktu pengiriman') || lower === 'tanggal' || lower === 'date' || lower === 'time') {
       return true;
     }
     // 2. Email / Username / Akun
-    if (lower.includes('email') || lower.includes('username') || lower.includes('surel') || lower === 'akun') {
+    if (lower === 'email' || lower.includes('email address') || lower.includes('alamat email') || lower === 'username' || lower === 'surel' || lower === 'akun') {
       return true;
     }
     // 3. NISN / NIS / Nomor Induk / Nomor Peserta
@@ -133,86 +143,89 @@ export class GoogleIntegrationService {
       lower === 'nisn' ||
       lower.includes('nisn') ||
       lower === 'nis' ||
-      lower.includes('nomor induk') ||
-      lower.includes('no induk') ||
-      lower.includes('nomor peserta') ||
-      lower.includes('no peserta') ||
-      lower.includes('nomor ujian') ||
-      lower.includes('no ujian') ||
-      lower.includes('no. ujian') ||
-      lower.includes('no. peserta')
+      lower === 'nomor induk' ||
+      lower === 'no induk' ||
+      lower === 'nomor peserta' ||
+      lower === 'no peserta' ||
+      lower === 'nomor ujian' ||
+      lower === 'no ujian' ||
+      lower === 'no. ujian' ||
+      lower === 'no. peserta' ||
+      lower.includes('nomor induk siswa')
     ) {
       return true;
     }
     // 4. Nama Siswa / Peserta
     if (
       lower === 'nama' ||
-      lower.includes('nama lengkap') ||
-      lower.includes('nama siswa') ||
-      lower.includes('nama peserta') ||
+      lower === 'nama lengkap' ||
+      lower === 'nama siswa' ||
+      lower === 'nama peserta' ||
       lower === 'name' ||
       lower === 'full name' ||
       lower === 'identitas' ||
-      lower.includes('data diri')
+      lower === 'data diri'
     ) {
       return true;
     }
     // 5. Kelas / Rombel / Absen / Jurusan / Peminatan
     if (
       lower === 'kelas' ||
-      lower.startsWith('kelas ') ||
-      lower.includes('rombel') ||
-      lower.includes('absen') ||
-      lower.includes('nomor urut') ||
-      lower.includes('no urut') ||
-      lower.includes('jurusan') ||
-      lower.includes('peminatan') ||
-      lower.includes('program keahlian')
+      lower === 'rombel' ||
+      lower === 'absen' ||
+      lower === 'no absen' ||
+      lower === 'nomor absen' ||
+      lower === 'no. absen' ||
+      lower === 'nomor urut' ||
+      lower === 'no urut' ||
+      lower === 'jurusan' ||
+      lower === 'peminatan' ||
+      lower === 'program keahlian' ||
+      lower === 'daftar hadir'
     ) {
       return true;
     }
-    // 6. Skor Google Form
+    // 6. Skor Google Form (Hanya jika eksak / acuan skor form)
     if (
       lower === 'skor' ||
       lower === 'score' ||
+      lower === 'total score' ||
       lower.includes('total point') ||
       lower.includes('total poin') ||
       lower.startsWith('skor ') ||
-      lower === 'nilai' ||
-      lower === 'poin' ||
-      lower.includes('nilai akhir')
+      lower === 'nilai akhir' ||
+      lower === 'total nilai'
     ) {
       return true;
     }
     // 7. Token / Password / Ruang / Sesi / Sekolah / Mapel / Paket
     if (
-      lower.includes('token') ||
-      lower.includes('password') ||
-      lower.includes('kode ujian') ||
+      lower === 'token' ||
+      lower.includes('token ujian') ||
+      lower === 'password' ||
+      lower === 'kode ujian' ||
       lower === 'ruang' ||
-      lower.includes('ruang ujian') ||
-      lower.startsWith('ruang ') ||
+      lower === 'ruang ujian' ||
+      lower.startsWith('ruang ujian') ||
       lower === 'sesi' ||
-      lower.includes('sesi ujian') ||
-      lower.startsWith('sesi ') ||
+      lower === 'sesi ujian' ||
+      lower.startsWith('sesi ujian') ||
       lower === 'sekolah' ||
-      lower.includes('asal sekolah') ||
-      lower.includes('nama sekolah') ||
+      lower === 'asal sekolah' ||
+      lower === 'nama sekolah' ||
       lower === 'mata pelajaran' ||
       lower === 'mapel' ||
-      lower.startsWith('mata pelajaran') ||
-      lower.startsWith('mapel ') ||
       lower === 'paket' ||
-      lower.includes('paket soal') ||
-      lower.includes('paket ujian') ||
-      lower.includes('tanggal lahir') ||
-      lower.includes('tgl lahir') ||
-      lower.includes('jenis kelamin') ||
+      lower === 'paket soal' ||
+      lower === 'paket ujian' ||
+      lower === 'tanggal lahir' ||
+      lower === 'tgl lahir' ||
+      lower === 'jenis kelamin' ||
       lower === 'gender' ||
       lower === 'jk' ||
-      lower.includes('pakta') ||
-      lower.includes('kejujuran') ||
-      lower.includes('pernyataan') ||
+      lower.includes('pakta integritas') ||
+      lower.includes('pernyataan kejujuran') ||
+      lower === 'pernyataan' ||
       lower === 'catatan' ||
       lower === 'keterangan'
     ) {
@@ -639,9 +652,10 @@ export class GoogleIntegrationService {
       if (!rawNisn && !rawName) continue;
 
       // 1. Cek kecocokan NISN terhadap akun siswa di database yang bertanda isAnswerKeyAccount
-      const matched = rawNisn
-        ? (students.find(s => s.nisn === rawNisn || s.nisn.trim() === rawNisn || String(s.nisn).trim() === String(rawNisn).trim())
-           || allDbStudents.find(s => s.nisn === rawNisn || s.nisn.trim() === rawNisn || String(s.nisn).trim() === String(rawNisn).trim()))
+      const cleanRowNisn = GoogleIntegrationService.normalizeNisn(rawNisn);
+      const matched = (rawNisn || cleanRowNisn)
+        ? (students.find(s => s.nisn === rawNisn || String(s.nisn).trim() === rawNisn || (cleanRowNisn && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanRowNisn) || (cleanRowNisn && s.nisn.replace(/\D/g, '') === cleanRowNisn))
+           || allDbStudents.find(s => s.nisn === rawNisn || String(s.nisn).trim() === rawNisn || (cleanRowNisn && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanRowNisn) || (cleanRowNisn && s.nisn.replace(/\D/g, '') === cleanRowNisn)))
         : null;
 
       // 2. Cek apakah nama atau NISN secara eksplisit menandakan Kunci Jawaban
@@ -721,8 +735,9 @@ export class GoogleIntegrationService {
         return false;
       }
       if (!rawNisn) return true;
-      const matched = students.find(s => s.nisn === rawNisn || String(s.nisn).trim() === String(rawNisn).trim())
-                   || allDbStudents.find(s => s.nisn === rawNisn || String(s.nisn).trim() === String(rawNisn).trim());
+      const cleanRowNisn = GoogleIntegrationService.normalizeNisn(rawNisn);
+      const matched = students.find(s => s.nisn === rawNisn || String(s.nisn).trim() === rawNisn || (cleanRowNisn && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanRowNisn) || (cleanRowNisn && s.nisn.replace(/\D/g, '') === cleanRowNisn))
+                   || allDbStudents.find(s => s.nisn === rawNisn || String(s.nisn).trim() === rawNisn || (cleanRowNisn && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanRowNisn) || (cleanRowNisn && s.nisn.replace(/\D/g, '') === cleanRowNisn));
       return !matched?.isAnswerKeyAccount;
     });
 
@@ -1023,7 +1038,9 @@ export class GoogleIntegrationService {
         r => r.studentId === studentId && r.tryoutId === tryout.id
       );
 
-      const responseId = existingResponse?.id || `resp-${Date.now()}-${index}`;
+      const responseId = (existingResponse?.id && isValidUuid(existingResponse.id))
+        ? existingResponse.id
+        : generateUuid();
 
       if (existingResponse) {
         updatedCount++;
@@ -1039,7 +1056,7 @@ export class GoogleIntegrationService {
         nisnInput: item.nisn,
         rawScoreGForm: item.rawGFormScore,
         submittedAt: now,
-        syncBatchId: `batch-${Date.now()}`,
+        syncBatchId: generateUuid(),
       };
       newResponses.push(respRecord);
 
@@ -1059,7 +1076,7 @@ export class GoogleIntegrationService {
         }
 
         newAnswers.push({
-          id: `ans-${responseId}-${qIdx}`,
+          id: generateUuid(),
           responseId,
           studentId,
           tryoutId: tryout.id,
@@ -1077,7 +1094,9 @@ export class GoogleIntegrationService {
         s => s.studentId === studentId && s.tryoutId === tryout.id
       );
 
-      const scoreId = existingScore?.id || `score-${responseId}`;
+      const scoreId = (existingScore?.id && isValidUuid(existingScore.id))
+        ? existingScore.id
+        : generateUuid();
 
       const totalCorrect = Object.entries(item.answers).filter(
         ([code, ans]) => {

@@ -12,7 +12,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { isValidUuid } from '../utils/idUtils';
 import {
-  User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout, SchoolProfile
+  User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout, SchoolProfile, Response, Score
 } from '../types/database';
 
 // ============================================================
@@ -251,7 +251,7 @@ function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<s
     _meta: meta,
   };
 
-  return {
+  const payload: Record<string, unknown> = {
     code: to.code,
     title: to.title,
     assessment_type: to.assessmentType || 'TRYOUT',
@@ -263,9 +263,39 @@ function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<s
     description: to.description || null,
     google_form_url: to.googleFormUrl || null,
     google_sheet_url: to.googleSheetUrl || null,
-    package_id: to.packageId || null,
+    package_id: (to.packageId && isValidUuid(to.packageId)) ? to.packageId : null,
     target_class_ids: to.targetClassIds || [],
   };
+
+  if (isValidUuid(to.id)) {
+    payload.id = to.id;
+  }
+  if (to.subjectId && isValidUuid(to.subjectId)) {
+    payload.subject_id = to.subjectId;
+  }
+  if (Array.isArray(to.selectedQuestionColumns)) {
+    payload.selected_question_columns = to.selectedQuestionColumns;
+  }
+  if (Array.isArray(to.answerKey)) {
+    payload.answer_key = to.answerKey;
+  }
+  if (to.isExternal !== undefined) {
+    payload.is_external = to.isExternal;
+  }
+  if (to.source) {
+    payload.source = to.source;
+  }
+  if (to.externalSubjects) {
+    payload.external_subjects = to.externalSubjects;
+  }
+  if (to.externalSubjectIds) {
+    payload.external_subject_ids = to.externalSubjectIds;
+  }
+  if (to.externalScoreScale) {
+    payload.external_score_scale = to.externalScoreScale;
+  }
+
+  return payload;
 }
 
 function fromSupabaseTryout(row: Record<string, unknown>): Tryout {
@@ -324,6 +354,36 @@ function fromSupabaseSchoolProfile(row: Record<string, unknown>): SchoolProfile 
   };
 }
 
+function fromSupabaseResponse(row: Record<string, unknown>): Response {
+  return {
+    id: String(row.id),
+    tryoutId: String(row.tryout_id),
+    studentId: String(row.student_id),
+    nisnInput: String(row.nisn_input || ''),
+    rawScoreGForm: Number(row.raw_score_gform) || 0,
+    submittedAt: String(row.submitted_at || new Date().toISOString()),
+    syncBatchId: row.sync_batch_id ? String(row.sync_batch_id) : undefined,
+  };
+}
+
+function fromSupabaseScore(row: Record<string, unknown>): Score {
+  return {
+    id: String(row.id),
+    responseId: row.response_id ? String(row.response_id) : undefined,
+    studentId: String(row.student_id),
+    tryoutId: String(row.tryout_id),
+    subjectScores: (row.subject_scores as Record<string, number>) || {},
+    googleFormScore: row.google_form_score !== null && row.google_form_score !== undefined ? Number(row.google_form_score) : undefined,
+    calculatedScore: Number(row.calculated_score) || 0,
+    scoreDifference: row.score_difference !== null && row.score_difference !== undefined ? Number(row.score_difference) : undefined,
+    scoringStatus: (row.scoring_status as any) || 'MATCH',
+    totalCorrect: Number(row.total_correct) || 0,
+    totalIncorrect: Number(row.total_incorrect) || 0,
+    totalUnanswered: Number(row.total_unanswered) || 0,
+    createdAt: String(row.created_at || new Date().toISOString()),
+  };
+}
+
 // ============================================================
 // CORE SYNC SERVICE
 // ============================================================
@@ -338,6 +398,8 @@ export interface SupabaseCoreState {
   examPackages?: ExamPackage[];
   tryouts?: Tryout[];
   schoolProfile?: SchoolProfile;
+  responses?: Response[];
+  scores?: Score[];
 }
 
 class SupabaseDbService {
@@ -499,7 +561,7 @@ class SupabaseDbService {
 
     try {
       // Fetch semua data secara paralel
-      const [ayRes, classRes, subjectRes, userRes, teacherRes, studentRes, pkgRes, pkgSubRes, toRes, spRes] = await Promise.all([
+      const [ayRes, classRes, subjectRes, userRes, teacherRes, studentRes, pkgRes, pkgSubRes, toRes, spRes, respRes, scRes] = await Promise.all([
         supabase.from('academic_years').select('*'),
         supabase.from('classes').select('*'),
         supabase.from('subjects').select('*'),
@@ -510,6 +572,8 @@ class SupabaseDbService {
         supabase.from('exam_package_subjects').select('*'),
         supabase.from('tryouts').select('*'),
         supabase.from('school_profile').select('*').limit(1).maybeSingle(),
+        supabase.from('responses').select('*'),
+        supabase.from('scores').select('*'),
       ]);
 
       if (ayRes.error) throw new Error('academic_years: ' + ayRes.error.message);
@@ -624,13 +688,16 @@ class SupabaseDbService {
 
       const tryouts: Tryout[] = tryoutsData.map((row: any) => fromSupabaseTryout(row));
 
+      const responses: Response[] = (respRes?.data || []).map((row: any) => fromSupabaseResponse(row));
+      const scores: Score[] = (scRes?.data || []).map((row: any) => fromSupabaseScore(row));
+
       const schoolProfile: SchoolProfile | undefined = spRes?.data
         ? fromSupabaseSchoolProfile(spRes.data as Record<string, unknown>)
         : undefined;
 
-      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes, ${examPackages.length} packages, ${tryouts.length} tryouts${schoolProfile ? ', school profile' : ''}`);
+      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes, ${examPackages.length} packages, ${tryouts.length} tryouts, ${responses.length} responses, ${scores.length} scores${schoolProfile ? ', school profile' : ''}`);
 
-      return { users, teachers, students, classes, academicYears, subjects, examPackages, tryouts, schoolProfile };
+      return { users, teachers, students, classes, academicYears, subjects, examPackages, tryouts, schoolProfile, responses, scores };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('fetchCoreState failed: ' + msg, 'warn');
@@ -974,6 +1041,61 @@ class SupabaseDbService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('removeTryoutByCode exception: ' + msg, 'warn');
+    }
+  }
+
+  public async syncResponsesAndScores(
+    tryoutId: string,
+    responses: Response[],
+    scores: Score[]
+  ): Promise<void> {
+    if (!this.isAvailable() || !supabase) return;
+    try {
+      if (responses.length > 0) {
+        const respPayloads = responses.map(r => ({
+          id: isValidUuid(r.id) ? r.id : undefined,
+          tryout_id: r.tryoutId,
+          student_id: r.studentId,
+          nisn_input: r.nisnInput,
+          raw_score_gform: r.rawScoreGForm || 0,
+          submitted_at: r.submittedAt || new Date().toISOString(),
+        })).filter(r => isValidUuid(r.tryout_id) && isValidUuid(r.student_id));
+
+        if (respPayloads.length > 0) {
+          const { error: rErr } = await supabase
+            .from('responses')
+            .upsert(respPayloads, { onConflict: 'tryout_id,student_id' });
+          if (rErr) this.log('syncResponses error: ' + rErr.message, 'warn');
+        }
+      }
+
+      if (scores.length > 0) {
+        const scorePayloads = scores.map(s => ({
+          id: isValidUuid(s.id) ? s.id : undefined,
+          response_id: (s.responseId && isValidUuid(s.responseId)) ? s.responseId : undefined,
+          student_id: s.studentId,
+          tryout_id: s.tryoutId,
+          subject_scores: s.subjectScores || {},
+          google_form_score: s.googleFormScore !== undefined ? s.googleFormScore : 0,
+          calculated_score: s.calculatedScore || 0,
+          score_difference: s.scoreDifference !== undefined ? s.scoreDifference : 0,
+          scoring_status: s.scoringStatus || 'MATCH',
+          total_correct: s.totalCorrect || 0,
+          total_incorrect: s.totalIncorrect || 0,
+          total_unanswered: s.totalUnanswered || 0,
+          created_at: s.createdAt || new Date().toISOString(),
+        })).filter(s => isValidUuid(s.tryout_id) && isValidUuid(s.student_id) && s.response_id);
+
+        if (scorePayloads.length > 0) {
+          const { error: sErr } = await supabase
+            .from('scores')
+            .upsert(scorePayloads, { onConflict: 'response_id' });
+          if (sErr) this.log('syncScores error: ' + sErr.message, 'warn');
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('syncResponsesAndScores exception: ' + msg, 'warn');
     }
   }
 

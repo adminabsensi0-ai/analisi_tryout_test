@@ -779,7 +779,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           return true;
         }
         if (!nisnVal) return false;
-        const st = allDbStudents.find(s => s.nisn === nisnVal || String(s.nisn).trim() === String(nisnVal).trim());
+        const cleanVal = GoogleIntegrationService.normalizeNisn(nisnVal);
+        const st = allDbStudents.find(s =>
+          s.nisn === nisnVal ||
+          String(s.nisn).trim() === String(nisnVal).trim() ||
+          (cleanVal && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanVal) ||
+          (cleanVal && s.nisn.replace(/\D/g, '') === cleanVal)
+        );
         return st?.isAnswerKeyAccount;
       }) || null;
 
@@ -881,7 +887,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           return true;
         }
         if (!nisnVal) return false;
-        const st = allDbStudents.find(s => s.nisn === nisnVal || String(s.nisn).trim() === String(nisnVal).trim());
+        const cleanVal = GoogleIntegrationService.normalizeNisn(nisnVal);
+        const st = allDbStudents.find(s =>
+          s.nisn === nisnVal ||
+          String(s.nisn).trim() === String(nisnVal).trim() ||
+          (cleanVal && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanVal) ||
+          (cleanVal && s.nisn.replace(/\D/g, '') === cleanVal)
+        );
         return st?.isAnswerKeyAccount;
       }) || null;
 
