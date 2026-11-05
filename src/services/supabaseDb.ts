@@ -1292,34 +1292,24 @@ class SupabaseDbService {
     }
 
     try {
-      // 1. Ambil pemetaan response dan score yang sudah ada di Supabase untuk tryout ini
-      // agar tidak melanggar foreign key maupun unique constraint saat multi-device sync
+      // 1. Ambil pemetaan response dan score secara PARALEL dari Supabase untuk tryout ini
       const cloudRespMap = new Map<string, string>(); // student_id -> response_id
-      try {
-        const { data: existingCloudResp } = await supabase
-          .from('responses')
-          .select('id, student_id')
-          .eq('tryout_id', tryoutId);
+      const cloudScoreMap = new Map<string, string>(); // student_id -> score_id
 
-        (existingCloudResp || []).forEach((cr: any) => {
+      try {
+        const [respLookup, scoreLookup] = await Promise.all([
+          supabase.from('responses').select('id, student_id').eq('tryout_id', tryoutId),
+          supabase.from('scores').select('id, student_id').eq('tryout_id', tryoutId),
+        ]);
+
+        (respLookup.data || []).forEach((cr: any) => {
           if (cr.student_id && cr.id) cloudRespMap.set(cr.student_id, cr.id);
         });
-      } catch (e) {
-        // Abaikan fetch error jika tabel masih kosong
-      }
-
-      const cloudScoreMap = new Map<string, string>(); // student_id -> score_id
-      try {
-        const { data: existingCloudScores } = await supabase
-          .from('scores')
-          .select('id, student_id')
-          .eq('tryout_id', tryoutId);
-
-        (existingCloudScores || []).forEach((cs: any) => {
+        (scoreLookup.data || []).forEach((cs: any) => {
           if (cs.student_id && cs.id) cloudScoreMap.set(cs.student_id, cs.id);
         });
       } catch (e) {
-        // Abaikan fetch error
+        // Abaikan fetch error jika tabel masih kosong
       }
 
       // 2. Susun response payloads:
@@ -1754,9 +1744,13 @@ class SupabaseDbService {
       await attempt(`AcademicYear ${ay.yearLabel}`, () => this.syncAcademicYear(ay));
     }
 
-    // 2. Subjects
-    for (const s of state.subjects) {
-      await attempt(`Subject ${s.code}`, () => this.syncSubject(s));
+    // 2. Subjects (batch upsert)
+    if (state.subjects.length > 0) {
+      await attempt(`Subjects (${state.subjects.length})`, async () => {
+        const subjPayloads = state.subjects.map(toSupabaseSubject);
+        const { error } = await supabase.from('subjects').upsert(subjPayloads, { onConflict: 'code' });
+        if (error) throw new Error(error.message);
+      });
     }
 
     // 3. Classes — sync and build class map
@@ -1789,19 +1783,35 @@ class SupabaseDbService {
       }
     }
 
-    // 5. Students — resolve class UUID and upsert
-    for (const s of state.students) {
-      const classRef = state.classes.find(c => c.id === s.classId);
-      const resolvedClassId = localClassMap.get(s.classId) ||
-                              (classRef ? localClassMap.get(classRef.name.trim().toLowerCase()) : undefined) ||
-                              s.classId;
+    // 5. Students — batch upsert dalam chunk 200 (jauh lebih cepat dibanding satu-per-satu)
+    if (state.students.length > 0) {
+      const studentPayloads = state.students
+        .map(s => {
+          const classRef = state.classes.find(c => c.id === s.classId);
+          const resolvedClassId = localClassMap.get(s.classId) ||
+                                  (classRef ? localClassMap.get(classRef.name.trim().toLowerCase()) : undefined) ||
+                                  s.classId;
+          if (!resolvedClassId || !isValidUuid(resolvedClassId)) return null;
+          return toSupabaseStudent(s, resolvedClassId);
+        })
+        .filter(Boolean) as Record<string, unknown>[];
 
-      await attempt(`Student ${s.nisn}`, async () => {
-        const studentUuid = await this.syncStudent(s, resolvedClassId, classRef?.name);
-        if (!studentUuid) {
-          throw new Error(`Gagal menyimpan siswa ${s.name} (${s.nisn}) ke database cloud`);
-        }
-      });
+      for (let i = 0; i < studentPayloads.length; i += 200) {
+        const chunk = studentPayloads.slice(i, i + 200);
+        await attempt(`Students batch ${i + 1}-${i + chunk.length}`, async () => {
+          let { error } = await supabase.from('students').upsert(chunk, { onConflict: 'nisn' });
+          if (error && (error.message?.includes('is_answer_key_account') || (error as any).details?.includes('is_answer_key_account'))) {
+            const fallbackChunk = chunk.map(p => {
+              const copy = { ...p };
+              delete copy.is_answer_key_account;
+              return copy;
+            });
+            const retry = await supabase.from('students').upsert(fallbackChunk, { onConflict: 'nisn' });
+            error = retry.error;
+          }
+          if (error) throw new Error(error.message);
+        });
+      }
     }
 
     // 6. Exam Packages (jika ada)

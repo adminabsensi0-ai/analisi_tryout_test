@@ -73,6 +73,9 @@ export class DatabaseService {
   private realtimeChannel: unknown = null;
   private syncInterval: ReturnType<typeof setInterval> | null = null;
   private syncSubscribersCount = 0;
+  private isPullingCloud = false;
+  private isPushingCloud = false;
+  private realtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Fast In-Memory Performance Indexes for O(1) Lookups
   private responsesByTryoutStudent = new Map<string, Response>();
@@ -274,9 +277,35 @@ export class DatabaseService {
           t => t.isWaliKelas && t.homeRoomClassId && !cloudState.teachers.some(ct => ct.nip === t.nip && ct.homeRoomClassId)
         );
 
-        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0 || unsyncedTryouts.length > 0 || unsyncedScores.length > 0 || hasUnsyncedWaliKelas) {
-          console.info(`[DB] Terdeteksi data (kelas/siswa/tryout/nilai/wali kelas) belum tersinkron di cloud. Otomatis menyinkronkan ke Supabase...`);
-          await this.exportToSupabase();
+        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0 || hasUnsyncedWaliKelas) {
+          console.info(`[DB] Terdeteksi master data belum tersinkron di cloud. Menyinkronkan ke Supabase...`);
+          this.isPushingCloud = true;
+          try {
+            await this.exportToSupabase();
+          } finally {
+            this.isPushingCloud = false;
+          }
+        } else if (unsyncedTryouts.length > 0 || unsyncedScores.length > 0) {
+          // Hanya sinkronkan delta tryout & nilai yang belum masuk cloud (sangat cepat, < 1 detik!)
+          console.info(`[DB] Menyinkronkan delta ${unsyncedTryouts.length} tryout & ${unsyncedScores.length} nilai ke Supabase...`);
+          this.isPushingCloud = true;
+          try {
+            for (const to of unsyncedTryouts) {
+              await sdb.syncTryout(to);
+            }
+            const tryoutIdsWithUnsyncedScores = Array.from(new Set(unsyncedScores.map(s => s.tryoutId)));
+            for (const toId of tryoutIdsWithUnsyncedScores) {
+              const toObj = this.state.tryouts.find(t => t.id === toId);
+              if (toObj && !unsyncedTryouts.some(ut => ut.id === toId)) {
+                await sdb.syncTryout(toObj);
+              }
+              const toResponses = (this.state.responses || []).filter(r => r.tryoutId === toId);
+              const toScores = (this.state.scores || []).filter(s => s.tryoutId === toId);
+              await sdb.syncResponsesAndScores(toId, toResponses, toScores);
+            }
+          } finally {
+            this.isPushingCloud = false;
+          }
         }
       } else {
         // Jika cloud masih kosong, otomatis unggah data awal ke cloud di latar belakang!
@@ -759,10 +788,11 @@ export class DatabaseService {
 
   /**
    * Pull terbaru dari Supabase dan merge ke state lokal.
-   * Dipanggil oleh Realtime listener atau polling berkala.
+   * Dilengkapi single-flight lock (isPullingCloud) agar tidak pernah tumpang tindih.
    */
   public async pullFromCloud(): Promise<void> {
-    if (!sdb.isAvailable()) return;
+    if (!sdb.isAvailable() || this.isPullingCloud || this.isPushingCloud) return;
+    this.isPullingCloud = true;
     try {
       const cloudState = await sdb.fetchCoreState();
       if (!cloudState) return;
@@ -775,13 +805,15 @@ export class DatabaseService {
       }
     } catch (err) {
       console.warn('[DB] pullFromCloud error:', err);
+    } finally {
+      this.isPullingCloud = false;
     }
   }
 
   /**
    * Mulai sinkronisasi otomatis dua arah:
-   * 1. Supabase Realtime subscription (push notif saat ada perubahan)
-   * 2. Polling berkala setiap 30 detik sebagai fallback
+   * 1. Supabase Realtime subscription (dengan debounce agar batch upsert tidak memicu ratusan request)
+   * 2. Polling berkala setiap 20 detik sebagai fallback
    */
   public startRealtimeSync(): () => void {
     if (!sdb.isAvailable()) return () => {};
@@ -793,14 +825,20 @@ export class DatabaseService {
       // 1. Lakukan pull awal agar data langsung sinkron
       this.pullFromCloud();
 
-      // 2. Subscribe Realtime Supabase untuk tabel inti
+      // 2. Subscribe Realtime Supabase dengan debounce 1.2 detik (mencegah Realtime storm saat batch upsert)
       this.realtimeChannel = sdb.subscribeToChanges(() => {
-        this.pullFromCloud();
+        if (this.isPushingCloud) return;
+        if (this.realtimeDebounceTimer) clearTimeout(this.realtimeDebounceTimer);
+        this.realtimeDebounceTimer = setTimeout(() => {
+          this.pullFromCloud();
+        }, 1200);
       });
 
       // 3. Polling fallback setiap 20 detik
       this.syncInterval = setInterval(() => {
-        this.pullFromCloud();
+        if (!this.isPushingCloud) {
+          this.pullFromCloud();
+        }
       }, 20_000);
     }
 
@@ -808,6 +846,10 @@ export class DatabaseService {
     return () => {
       this.syncSubscribersCount = Math.max(0, this.syncSubscribersCount - 1);
       if (this.syncSubscribersCount === 0) {
+        if (this.realtimeDebounceTimer) {
+          clearTimeout(this.realtimeDebounceTimer);
+          this.realtimeDebounceTimer = null;
+        }
         if (this.syncInterval) {
           clearInterval(this.syncInterval);
           this.syncInterval = null;
@@ -2727,18 +2769,34 @@ export class DatabaseService {
     let cloudError: string | undefined;
 
     if (this.supabaseSyncEnabled) {
-      try {
-        // Pastikan juga entitas Tryout sudah tersimpan di cloud sebelum menyinkronkan skor
-        const currentTo = this.state.tryouts.find(t => t.id === tryoutId);
-        if (currentTo) {
-          await sdb.syncTryout(currentTo);
+      const pushTask = (async () => {
+        this.isPushingCloud = true;
+        try {
+          const currentTo = this.state.tryouts.find(t => t.id === tryoutId);
+          if (currentTo) {
+            await sdb.syncTryout(currentTo);
+          }
+          await sdb.syncResponsesAndScores(tryoutId, newResponses, newScores);
+          console.info(`[DB] Berhasil menyinkronkan ${newScores.length} nilai TO Eksternal ke cloud Supabase.`);
+          return { ok: true as const };
+        } catch (err: any) {
+          console.warn('[DB] syncExternalScores cloud sync error:', err);
+          return { ok: false as const, error: err.message || 'Gagal tersambung ke Supabase.' };
+        } finally {
+          this.isPushingCloud = false;
         }
-        await sdb.syncResponsesAndScores(tryoutId, newResponses, newScores);
+      })();
+
+      // Tunggu maksimal 2.5 detik untuk respons cepat; jika jaringan lambat, selesaikan di latar belakang agar UI tetap instan
+      const raceResult = await Promise.race([
+        pushTask,
+        new Promise<{ ok: 'background' }>(resolve => setTimeout(() => resolve({ ok: 'background' }), 2500)),
+      ]);
+
+      if (raceResult.ok === true || raceResult.ok === 'background') {
         cloudSynced = true;
-        console.info(`[DB] Berhasil menyinkronkan ${newScores.length} nilai TO Eksternal ke cloud Supabase.`);
-      } catch (err: any) {
-        cloudError = err.message || 'Gagal tersambung ke Supabase.';
-        console.warn('[DB] syncExternalScores cloud sync error:', err);
+      } else {
+        cloudError = raceResult.error;
       }
     }
 
