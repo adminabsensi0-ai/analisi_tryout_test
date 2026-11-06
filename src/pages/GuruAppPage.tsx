@@ -32,6 +32,12 @@ import { ResourceCard } from '../components/ResourceCard';
 import { ItemAnalysisVisualizer } from '../components/ItemAnalysisVisualizer';
 import { ExternalTryoutService } from '../services/externalTryout';
 import { ExternalTryoutUploadModal } from '../components/guru/ExternalTryoutUploadModal';
+import {
+  TRYOUT_STAGE_OPTIONS,
+  TRYOUT_GROUP_NONE,
+  resolveTryoutGroup,
+  getStageSubjectCoverage,
+} from '../utils/tryoutGroupUtils';
 
 interface GuruAppPageProps {
   currentUser: User;
@@ -161,6 +167,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [newToGFormUrl, setNewToGFormUrl] = useState('');
   const [newToGSheetUrl, setNewToGSheetUrl] = useState('');
   const [newToPackageId, setNewToPackageId] = useState('');
+  const [newToGroup, setNewToGroup] = useState<string>('TO 1');
   const [newToEntryMode, setNewToEntryMode] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
   const [newToSubjectId, setNewToSubjectId] = useState('');
   const [newToExternalSubjectIds, setNewToExternalSubjectIds] = useState<string[]>([]);
@@ -211,7 +218,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setNewToGFormUrl('');
     setNewToGSheetUrl('');
     setNewToPackageId('');
-    setNewToSubjectId(permittedSubjects[0]?.id || subjects[0]?.id || '');
+    const defaultSubjId = permittedSubjects[0]?.id || subjects[0]?.id || '';
+    setNewToSubjectId(defaultSubjId);
+    // Rekomendasikan siklus TO berikutnya untuk mapel ini
+    const allGlobalTo = dbService.getTryouts();
+    const sameSubjectToCount = allGlobalTo.filter(t => t.subjectId === defaultSubjId).length;
+    setNewToGroup(`TO ${Math.min(12, sameSubjectToCount + 1)}`);
     setNewToEntryMode('INTERNAL');
     setNewToTargetClasses([]);
     // Default mapel eksternal disesuaikan persis dengan wewenang mapel guru
@@ -231,6 +243,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setNewToGFormUrl(to.googleFormUrl || '');
     setNewToGSheetUrl(to.googleSheetUrl || '');
     setNewToPackageId(to.packageId || '');
+    setNewToGroup(resolveTryoutGroup(to, dbService.getTryouts(), dbService.getExamPackages()));
     setNewToSubjectId(to.subjectId || permittedSubjects[0]?.id || subjects[0]?.id || '');
     setNewToEntryMode(to.isExternal ? 'EXTERNAL' : 'INTERNAL');
     setNewToTargetClasses(to.targetClassIds || []);
@@ -278,6 +291,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         title: newToTitle.trim(),
         code: updatedCode,
         packageId: newToPackageId || undefined,
+        tryoutGroup: newToGroup || 'TO 1',
         subjectId: internalSubjectId,
         isExternal,
         source: isExternal ? 'EXTERNAL' : 'INTERNAL',
@@ -372,6 +386,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         ? `Try Out Eksternal ${createdCode} (Rekap Nilai).${selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''}`
         : `Paket Ujian TryOut ${createdCode} terhubung dengan Google Form & Google Sheet.${selectedPkg ? ` Masuk ke wadah: ${selectedPkg.title}` : ''}`),
       packageId: selectedPkg?.id,
+      tryoutGroup: newToGroup || 'TO 1',
       targetClassIds: newToTargetClasses.length > 0 ? newToTargetClasses : selectedPkg?.targetClassIds,
     };
 
@@ -2332,13 +2347,126 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     </div>
                   </div>
 
+                  {/* Panel Ringkasan Kontrol Pengelompokan Siklus TO (TO 1, TO 2, TO 3) Lintas Mapel */}
+                  {(() => {
+                    const allGlobalTo = dbService.getTryouts();
+                    const allPkgs = dbService.getExamPackages();
+                    const usedGroups = Array.from(
+                      new Set(
+                        allGlobalTo
+                          .map(t => resolveTryoutGroup(t, allGlobalTo, allPkgs))
+                          .filter(g => g !== TRYOUT_GROUP_NONE)
+                      )
+                    ).sort((a, b) => {
+                      const na = parseInt(a.replace(/\D/g, ''), 10) || 99;
+                      const nb = parseInt(b.replace(/\D/g, ''), 10) || 99;
+                      return na - nb;
+                    });
+
+                    if (usedGroups.length === 0) return null;
+
+                    return (
+                      <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70 rounded-2xl p-4 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                              <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                              <span>Kontrol Pengelompokan Siklus Grafik Try Out (TO 1, TO 2, TO 3, dst.)</span>
+                            </h3>
+                            <p className="text-[11px] text-indigo-800/80 dark:text-indigo-300/80 mt-0.5">
+                              Pastikan setiap siklus TO berisi pasangan mata pelajaran yang sesuai (misal <strong>MAT</strong> &amp; <strong>BIN</strong>) agar grafik progres siswa &amp; wali kelas akurat.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                          {usedGroups.map(gKey => {
+                            const cov = getStageSubjectCoverage(gKey, allGlobalTo, subjects, allPkgs);
+                            const hasConflict = cov.duplicateSubjects.length > 0;
+                            return (
+                              <div
+                                key={gKey}
+                                className={`p-3 rounded-xl border text-xs space-y-1.5 ${
+                                  hasConflict
+                                    ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-800'
+                                    : cov.isComplete
+                                    ? 'bg-white dark:bg-slate-900 border-emerald-300 dark:border-emerald-800/80'
+                                    : 'bg-white dark:bg-slate-900 border-amber-300 dark:border-amber-800/80'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-mono font-black text-slate-900 dark:text-white text-xs">
+                                    {gKey}
+                                  </span>
+                                  {hasConflict ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-900 text-rose-700 dark:text-rose-200">
+                                      Duplikat Mapel!
+                                    </span>
+                                  ) : cov.isComplete ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      Lengkap ({cov.filledSubjects.length} Mapel)
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
+                                      {cov.filledSubjects.length}/{subjects.length} Mapel
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                                  {subjects.map(subj => {
+                                    const filled = cov.filledSubjects.find(f => f.subject.id === subj.id);
+                                    const isDup = cov.duplicateSubjects.some(d => d.subject.id === subj.id);
+                                    return (
+                                      <span
+                                        key={subj.id}
+                                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                                          isDup
+                                            ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-700'
+                                            : filled
+                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700'
+                                        }`}
+                                        title={
+                                          filled
+                                            ? `${subj.name}: ${filled.tryouts.map(t => t.title || t.code).join(', ')}`
+                                            : `${subj.name}: Belum ada jadwal di ${gKey}`
+                                        }
+                                      >
+                                        {subj.code}: {isDup ? `${filled?.tryouts.length}x (Konflik)` : filled ? '✓' : 'Belum'}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {tryouts.map(to => (
+                    {tryouts.map(to => {
+                      const allGlobalTo = dbService.getTryouts();
+                      const allPkgs = dbService.getExamPackages();
+                      const currentGroup = resolveTryoutGroup(to, allGlobalTo, allPkgs);
+                      const groupCoverage =
+                        currentGroup !== TRYOUT_GROUP_NONE
+                          ? getStageSubjectCoverage(currentGroup, allGlobalTo, subjects, allPkgs)
+                          : null;
+                      const hasDuplicateInGroup =
+                        groupCoverage?.duplicateSubjects.some(d => d.subject.id === to.subjectId) ?? false;
+
+                      return (
                       <div key={to.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-2xs space-y-3 transition-colors">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950 border border-teal-200 dark:border-teal-800 px-2.5 py-0.5 rounded-lg">
                               {to.code}
+                            </span>
+                            <span className="font-mono text-xs font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 rounded-lg">
+                              {currentGroup === TRYOUT_GROUP_NONE ? 'Non-Siklus' : currentGroup}
                             </span>
                             {to.isExternal && (
                               <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 px-2 py-0.5 rounded-md">
@@ -2379,6 +2507,51 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                         <div className="text-sm font-bold text-slate-900 dark:text-slate-100">{to.title}</div>
                         <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{to.description || 'Paket Ujian TryOut terintegrasi Google Form & Sheets.'}</p>
+
+                        {/* Kontrol Cepat Kelompok Siklus Try Out oleh Guru Mapel */}
+                        <div className="p-2.5 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/70 rounded-xl space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                              <Tag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                              <span>Kelompok Grafik TO:</span>
+                            </span>
+                            <select
+                              value={currentGroup}
+                              onChange={e => {
+                                const selectedGroup = e.target.value;
+                                dbService.updateTryout(to.id, { tryoutGroup: selectedGroup }, currentUser);
+                                setTryouts(dbService.getTryoutsForTeacher(currentUser));
+                                refreshData();
+                                triggerToast(
+                                  `Paket '${to.title}' berhasil ditetapkan ke kelompok grafik '${
+                                    selectedGroup === TRYOUT_GROUP_NONE ? 'Latihan Mandiri (Non-TO)' : selectedGroup
+                                  }'.`
+                                );
+                              }}
+                              className="bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-indigo-700 dark:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                            >
+                              {TRYOUT_STAGE_OPTIONS.map(opt => {
+                                const cov = getStageSubjectCoverage(opt, allGlobalTo, subjects, allPkgs);
+                                const filledCodes = cov.filledSubjects.map(f => f.subject.code).join('+');
+                                return (
+                                  <option key={opt} value={opt}>
+                                    {opt} {filledCodes ? `(${filledCodes})` : '(Kosong)'}
+                                  </option>
+                                );
+                              })}
+                              <option value={TRYOUT_GROUP_NONE}>Non-TO (Tidak Masuk Grafik)</option>
+                            </select>
+                          </div>
+
+                          {hasDuplicateInGroup && (
+                            <div className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1 pt-0.5">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span>
+                                Perhatian: Sudah ada jadwal mapel yang sama di {currentGroup}. Pilih nomor TO lain agar tidak bentrok.
+                              </span>
+                            </div>
+                          )}
+                        </div>
 
                         <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 space-y-1">
                           <div className="flex items-center justify-between">
@@ -2649,7 +2822,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -9151,10 +9325,42 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 />
               </div>
 
+              {/* ── Kelompok Siklus Try Out (Kontrol Grafik Progres TO 1, TO 2, TO 3) ── */}
+              <div className="p-3.5 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/80 rounded-2xl space-y-2">
+                <label className="block text-indigo-950 dark:text-indigo-200 font-bold text-xs flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Kelompok Siklus Try Out (Grafik TO 1, TO 2, TO 3, dst.) <span className="text-rose-500">*</span></span>
+                </label>
+                <select
+                  value={newToGroup}
+                  onChange={e => setNewToGroup(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono font-bold text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition cursor-pointer"
+                >
+                  {TRYOUT_STAGE_OPTIONS.map(opt => {
+                    const cov = getStageSubjectCoverage(
+                      opt,
+                      dbService.getTryouts().filter(t => t.id !== editingTryoutId),
+                      subjects,
+                      dbService.getExamPackages()
+                    );
+                    const filledCodes = cov.filledSubjects.map(f => f.subject.code).join(', ');
+                    return (
+                      <option key={opt} value={opt}>
+                        {opt} — {filledCodes ? `Sudah terisi: ${filledCodes}` : 'Belum ada mapel (Kosong)'}
+                      </option>
+                    );
+                  })}
+                  <option value={TRYOUT_GROUP_NONE}>Latihan Mandiri (Tidak Masuk Grafik Siklus TO)</option>
+                </select>
+                <p className="text-[10px] text-indigo-800/80 dark:text-indigo-300/80 leading-relaxed">
+                  Pilih siklus TO yang sama dengan guru mata pelajaran pasangan (misal <strong>MAT</strong> dan <strong>BIN</strong> sama-sama memilih <strong>TO 1</strong>) agar nilai digabungkan secara presisi pada grafik progres Siswa &amp; Wali Kelas.
+                </p>
+              </div>
+
               {/* ── Wadah ── */}
               <div>
                 <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                  Wadah / Paket Ujian Induk <span className="font-normal text-slate-400">(Sangat Disarankan)</span>
+                  Wadah / Paket Ujian Induk <span className="font-normal text-slate-400">(Opsional)</span>
                 </label>
                 <select
                   value={newToPackageId}

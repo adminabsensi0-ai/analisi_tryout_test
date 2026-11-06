@@ -236,10 +236,13 @@ function fromSupabaseExamPackage(row: Record<string, unknown>, subjects: ExamPac
 
 function toSupabaseTryoutCoreOnly(to: Tryout, supabaseAcademicYearId?: string): Record<string, unknown> {
   const isExt = Boolean(to.isExternal || to.source === 'EXTERNAL');
+  const existingMeta = ((to.scoringConfig as any)?._meta || {}) as Record<string, unknown>;
   const meta: Record<string, unknown> = {
+    ...existingMeta,
     selectedQuestionColumns: to.selectedQuestionColumns,
     answerKey: to.answerKey,
     subjectId: to.subjectId,
+    tryoutGroup: to.tryoutGroup ?? existingMeta.tryoutGroup,
     isExternal: isExt,
     source: isExt ? 'EXTERNAL' : 'INTERNAL',
     externalSubjects: to.externalSubjects,
@@ -277,10 +280,13 @@ function toSupabaseTryoutCoreOnly(to: Tryout, supabaseAcademicYearId?: string): 
 
 function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<string, unknown> {
   const isExt = Boolean(to.isExternal || to.source === 'EXTERNAL');
+  const existingMeta = ((to.scoringConfig as any)?._meta || {}) as Record<string, unknown>;
   const meta: Record<string, unknown> = {
+    ...existingMeta,
     selectedQuestionColumns: to.selectedQuestionColumns,
     answerKey: to.answerKey,
     subjectId: to.subjectId,
+    tryoutGroup: to.tryoutGroup ?? existingMeta.tryoutGroup,
     isExternal: isExt,
     source: isExt ? 'EXTERNAL' : 'INTERNAL',
     externalSubjects: to.externalSubjects,
@@ -360,6 +366,7 @@ function fromSupabaseTryout(row: Record<string, unknown>): Tryout {
     googleFormUrl: row.google_form_url ? String(row.google_form_url) : undefined,
     googleSheetUrl: row.google_sheet_url ? String(row.google_sheet_url) : undefined,
     packageId: row.package_id ? String(row.package_id) : undefined,
+    tryoutGroup: meta.tryoutGroup ? String(meta.tryoutGroup) : undefined,
     targetClassIds: Array.isArray(row.target_class_ids) ? (row.target_class_ids as string[]) : [],
     answerKey: (Array.isArray(row.answer_key) && row.answer_key.length > 0)
       ? (row.answer_key as string[])
@@ -1709,23 +1716,31 @@ class SupabaseDbService {
   }
 
   public async removeSubjectByCode(code: string): Promise<void> {
-    if (!this.isAvailable() || !supabase) return;
-    try {
-      const { error } = await supabase
-        .from('subjects')
-        .delete()
-        .eq('code', code.trim());
-      if (error) this.log('removeSubjectByCode error: ' + error.message, 'warn');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.log('removeSubjectByCode exception: ' + msg, 'warn');
-    }
+    if (!this.isAvailable() || !supabase || !code.trim()) return;
+    await this.removeSubjectsBatchByCode([code.trim()]);
   }
 
   public async removeSubjectsBatchByCode(codes: string[]): Promise<void> {
     if (!this.isAvailable() || !supabase || !codes.length) return;
     try {
       const cleanCodes = codes.map(c => c.trim()).filter(Boolean);
+      const { data: foundSubjects } = await supabase
+        .from('subjects')
+        .select('id, code')
+        .in('code', cleanCodes);
+
+      const subjectIds = (foundSubjects || []).map((r: any) => String(r.id)).filter(isValidUuid);
+      if (subjectIds.length > 0) {
+        // Bersihkan entitas anak yang memiliki constraint ON DELETE RESTRICT terlebih dahulu
+        await supabase.from('questions').delete().in('subject_id', subjectIds);
+        await supabase.from('materials').delete().in('subject_id', subjectIds);
+        await supabase.from('competencies').delete().in('subject_id', subjectIds);
+        await supabase.from('exam_package_subjects').delete().in('subject_id', subjectIds);
+        await supabase.from('teacher_subjects').delete().in('subject_id', subjectIds);
+        await supabase.from('tryout_subjects').delete().in('subject_id', subjectIds);
+        await supabase.from('tryouts').update({ subject_id: null }).in('subject_id', subjectIds);
+      }
+
       const { error } = await supabase.from('subjects').delete().in('code', cleanCodes);
       if (error) this.log('removeSubjectsBatchByCode error: ' + error.message, 'warn');
     } catch (err: unknown) {
@@ -1871,7 +1886,7 @@ class SupabaseDbService {
     if (state.subjects.length > 0) {
       await attempt(`Subjects (${state.subjects.length})`, async () => {
         const subjPayloads = state.subjects.map(toSupabaseSubject);
-        const { error } = await supabase.from('subjects').upsert(subjPayloads, { onConflict: 'code' });
+        const { error } = await supabase!.from('subjects').upsert(subjPayloads, { onConflict: 'code' });
         if (error) throw new Error(error.message);
       });
     }
@@ -1922,14 +1937,14 @@ class SupabaseDbService {
       for (let i = 0; i < studentPayloads.length; i += 200) {
         const chunk = studentPayloads.slice(i, i + 200);
         await attempt(`Students batch ${i + 1}-${i + chunk.length}`, async () => {
-          let { error } = await supabase.from('students').upsert(chunk, { onConflict: 'nisn' });
+          let { error } = await supabase!.from('students').upsert(chunk, { onConflict: 'nisn' });
           if (error && (error.message?.includes('is_answer_key_account') || (error as any).details?.includes('is_answer_key_account'))) {
             const fallbackChunk = chunk.map(p => {
               const copy = { ...p };
               delete copy.is_answer_key_account;
               return copy;
             });
-            const retry = await supabase.from('students').upsert(fallbackChunk, { onConflict: 'nisn' });
+            const retry = await supabase!.from('students').upsert(fallbackChunk, { onConflict: 'nisn' });
             error = retry.error;
           }
           if (error) throw new Error(error.message);

@@ -13,6 +13,12 @@ import { Score, Student, Tryout, Explanation, Question, Subject, ClassRoom } fro
 import { StudentVerificationGate } from '../components/student/StudentVerificationGate';
 import { StudentQuestionSheet } from '../components/student/StudentQuestionSheet';
 import { SubjectRecapSection, SubjectRecapRow } from '../components/student/SubjectRecapSection';
+import {
+  buildTryoutStageGroups,
+  getStudentStageCompositeScore,
+  getStudentStageSubjectScore,
+  TryoutStageGroup,
+} from '../utils/tryoutGroupUtils';
 
 export const StudentPortalPage: React.FC = () => {
   // Birthdate + NISN Verification State (Starts empty for privacy & real gatekeeping)
@@ -525,56 +531,96 @@ export const StudentPortalPage: React.FC = () => {
     return { label: 'Perlu Peningkatan', grade: 'D', badge: 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800' };
   }, [activeScore]);
 
-  // Multi-Tryout Progress History (Real analytics progress)
-  const progressHistory = useMemo(() => {
-    return studentAnalytics?.progress.map(p => ({
-      code: p.tryoutCode,
-      title: p.tryoutTitle,
-      date: p.date,
-      score: p.score,
-      classAverage: p.classAverage ?? 75.0,
-    })) || [];
-  }, [studentAnalytics]);
+  // Mapel aktif (tanpa mapel yang sudah dihapus seperti BIND)
+  const activeSubjects = useMemo(() => {
+    return allSubjects.filter(s => (s.code || '').toUpperCase().trim() !== 'BIND');
+  }, [allSubjects]);
 
-  // DETERMINISTIC REAL CALCULATION: Compute per-subject scores for student
-  const getSubjectScore = (subjId: string, tryoutIndex: number, tryoutCode: string): number | null => {
-    if (!verifiedStudent) return null;
+  // Pengelompokan Siklus Try Out (TO 1, TO 2, TO 3, ...) — dihitung dari SELURUH tryout agar
+  // konsisten dengan pengelompokan yang dikontrol Guru Mapel, lalu disaring ke siklus yang diikuti siswa.
+  const tryoutStageGroups = useMemo<TryoutStageGroup[]>(() => {
+    const allGroups = buildTryoutStageGroups(allTryouts, dbService.getExamPackages());
+    if (!verifiedStudent) return allGroups;
+    return allGroups.filter(stage =>
+      stage.tryouts.some(t => allScores.some(s => s.studentId === verifiedStudent.id && s.tryoutId === t.id))
+    );
+  }, [allTryouts, allScores, verifiedStudent, dbVersion]);
 
-    const targetTryout = tryouts.find(t => t.code === tryoutCode || t.id === `to-${tryoutIndex + 1}`) || tryouts[tryoutIndex];
-    if (!targetTryout) return null;
+  const allAnswersCache = useMemo(() => dbService.getAnswers(), [dbVersion, allScores]);
 
-    const studentScoreObj = allScores.find(s => s.studentId === verifiedStudent.id && s.tryoutId === targetTryout.id);
-    if (!studentScoreObj) return null;
-
-    const subj = allSubjects.find(s => s.id === subjId);
-    if (!subj) return null;
-
-    const studentAnswers = dbService.getAnswers().filter(a => a.studentId === verifiedStudent.id && a.tryoutId === targetTryout.id);
-    const subjQuestions = allQuestions.filter(q => q.subjectId === subjId);
-
-    const val = resolveSubjectScoreFromScoreObj(studentScoreObj, subj, studentAnswers, subjQuestions);
-    if (val !== null) return val;
-
-    if (targetTryout.subjectId === subjId) {
-      return studentScoreObj.calculatedScore;
-    }
-
-    return null;
+  const formatStageDate = (iso: string): string => {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
-  // Build real subject recap matrix rows (menghitung rata-rata hanya dari tryout dengan data valid)
+  // Multi-Tryout Progress History per Siklus TO:
+  // - score        = rata-rata gabungan mapel siswa (mis. (MAT + BIN) / 2) pada siklus TO tersebut
+  // - classAverage = rata-rata gabungan kelas pada siklus TO tersebut
+  const progressHistory = useMemo(() => {
+    if (!verifiedStudent) return [];
+    const classmates = allStudents.filter(s => s.classId === verifiedStudent.classId);
+
+    return tryoutStageGroups.map(stage => {
+      const studentComposite = getStudentStageCompositeScore(
+        verifiedStudent.id, stage, activeSubjects, allScores, allAnswersCache, allQuestions
+      );
+
+      // Rata-rata gabungan kelas
+      const classCompositeValues: number[] = [];
+      const subjectClassBuckets: Record<string, number[]> = {};
+      classmates.forEach(cm => {
+        const res = getStudentStageCompositeScore(
+          cm.id, stage, activeSubjects, allScores, allAnswersCache, allQuestions
+        );
+        if (res.compositeScore !== null) classCompositeValues.push(res.compositeScore);
+        Object.entries(res.subjectScores).forEach(([sid, val]) => {
+          if (!subjectClassBuckets[sid]) subjectClassBuckets[sid] = [];
+          subjectClassBuckets[sid].push(val);
+        });
+      });
+
+      const avg = (arr: number[]) =>
+        arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : 0;
+
+      const subjectClassAverages: Record<string, number> = {};
+      Object.entries(subjectClassBuckets).forEach(([sid, vals]) => {
+        subjectClassAverages[sid] = avg(vals);
+      });
+
+      const subjectBreakdownLabel = activeSubjects
+        .filter(s => studentComposite.subjectScores[s.id] !== undefined)
+        .map(s => `${s.code}: ${studentComposite.subjectScores[s.id].toFixed(1)}`)
+        .join(' · ');
+
+      return {
+        code: stage.groupKey,
+        title: stage.title,
+        date: formatStageDate(stage.startDate),
+        score: studentComposite.compositeScore ?? 0,
+        classAverage: classCompositeValues.length > 0 ? avg(classCompositeValues) : 75.0,
+        subjectClassAverages,
+        subjectBreakdownLabel,
+      };
+    });
+  }, [tryoutStageGroups, verifiedStudent, allStudents, activeSubjects, allScores, allAnswersCache, allQuestions]);
+
+  // Build real subject recap matrix rows per Siklus TO (menghitung rata-rata hanya dari siklus dengan data valid)
   const subjectRecapRows: SubjectRecapRow[] = useMemo(() => {
-    return allSubjects.map(subj => {
+    if (!verifiedStudent) return [];
+    return activeSubjects.map(subj => {
       const toScores: Record<string, number> = {};
       const validScores: number[] = [];
 
-      progressHistory.forEach((item, idx) => {
-        const score = getSubjectScore(subj.id, idx, item.code);
+      tryoutStageGroups.forEach(stage => {
+        const score = getStudentStageSubjectScore(
+          verifiedStudent.id, subj, stage, allScores, allAnswersCache, allQuestions
+        );
         if (score !== null) {
-          toScores[item.code] = score;
+          toScores[stage.groupKey] = score;
           validScores.push(score);
         } else {
-          toScores[item.code] = 0;
+          toScores[stage.groupKey] = 0;
         }
       });
 
@@ -597,9 +643,9 @@ export const StudentPortalPage: React.FC = () => {
         trend,
       };
     }).filter(r => {
-      return Object.values(r.toScores).some(v => v > 0) || allSubjects.length <= 12;
+      return Object.values(r.toScores).some(v => v > 0) || activeSubjects.length <= 12;
     });
-  }, [allSubjects, progressHistory, verifiedStudent, allScores, allQuestions]);
+  }, [activeSubjects, tryoutStageGroups, verifiedStudent, allScores, allAnswersCache, allQuestions]);
 
   // PDF Export
   const handleDownloadPDF = () => {
@@ -1198,7 +1244,7 @@ export const StudentPortalPage: React.FC = () => {
                         Progres Nilai Siswa Lintas Try Out
                       </h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Evaluasi pertumbuhan belajar siswa dari Try Out 1 hingga Try Out 4 dibandingkan terhadap rata-rata kelas.
+                        Evaluasi pertumbuhan belajar per siklus Try Out (TO 1, TO 2, TO 3, …) — nilai merupakan rata-rata gabungan seluruh mapel pada siklus tersebut, dibandingkan dengan rata-rata kelas.
                       </p>
                     </div>
 
@@ -1213,7 +1259,7 @@ export const StudentPortalPage: React.FC = () => {
                   {/* SVG Chart Viewport */}
                   {(() => {
                     const coords = progressHistory.map((item, i) => {
-                      const x = 80 + (i / Math.max(1, progressHistory.length - 1)) * 840;
+                      const x = progressHistory.length === 1 ? 500 : 80 + (i / Math.max(1, progressHistory.length - 1)) * 840;
                       const y = 260 - (Math.min(100, Math.max(0, item.score)) / 100) * 220;
                       const classAvgY = 260 - (Math.min(100, Math.max(0, item.classAverage ?? 75)) / 100) * 220;
                       return { ...item, x, y, classAvgY };
@@ -1259,13 +1305,23 @@ export const StudentPortalPage: React.FC = () => {
                             <text x="45" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
 
                             {/* Polygon Area Fill */}
-                            <polygon points={polygonPoints} fill="url(#studentChartGradMain)" />
+                            {coords.length > 1 && <polygon points={polygonPoints} fill="url(#studentChartGradMain)" />}
 
                             {/* Class Average Polyline */}
-                            <polyline fill="none" stroke="#10b981" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.85" points={classAvgPolyPoints} />
+                            {coords.length > 1 && (
+                              <polyline fill="none" stroke="#10b981" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.85" points={classAvgPolyPoints} />
+                            )}
 
                             {/* Student Score Polyline */}
-                            <polyline fill="none" stroke="#6366f1" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={svgPolyPoints} />
+                            {coords.length > 1 && (
+                              <polyline fill="none" stroke="#6366f1" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={svgPolyPoints} />
+                            )}
+
+                            {coords.length === 0 && (
+                              <text x="500" y="150" textAnchor="middle" className="text-[13px] font-sans fill-slate-400">
+                                Belum ada data nilai Try Out yang dapat ditampilkan.
+                              </text>
+                            )}
 
                             {/* Nodes */}
                             {coords.map((node, i) => (
@@ -1288,6 +1344,11 @@ export const StudentPortalPage: React.FC = () => {
                                 <text x={node.x} y="295" textAnchor="middle" className="text-[10px] font-sans fill-slate-400">
                                   {node.date}
                                 </text>
+                                {node.subjectBreakdownLabel && (
+                                  <text x={node.x} y={Math.min(node.y, node.classAvgY) - 40 < 20 ? Math.max(node.y, node.classAvgY) + 22 : Math.min(node.y, node.classAvgY) - 40} textAnchor="middle" className="text-[10px] font-mono font-semibold fill-slate-500 dark:fill-slate-400">
+                                    {node.subjectBreakdownLabel}
+                                  </text>
+                                )}
                               </g>
                             ))}
                           </svg>
@@ -1297,11 +1358,11 @@ export const StudentPortalPage: React.FC = () => {
                         <div className="flex flex-wrap items-center justify-center gap-6 pt-2 text-xs font-medium text-slate-600 dark:text-slate-300">
                           <div className="flex items-center gap-2">
                             <span className="w-5 h-1 bg-indigo-600 rounded-full inline-block" />
-                            <span>Skor Siswa Terhitung</span>
+                            <span>Rata-Rata Gabungan Siswa (seluruh mapel per TO)</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="w-5 h-0.5 border-t-2 border-dashed border-emerald-500 inline-block" />
-                            <span>Rata-Rata Kelas</span>
+                            <span>Rata-Rata Gabungan Kelas</span>
                           </div>
                         </div>
                       </div>
@@ -1312,7 +1373,7 @@ export const StudentPortalPage: React.FC = () => {
                 {/* 2. SUBJECT RECAP SECTION (Grafik Per-Mapel + Tabel Rekapitulasi Lengkap) */}
                 <SubjectRecapSection
                   student={verifiedStudent}
-                  subjects={allSubjects}
+                  subjects={activeSubjects}
                   progressHistory={progressHistory}
                   subjectRecapRows={subjectRecapRows}
                   onOpenSubjectExplanations={subjId => {

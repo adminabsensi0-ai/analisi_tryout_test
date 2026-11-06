@@ -34,6 +34,7 @@ import { generateUuid, isValidUuid } from '../utils/idUtils';
 
 const STORAGE_KEY = 'school_tryout_analytics_db_v1';
 const DELETED_TRYOUTS_KEY = 'school_tryout_deleted_ids_v1';
+const DELETED_SUBJECTS_KEY = 'school_tryout_deleted_subjects_v1';
 
 export interface DatabaseState {
   users: User[];
@@ -245,6 +246,26 @@ export class DatabaseService {
       });
     }
 
+    // 8. Bersihkan mata pelajaran yang telah dihapus (termasuk kode warisan BIND)
+    const deletedSubjCodes = this.getDeletedSubjectCodes();
+    if (this.state.subjects && this.state.subjects.length > 0) {
+      const removedIds: string[] = [];
+      const removedCodes: string[] = [];
+      this.state.subjects = this.state.subjects.filter(s => {
+        const codeKey = (s.code || '').toLowerCase().trim();
+        if (deletedSubjCodes.has(codeKey)) {
+          removedIds.push(s.id);
+          if (s.code) removedCodes.push(s.code);
+          return false;
+        }
+        return true;
+      });
+      if (removedIds.length > 0) {
+        this.purgeSubjectReferences(removedIds, removedCodes);
+        changed = true;
+      }
+    }
+
     if (changed) {
       this.persistState();
       console.info('[DB] Migrasi ID lokal ke UUID standar berhasil dilakukan.');
@@ -396,6 +417,108 @@ export class DatabaseService {
   }
 
   /**
+   * Helper tombstone untuk mata pelajaran yang telah dihapus Admin (termasuk kode warisan 'bind').
+   */
+  private getDeletedSubjectCodes(): Set<string> {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(DELETED_SUBJECTS_KEY) : null;
+      const parsed = raw ? JSON.parse(raw) : [];
+      const set = new Set<string>(['bind']);
+      (Array.isArray(parsed) ? parsed : []).forEach((x: string) => {
+        const val = String(x).toLowerCase().trim();
+        if (val) set.add(val);
+      });
+      return set;
+    } catch {
+      return new Set<string>(['bind']);
+    }
+  }
+
+  private recordDeletedSubjectCode(...codes: (string | undefined)[]): void {
+    try {
+      const set = this.getDeletedSubjectCodes();
+      codes.forEach(c => {
+        if (c && c.trim()) {
+          set.add(c.toLowerCase().trim());
+        }
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(DELETED_SUBJECTS_KEY, JSON.stringify(Array.from(set)));
+      }
+    } catch (e) {
+      console.warn('[DB] Gagal menyimpan tombstone mata pelajaran:', e);
+    }
+  }
+
+  private removeDeletedSubjectCode(...codes: (string | undefined)[]): void {
+    try {
+      const set = this.getDeletedSubjectCodes();
+      codes.forEach(c => {
+        if (c && c.trim()) {
+          set.delete(c.toLowerCase().trim());
+        }
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(DELETED_SUBJECTS_KEY, JSON.stringify(Array.from(set)));
+      }
+    } catch (e) {
+      console.warn('[DB] Gagal membersihkan tombstone mata pelajaran:', e);
+    }
+  }
+
+  private purgeSubjectReferences(subjectIds: string[], subjectCodes: string[] = []): void {
+    if (subjectIds.length === 0 && subjectCodes.length === 0) return;
+    const idSet = new Set(subjectIds.map(id => id.toLowerCase().trim()));
+    const codeSet = new Set(subjectCodes.map(c => c.toLowerCase().trim()));
+
+    if (this.state.examPackages) {
+      this.state.examPackages.forEach(pkg => {
+        if (Array.isArray(pkg.subjects)) {
+          pkg.subjects = pkg.subjects.filter(ps => !idSet.has((ps.subjectId || '').toLowerCase().trim()));
+        }
+      });
+    }
+
+    if (this.state.teachers) {
+      this.state.teachers.forEach(t => {
+        if (Array.isArray(t.subjectPermissions)) {
+          t.subjectPermissions = t.subjectPermissions.filter(
+            sid => !idSet.has((sid || '').toLowerCase().trim()) && !codeSet.has((sid || '').toLowerCase().trim())
+          );
+        }
+      });
+    }
+
+    if (this.state.tryouts) {
+      this.state.tryouts.forEach(to => {
+        if (Array.isArray(to.externalSubjectIds)) {
+          to.externalSubjectIds = to.externalSubjectIds.filter(
+            sid => !idSet.has((sid || '').toLowerCase().trim())
+          );
+        }
+        if (Array.isArray(to.externalSubjects)) {
+          to.externalSubjects = to.externalSubjects.filter(
+            sname => !codeSet.has((sname || '').toLowerCase().trim())
+          );
+        }
+      });
+    }
+
+    if (this.state.scores) {
+      this.state.scores.forEach(sc => {
+        if (sc.subjectScores) {
+          Object.keys(sc.subjectScores).forEach(k => {
+            const lk = k.toLowerCase().trim();
+            if (idSet.has(lk) || codeSet.has(lk)) {
+              delete sc.subjectScores![k];
+            }
+          });
+        }
+      });
+    }
+  }
+
+  /**
    * Merge cloud state into local state, avoiding duplicate entries.
    */
   private mergeCloudState(cloud: {
@@ -448,8 +571,23 @@ export class DatabaseService {
     });
 
     // Merge subjects (by code) — update name/category/id if changed & remap references
-    cloud.subjects.forEach(cloudSub => {
-      const idx = this.state.subjects.findIndex(s => s.code === cloudSub.code);
+    const deletedSubjCodes = this.getDeletedSubjectCodes();
+    const validCloudSubjects = (cloud.subjects || []).filter(cs => {
+      const codeKey = (cs.code || '').toLowerCase().trim();
+      if (deletedSubjCodes.has(codeKey)) {
+        // Jika di cloud masih tersisa mapel yang sudah ditandai hapus (seperti BIND), bersihkan dari cloud
+        if (this.supabaseSyncEnabled && cs.code) {
+          sdb.removeSubjectByCode(cs.code).catch(() => {});
+        }
+        return false;
+      }
+      return true;
+    });
+
+    validCloudSubjects.forEach(cloudSub => {
+      const idx = this.state.subjects.findIndex(
+        s => (s.code || '').toLowerCase().trim() === (cloudSub.code || '').toLowerCase().trim()
+      );
       if (idx === -1) {
         this.state.subjects.push(cloudSub);
         changed = true;
@@ -457,7 +595,12 @@ export class DatabaseService {
         const local = this.state.subjects[idx];
         const oldSubId = local.id;
         const idDiff = Boolean(cloudSub.id && oldSubId !== cloudSub.id);
-        if (local.name !== cloudSub.name || local.category !== cloudSub.category || idDiff) {
+        if (
+          local.name !== cloudSub.name ||
+          local.category !== cloudSub.category ||
+          local.passingGrade !== cloudSub.passingGrade ||
+          idDiff
+        ) {
           this.state.subjects[idx] = { ...local, ...cloudSub };
           if (idDiff) {
             (this.state.tryouts || []).forEach(t => {
@@ -491,6 +634,29 @@ export class DatabaseService {
         }
       }
     });
+
+    // Reconcile deleted subjects: hapus dari state lokal jika mapel sudah dihapus di Supabase atau masuk tombstone
+    if (this.supabaseInitDone || validCloudSubjects.length > 0 || (cloud.students && cloud.students.length > 0)) {
+      const cloudSubjCodes = new Set(validCloudSubjects.map(s => (s.code || '').toLowerCase().trim()));
+      const removedSubjIds: string[] = [];
+      const removedSubjCodes: string[] = [];
+      const beforeSubjCount = this.state.subjects.length;
+
+      this.state.subjects = this.state.subjects.filter(s => {
+        const codeKey = (s.code || '').toLowerCase().trim();
+        if (deletedSubjCodes.has(codeKey) || (validCloudSubjects.length > 0 && !cloudSubjCodes.has(codeKey))) {
+          removedSubjIds.push(s.id);
+          if (s.code) removedSubjCodes.push(s.code);
+          return false;
+        }
+        return true;
+      });
+
+      if (this.state.subjects.length !== beforeSubjCount) {
+        this.purgeSubjectReferences(removedSubjIds, removedSubjCodes);
+        changed = true;
+      }
+    }
 
     // Merge classes (by name)
     cloud.classes.forEach(cloudCls => {
@@ -730,6 +896,7 @@ export class DatabaseService {
             JSON.stringify(local.externalSubjects) !== JSON.stringify(mergedExtSubjects) ||
             JSON.stringify(local.externalSubjectIds) !== JSON.stringify(mergedExtSubjectIds) ||
             local.subjectId !== (cloudTo.subjectId || local.subjectId) ||
+            local.tryoutGroup !== (cloudTo.tryoutGroup || local.tryoutGroup) ||
             local.isExternal !== resolvedIsExternal ||
             local.source !== (resolvedIsExternal ? 'EXTERNAL' : 'INTERNAL')
           ) {
@@ -740,6 +907,7 @@ export class DatabaseService {
               selectedQuestionColumns: mergedSelectedCols,
               answerKey: mergedAnswerKey,
               subjectId: resolvedIsExternal ? (cloudTo.subjectId || undefined) : (cloudTo.subjectId || local.subjectId),
+              tryoutGroup: cloudTo.tryoutGroup || local.tryoutGroup,
               isExternal: resolvedIsExternal,
               source: resolvedIsExternal ? 'EXTERNAL' : 'INTERNAL',
               externalSubjects: mergedExtSubjects,
@@ -893,14 +1061,15 @@ export class DatabaseService {
           subjectScores: { ...(cloudScore.subjectScores || {}) },
         };
         if (isGFormSource && normalizedCloudScore.googleFormScore && normalizedCloudScore.googleFormScore > 0) {
-          normalizedCloudScore.calculatedScore = normalizedCloudScore.googleFormScore;
+          const gFormScore: number = normalizedCloudScore.googleFormScore;
+          normalizedCloudScore.calculatedScore = gFormScore;
           normalizedCloudScore.scoringStatus = 'MATCH';
           normalizedCloudScore.scoreDifference = 0;
           if (to?.subjectId) {
-            normalizedCloudScore.subjectScores[to.subjectId] = normalizedCloudScore.googleFormScore;
+            normalizedCloudScore.subjectScores[to.subjectId] = gFormScore;
           }
           Object.keys(normalizedCloudScore.subjectScores).forEach(k => {
-            normalizedCloudScore.subjectScores[k] = normalizedCloudScore.googleFormScore;
+            normalizedCloudScore.subjectScores[k] = gFormScore;
           });
         } else if (to?.isExternal && to.externalSubjectIds?.length === 1) {
           const singleSubId = to.externalSubjectIds[0];
@@ -1998,16 +2167,20 @@ export class DatabaseService {
   }
 
   // SUBJECTS CRUD
-  public getSubjects(): Subject[] { return this.state.subjects; }
+  public getSubjects(): Subject[] {
+    const deletedCodes = this.getDeletedSubjectCodes();
+    return this.state.subjects.filter(s => !deletedCodes.has((s.code || '').toLowerCase().trim()));
+  }
   public getSubjectById(id: string): Subject | undefined {
-    return this.state.subjects.find(s => s.id === id);
+    return this.getSubjects().find(s => s.id === id);
   }
   public addSubject(subj: Omit<Subject, 'id'>, currentUser: any): Subject {
     this.assertAdmin(currentUser, 'CREATE_SUBJECT');
+    this.removeDeletedSubjectCode(subj.code);
     if (this.state.subjects.some(s => s.code.toLowerCase() === subj.code.trim().toLowerCase())) {
       throw new Error(`Validasi Gagal: Kode mata pelajaran '${subj.code}' sudah digunakan.`);
     }
-    const newSubj: Subject = { ...subj, id: `subj-${Date.now()}` };
+    const newSubj: Subject = { ...subj, id: generateUuid() };
     this.state.subjects.push(newSubj);
     this.logAudit(currentUser, 'CREATE_SUBJECT', 'SUBJECT', `Menambahkan mata pelajaran: ${newSubj.name} (${newSubj.code})`);
     this.persistState();
@@ -2017,6 +2190,7 @@ export class DatabaseService {
   }
   public updateSubject(id: string, updates: Partial<Subject>, currentUser: any) {
     this.assertAdmin(currentUser, 'UPDATE_SUBJECT');
+    if (updates.code) this.removeDeletedSubjectCode(updates.code);
     this.state.subjects = this.state.subjects.map(s => s.id === id ? { ...s, ...updates } : s);
     this.logAudit(currentUser, 'UPDATE_SUBJECT', 'SUBJECT', `Memperbarui mata pelajaran ID: ${id}`);
     this.persistState();
@@ -2034,9 +2208,12 @@ export class DatabaseService {
   public deleteSubject(id: string, currentUser: any) {
     this.assertAdmin(currentUser, 'DELETE_SUBJECT');
     const s = this.state.subjects.find(item => item.id === id);
+    if (s?.code) this.recordDeletedSubjectCode(s.code);
     this.state.subjects = this.state.subjects.filter(item => item.id !== id);
+    this.purgeSubjectReferences([id], s?.code ? [s.code] : []);
     this.logAudit(currentUser, 'DELETE_SUBJECT', 'SUBJECT', `Menghapus mata pelajaran: ${s?.name || id}`);
     this.persistState();
+    this.notifyListeners();
     // Fire-and-forget cloud sync
     if (this.supabaseSyncEnabled && s?.code) sdb.removeSubjectByCode(s.code).catch(() => {});
   }
@@ -2047,7 +2224,9 @@ export class DatabaseService {
     const codesToDelete = ids
       .map(id => this.state.subjects.find(s => s.id === id)?.code)
       .filter(Boolean) as string[];
+    this.recordDeletedSubjectCode(...codesToDelete);
     this.state.subjects = this.state.subjects.filter(s => !ids.includes(s.id));
+    this.purgeSubjectReferences(ids, codesToDelete);
     this.logAudit(currentUser, 'BULK_DELETE_SUBJECT', 'SUBJECT', `Menghapus massal ${ids.length} mata pelajaran.`);
     this.persistState();
     this.notifyListeners();

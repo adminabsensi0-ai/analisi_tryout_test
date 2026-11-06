@@ -17,7 +17,15 @@ export interface SubjectRecapRow {
 interface SubjectRecapSectionProps {
   student: Student;
   subjects: Subject[];
-  progressHistory: Array<{ code: string; title: string; date: string; score: number; classAverage?: number }>;
+  progressHistory: Array<{
+    code: string;
+    title: string;
+    date: string;
+    score: number;
+    classAverage?: number;
+    subjectClassAverages?: Record<string, number>;
+    subjectBreakdownLabel?: string;
+  }>;
   subjectRecapRows: SubjectRecapRow[];
   onOpenSubjectExplanations: (subjectId: string) => void;
   onExportCSV: () => void;
@@ -48,10 +56,10 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
     return matchSearch && matchCategory;
   });
 
-  // Composite column averages
+  // Composite column averages (hanya dari mata pelajaran yang memiliki nilai > 0 pada TO tersebut)
   const compositeToAverages: Record<string, number> = {};
   tryoutCodes.forEach(code => {
-    const vals = subjectRecapRows.map(r => r.toScores[code] || 0);
+    const vals = subjectRecapRows.map(r => r.toScores[code] || 0).filter(v => v > 0);
     const avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : 0;
     compositeToAverages[code] = avg;
   });
@@ -174,13 +182,13 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                 const displayHistory = relevantHistory.length > 0 ? relevantHistory : progressHistory;
                 const points = displayHistory.map((item, idx, arr) => {
                   const score = activeRow.toScores[item.code] ?? 0;
-                  const classAvg = item.classAverage ?? 75.0;
+                  const classAvg = item.subjectClassAverages?.[selectedSubjectChartId] ?? item.classAverage ?? 75.0;
                   return {
                     code: item.code,
                     date: item.date,
                     score,
                     classAvg,
-                    x: 80 + (idx / Math.max(1, arr.length - 1)) * 840,
+                    x: arr.length === 1 ? 500 : 80 + (idx / Math.max(1, arr.length - 1)) * 840,
                     y: 260 - (Math.min(100, Math.max(0, score)) / 100) * 220,
                     classAvgY: 260 - (Math.min(100, Math.max(0, classAvg)) / 100) * 220,
                   };
@@ -203,13 +211,17 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                     </text>
 
                     {/* Gradient Fill */}
-                    <polygon points={polyGonStr} fill="url(#subjChartGrad2)" />
+                    {points.length > 1 && <polygon points={polyGonStr} fill="url(#subjChartGrad2)" />}
 
                     {/* Class Avg */}
-                    <polyline fill="none" stroke="#6366f1" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.8" points={classAvgStr} />
+                    {points.length > 1 && (
+                      <polyline fill="none" stroke="#6366f1" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.8" points={classAvgStr} />
+                    )}
 
                     {/* Student Score Line */}
-                    <polyline fill="none" stroke="#0d9488" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={polyStr} />
+                    {points.length > 1 && (
+                      <polyline fill="none" stroke="#0d9488" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={polyStr} />
+                    )}
 
                     {/* Nodes */}
                     {points.map((c, i) => (
@@ -241,33 +253,89 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
               {/* ALL SUBJECTS COMPOSITE VIEW */}
               {selectedSubjectChartId === 'ALL' && (() => {
                 const colors = ['#6366f1', '#0d9488', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'];
+                const xAxisItems = progressHistory.map((item, idx, arr) => ({
+                  ...item,
+                  x: arr.length === 1 ? 500 : 80 + (idx / Math.max(1, arr.length - 1)) * 840,
+                }));
+
                 return (
                   <g>
+                    {/* X-Axis Stage Guides & Labels (TO 1, TO 2, TO 3, ...) */}
+                    {xAxisItems.map((axisItem, idx) => (
+                      <g key={axisItem.code || idx}>
+                        <line
+                          x1={axisItem.x}
+                          y1="40"
+                          x2={axisItem.x}
+                          y2="260"
+                          stroke="currentColor"
+                          className="text-slate-100 dark:text-slate-800/60"
+                          strokeDasharray="3 3"
+                        />
+                        <text
+                          x={axisItem.x}
+                          y="280"
+                          textAnchor="middle"
+                          className="text-[12px] font-mono font-bold fill-slate-800 dark:fill-slate-200"
+                        >
+                          {axisItem.code}
+                        </text>
+                        <text
+                          x={axisItem.x}
+                          y="295"
+                          textAnchor="middle"
+                          className="text-[10px] font-sans fill-slate-400"
+                        >
+                          {axisItem.date}
+                        </text>
+                      </g>
+                    ))}
+
+                    {/* Subject Lines (only connecting valid non-zero scores per TO stage so lines never falsely drop to 0) */}
                     {subjectRecapRows.map((row, sIdx) => {
                       const strokeColor = colors[sIdx % colors.length];
-                      const points = progressHistory.map((item, idx) => {
-                        const score = row.toScores[item.code] ?? 0;
-                        return {
-                          code: item.code,
-                          x: 80 + (idx / Math.max(1, progressHistory.length - 1)) * 840,
-                          y: 260 - (Math.min(100, Math.max(0, score)) / 100) * 220,
-                        };
-                      });
-                      const polyStr = points.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+                      const validPoints = xAxisItems
+                        .map(axisItem => {
+                          const score = row.toScores[axisItem.code];
+                          if (score === undefined || score <= 0) return null;
+                          return {
+                            code: axisItem.code,
+                            score,
+                            x: axisItem.x,
+                            y: 260 - (Math.min(100, Math.max(0, score)) / 100) * 220,
+                          };
+                        })
+                        .filter((pt): pt is NonNullable<typeof pt> => pt !== null);
+
+                      const polyStr = validPoints.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
 
                       return (
                         <g key={row.subject.id}>
-                          <polyline fill="none" stroke={strokeColor} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" points={polyStr} />
-                          {points.map((c, i) => (
-                            <g key={i}>
-                              <circle cx={c.x} cy={c.y} r="5" fill={strokeColor} stroke="#ffffff" strokeWidth="2" />
-                              {sIdx === 0 && (
-                                <text x={c.x} y="280" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-800 dark:fill-slate-200">
-                                  {c.code}
-                                </text>
-                              )}
-                            </g>
-                          ))}
+                          {validPoints.length > 1 && (
+                            <polyline
+                              fill="none"
+                              stroke={strokeColor}
+                              strokeWidth="3.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              points={polyStr}
+                            />
+                          )}
+                          {validPoints.map((c, i) => {
+                            const labelOffsetY = sIdx % 2 === 0 ? -28 : 14;
+                            return (
+                              <g key={i}>
+                                <circle cx={c.x} cy={c.y} r="8" fill={strokeColor} opacity="0.18" />
+                                <circle cx={c.x} cy={c.y} r="5.5" fill={strokeColor} stroke="#ffffff" strokeWidth="2" />
+                                <g transform={`translate(${c.x - 36}, ${c.y + labelOffsetY})`}>
+                                  <rect width="72" height="19" rx="6" fill={strokeColor} opacity="0.92" />
+                                  <text x="36" y="13" textAnchor="middle" className="text-[10px] font-mono font-bold fill-white">
+                                    {row.subject.code}: {c.score.toFixed(1)}
+                                  </text>
+                                </g>
+                              </g>
+                            );
+                          })}
                         </g>
                       );
                     })}

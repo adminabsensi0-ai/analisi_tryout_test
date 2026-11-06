@@ -6,7 +6,14 @@ import {
   ArrowUp, ArrowDown, Activity, Save, BarChart3, Info, GraduationCap, SlidersHorizontal, Eye, X
 } from 'lucide-react';
 import { dbService } from '../services/database';
-import { User, Student, ClassRoom, Subject, Score } from '../types/database';
+import { User, Student, ClassRoom, Subject, Score, Tryout } from '../types/database';
+import {
+  buildTryoutStageGroups,
+  getStudentStageSubjectScore,
+  getStudentStageCompositeScore,
+  extractSubjectScoreFromScoreRecord,
+  TryoutStageGroup,
+} from '../utils/tryoutGroupUtils';
 
 interface WaliKelasAppPageProps {
   currentUser: User;
@@ -94,8 +101,8 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
     return Math.round((validKKMs.reduce((a, b) => a + b, 0) / validKKMs.length) * 10) / 10;
   }, [allSubjects]);
 
-  // Scoped Tryouts: Hanya menampilkan tryouts yang menargetkan kelas binaan wali kelas
-  const allTryouts = useMemo(() => {
+  // Scoped Tryouts: Hanya tryout (per-mapel) yang menargetkan kelas binaan wali kelas
+  const classScopedTryouts = useMemo(() => {
     return rawTryouts.filter(t => {
       if (!assignedClassId) return true;
       if (t.packageId) {
@@ -117,22 +124,71 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
     });
   }, [rawTryouts, assignedClassId, assignedClass.gradeLevel]);
 
+  // Siklus Try Out (TO 1, TO 2, TO 3, ...) sesuai pengelompokan yang dikontrol Guru Mapel.
+  // Pengelompokan dihitung dari SELURUH tryout agar konsisten dengan tampilan Guru Mapel & Siswa,
+  // kemudian anggota tiap siklus disaring ke tryout yang menargetkan rombel ini.
+  const tryoutStageGroups = useMemo<TryoutStageGroup[]>(() => {
+    const scopedIds = new Set(classScopedTryouts.map(t => t.id));
+    return buildTryoutStageGroups(rawTryouts, dbService.getExamPackages())
+      .map(stage => {
+        const members = stage.tryouts.filter(t => scopedIds.has(t.id));
+        const subjectTryoutMap: Record<string, Tryout> = {};
+        Object.entries(stage.subjectTryoutMap).forEach(([sid, t]) => {
+          if (scopedIds.has(t.id)) subjectTryoutMap[sid] = t;
+        });
+        return { ...stage, tryouts: members, subjectTryoutMap };
+      })
+      .filter(stage => stage.tryouts.length > 0);
+  }, [rawTryouts, classScopedTryouts]);
+
+  const stageGroupMap = useMemo(() => {
+    const map: Record<string, TryoutStageGroup> = {};
+    tryoutStageGroups.forEach(stage => { map[stage.groupKey] = stage; });
+    return map;
+  }, [tryoutStageGroups]);
+
+  // Representasi siklus TO sebagai objek "Tryout" agar seluruh tab (grafik, buku nilai, modal, leger)
+  // menampilkan kolom TO 1, TO 2, TO 3 dengan mapel MAT & BIN berdampingan.
+  const allTryouts = useMemo<Tryout[]>(() => {
+    return tryoutStageGroups.map(stage => {
+      const subjectCodes = Array.from(new Set(
+        Object.keys(stage.subjectTryoutMap)
+          .map(sid => allSubjects.find(s => s.id === sid)?.code)
+          .filter((c): c is string => !!c)
+      ));
+      return {
+        ...stage.tryouts[0],
+        id: stage.groupKey,
+        code: stage.groupKey,
+        title: subjectCodes.length > 0 ? `${stage.title} (${subjectCodes.join(', ')})` : stage.title,
+        startDate: stage.startDate,
+        endDate: stage.endDate,
+      };
+    });
+  }, [tryoutStageGroups, allSubjects]);
+
   // Filter students strictly in homeroom class (excluding answer key accounts)
   const activeStudentList = useMemo(() => {
     if (!assignedClassId) return [];
     return allStudents.filter(s => s.classId === assignedClassId && !s.isAnswerKeyAccount);
   }, [allStudents, assignedClassId]);
 
-  // Helper function to lookup student score safely across all tabs
+  // Helper function to lookup student score safely across all tabs.
+  // `toId` dapat berupa kunci siklus ("TO 1", "TO 2", ...) atau ID tryout spesifik.
+  // Tidak lagi menggunakan fallback calculatedScore lintas mapel (mencegah nilai MAT terbaca sebagai BIN).
   const getStudentSubjectScore = (studentId: string, toId: string, subjId: string): number | null => {
-    const foundScore = allScores.find(sc => sc.studentId === studentId && sc.tryoutId === toId);
-    if (!foundScore) return null;
-    if (foundScore.subjectScores && typeof foundScore.subjectScores[subjId] === 'number') {
-      return foundScore.subjectScores[subjId];
+    const subj = allSubjects.find(s => s.id === subjId);
+    if (!subj) return null;
+
+    const stage = stageGroupMap[toId];
+    if (stage) {
+      return getStudentStageSubjectScore(studentId, subj, stage, allScores);
     }
-    // Fallback ke calculatedScore jika hanya ada 1 mapel
-    if (foundScore.calculatedScore) return foundScore.calculatedScore;
-    return null;
+
+    const rawTryout = rawTryouts.find(t => t.id === toId);
+    if (!rawTryout) return null;
+    const foundScore = allScores.find(sc => sc.studentId === studentId && sc.tryoutId === toId);
+    return extractSubjectScoreFromScoreRecord(foundScore, rawTryout, subj);
   };
 
   const filteredStudents = activeStudentList.filter(s =>
@@ -416,7 +472,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                         <span className="text-emerald-600 font-bold">Data Riil Supabase</span>
                       </div>
                       <div className="h-44 flex items-center justify-center text-xs text-slate-500">
-                        {allTryouts.length} Paket Ujian terdaftar
+                        {allTryouts.length} Siklus Try Out (TO 1, TO 2, …) terdaftar
                       </div>
                     </div>
                   )}
@@ -467,56 +523,49 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
         {/* TAB 2: TRYOUT PROGRESS CHART */}
         {activeTab === 'TRYOUT_PROGRESS' && (() => {
-          // Calculate dynamic scores per tryout and per subject from allScores & activeStudentList
-          // Group by tryouts
+          // Hitung rata-rata rombel per Siklus TO (TO 1, TO 2, ...):
+          // - "Semua Mapel": rata-rata gabungan (komposit) mapel tiap siswa pada siklus tsb.
+          // - Mapel tertentu: rata-rata nilai mapel tsb pada siklus tsb.
           const tryoutProgressData = allTryouts.map((to) => {
-            const scoresForTO = allScores.filter(sc => 
-              sc.tryoutId === to.id && 
-              activeStudentList.some(s => s.id === sc.studentId)
-            );
-            const totalScore = scoresForTO.reduce((sum, sc) => sum + (Number(sc.calculatedScore) || 0), 0);
-            const avgScore = scoresForTO.length > 0 ? (totalScore / scoresForTO.length) : null;
+            const stage = stageGroupMap[to.id];
+            const values: number[] = [];
+            activeStudentList.forEach(st => {
+              if (selectedSubjectFilter === 'ALL') {
+                if (!stage) return;
+                const res = getStudentStageCompositeScore(st.id, stage, allSubjects, allScores);
+                if (res.compositeScore !== null) values.push(res.compositeScore);
+              } else {
+                const v = getStudentSubjectScore(st.id, to.id, selectedSubjectFilter);
+                if (v !== null) values.push(v);
+              }
+            });
+            const avgScore = values.length > 0 ? (values.reduce((a, b) => a + b, 0) / values.length) : null;
             return {
               tryout: to,
               avgScore,
-              totalRecords: scoresForTO.length,
+              totalRecords: values.length,
             };
           });
 
           const hasProgressData = tryoutProgressData.some(d => d.avgScore !== null);
 
-          // Subject-by-subject data
+          // Subject-by-subject data (nilai mapel dibaca per siklus TO, tanpa mencampur mapel lain)
           const subjectBreakdown = allSubjects.map(sub => {
             const subKKM = Number(sub.passingGrade) || 75.0;
+            const allSubjValues: number[] = [];
             const toAvgs = allTryouts.map(to => {
-              const scores = allScores.filter(sc => 
-                sc.tryoutId === to.id && 
-                activeStudentList.some(s => s.id === sc.studentId)
-              );
-              const getScoreForSubject = (sc: typeof scores[0]) => {
-                if (sc.subjectScores && sc.subjectScores[sub.id] !== undefined) {
-                  return Number(sc.subjectScores[sub.id]) || 0;
-                }
-                return Number(sc.calculatedScore) || 0;
-              };
-              const avg = scores.length > 0 ? (scores.reduce((a, b) => a + getScoreForSubject(b), 0) / scores.length) : null;
-              const passCount = scores.filter(s => getScoreForSubject(s) >= subKKM).length;
-              const failCount = scores.filter(s => getScoreForSubject(s) < subKKM).length;
-              return { tryoutId: to.id, avg, passCount, failCount, total: scores.length };
+              const vals = activeStudentList
+                .map(st => getStudentSubjectScore(st.id, to.id, sub.id))
+                .filter((v): v is number => v !== null);
+              allSubjValues.push(...vals);
+              const avg = vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+              const passCount = vals.filter(v => v >= subKKM).length;
+              const failCount = vals.filter(v => v < subKKM).length;
+              return { tryoutId: to.id, avg, passCount, failCount, total: vals.length };
             });
 
-            // Overall pass/fail for this subject
-            const allSubjScores = allScores.filter(sc => 
-              activeStudentList.some(s => s.id === sc.studentId)
-            );
-            const getScoreForSubjectGlobal = (sc: Score) => {
-              if (sc.subjectScores && sc.subjectScores[sub.id] !== undefined) {
-                return Number(sc.subjectScores[sub.id]) || 0;
-              }
-              return Number(sc.calculatedScore) || 0;
-            };
-            const overallPass = allSubjScores.filter(s => getScoreForSubjectGlobal(s) >= subKKM).length;
-            const overallFail = allSubjScores.filter(s => getScoreForSubjectGlobal(s) < subKKM).length;
+            const overallPass = allSubjValues.filter(v => v >= subKKM).length;
+            const overallFail = allSubjValues.filter(v => v < subKKM).length;
 
             return {
               subject: sub,
@@ -524,7 +573,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
               toAvgs,
               overallPass,
               overallFail,
-              totalScores: allSubjScores.length
+              totalScores: allSubjValues.length
             };
           });
 
@@ -543,7 +592,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                       Progres Nilai TryOut Rombel {assignedClass.name}
                     </h2>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Evaluasi perkembangan rata-rata nilai siswa secara berkala dari seluruh paket ujian yang telah tersinkronisasi.
+                      Evaluasi perkembangan rata-rata nilai rombel per siklus Try Out (TO 1, TO 2, TO 3, …). "Semua Mapel" menampilkan rata-rata gabungan seluruh mapel pada tiap siklus.
                     </p>
                   </div>
 

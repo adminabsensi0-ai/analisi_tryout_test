@@ -216,6 +216,8 @@ export interface Tryout {
   /** Kunci jawaban per nomor soal. Index 0 = Soal no.1. Nilai: 'A'|'B'|'C'|'D'|'E'|'' */
   answerKey?: string[];
   packageId?: string;
+  /** Kelompok siklus Try Out yang dikontrol guru mapel (contoh: 'TO 1', 'TO 2', 'TO 3', atau 'NONE') */
+  tryoutGroup?: string;
   targetClassIds?: string[];
   /** Mata pelajaran acuan untuk Try Out internal (Google Form) */
   subjectId?: string;
