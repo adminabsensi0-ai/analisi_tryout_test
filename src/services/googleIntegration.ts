@@ -1087,6 +1087,16 @@ export class GoogleIntegrationService {
       throw new Error('Validasi Gagal: Tidak ada baris data valid yang dapat disimpan.');
     }
 
+    // Build lookup map of existing answer IDs for this tryout to prevent duplicate answer rows on re-sync
+    const existingAnswerIdMap = new Map<string, string>();
+    dbService.getAnswers().forEach(a => {
+      if (a.tryoutId === tryout.id && a.id && isValidUuid(a.id)) {
+        existingAnswerIdMap.set(`${a.studentId}_${a.questionId}`, a.id);
+      }
+    });
+
+    const isGFormSource = tryout.scoringConfig?.scoreSource === 'GOOGLE_FORM';
+
     importableItems.forEach((item, index) => {
       const studentId = item.studentId!;
 
@@ -1132,8 +1142,10 @@ export class GoogleIntegrationService {
           ansScore = (tryout.scoringConfig.allowNegativeMarking ? tryout.scoringConfig.wrongScore : 0) * qWeight;
         }
 
+        const existingAnswerId = existingAnswerIdMap.get(`${studentId}_${q.id}`);
+
         newAnswers.push({
-          id: generateUuid(),
+          id: existingAnswerId || generateUuid(),
           responseId,
           studentId,
           tryoutId: tryout.id,
@@ -1165,16 +1177,19 @@ export class GoogleIntegrationService {
       const totalUnanswered = Object.values(item.answers).filter(ans => !ans).length;
       const totalIncorrect = questions.length - totalCorrect - totalUnanswered;
 
+      const useGFormScore = isGFormSource && item.rawGFormScore !== undefined && item.rawGFormScore > 0;
+      const finalScoreVal = useGFormScore ? item.rawGFormScore : item.calculatedScore;
+
       newScores.push({
         id: scoreId,
         responseId,
         studentId,
         tryoutId: tryout.id,
-        subjectScores: { [subject.id]: item.calculatedScore },
+        subjectScores: { [subject.id]: finalScoreVal },
         googleFormScore: item.rawGFormScore,
-        calculatedScore: item.calculatedScore,
-        scoreDifference: item.scoreDifference,
-        scoringStatus: item.scoringStatus,
+        calculatedScore: finalScoreVal,
+        scoreDifference: useGFormScore ? 0 : item.scoreDifference,
+        scoringStatus: useGFormScore ? 'MATCH' : item.scoringStatus,
         totalCorrect,
         totalIncorrect,
         totalUnanswered,

@@ -287,6 +287,14 @@ export class ExternalTryoutService {
         calculatedScore = Math.round((sum / scoresList.length) * 100) / 100;
       }
 
+      // Pastikan untuk TO Eksternal mapel tunggal, subjectScores memiliki key ID mapel tersebut
+      if (tryout.externalSubjectIds && tryout.externalSubjectIds.length === 1) {
+        const singleSubId = tryout.externalSubjectIds[0];
+        if (subjectScores[singleSubId] === undefined) {
+          subjectScores[singleSubId] = calculatedScore;
+        }
+      }
+
       // Tentukan status baris
       let status: 'VALID' | 'WARNING_STUDENT_NOT_FOUND' | 'WARNING_NO_SCORES' = 'VALID';
       let note: string | undefined;

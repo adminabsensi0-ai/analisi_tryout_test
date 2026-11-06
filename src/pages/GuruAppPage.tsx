@@ -177,9 +177,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const handleManualCloudSync = async () => {
     setIsCloudSyncing(true);
     try {
-      await dbService.pullFromCloud();
+      await dbService.pullFromCloud(true);
       refreshData();
-      triggerToast('Sinkronisasi cloud berhasil: data telah diselaraskan dengan database terpusat.');
+      triggerToast('Sinkronisasi cloud berhasil: seluruh data nilai dan paket telah diselaraskan 100% dengan database terpusat.');
     } catch (err: any) {
       triggerError('Gagal menyinkronkan data cloud: ' + (err.message || 'Koneksi bermasalah.'));
     } finally {

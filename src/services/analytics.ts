@@ -927,19 +927,36 @@ export class AnalyticsService {
       s => targetTryoutIds.has(s.tryoutId) && eligibleStudentIds.has(s.studentId)
     );
 
-    // If subject filter is specified, check subjectScores
+    // If subject filter is specified, check subjectScores or single-subject tryout ownership
     if (filters.subjectId && filters.subjectId !== 'ALL') {
-      filteredScores = filteredScores.filter(s => s.subjectScores && s.subjectScores[filters.subjectId!] !== undefined);
+      filteredScores = filteredScores.filter(s => {
+        if (s.subjectScores && s.subjectScores[filters.subjectId!] !== undefined) return true;
+        const to = tryouts.find(t => t.id === s.tryoutId);
+        if (
+          to &&
+          (to.subjectId === filters.subjectId ||
+            (to.externalSubjectIds && to.externalSubjectIds.length === 1 && to.externalSubjectIds[0] === filters.subjectId))
+        ) {
+          return true;
+        }
+        return false;
+      });
     }
 
-    // Metrics Aggregation
-    const totalSubmissions = filteredScores.length;
-    const scoreValues = filteredScores.map(s => {
-      if (filters.subjectId && filters.subjectId !== 'ALL' && s.subjectScores?.[filters.subjectId]) {
+    const resolveScoreValue = (s: Score): number => {
+      const to = tryouts.find(t => t.id === s.tryoutId);
+      if (to?.scoringConfig?.scoreSource === 'GOOGLE_FORM' && s.googleFormScore !== undefined && s.googleFormScore > 0) {
+        return s.googleFormScore;
+      }
+      if (filters.subjectId && filters.subjectId !== 'ALL' && s.subjectScores && s.subjectScores[filters.subjectId] !== undefined) {
         return s.subjectScores[filters.subjectId];
       }
       return s.calculatedScore;
-    }).sort((a, b) => a - b);
+    };
+
+    // Metrics Aggregation
+    const totalSubmissions = filteredScores.length;
+    const scoreValues = filteredScores.map(s => resolveScoreValue(s)).sort((a, b) => a - b);
 
     const sum = scoreValues.reduce((a, b) => a + b, 0);
     const averageScore = totalSubmissions > 0 ? Math.round((sum / totalSubmissions) * 10) / 10 : 0;
@@ -954,9 +971,7 @@ export class AnalyticsService {
     filteredScores.forEach(sc => {
       const st = eligibleStudents.find(s => s.id === sc.studentId);
       const target = st?.targetScore || passingGrade;
-      const score = (filters.subjectId && filters.subjectId !== 'ALL' && sc.subjectScores?.[filters.subjectId])
-        ? sc.subjectScores[filters.subjectId]
-        : sc.calculatedScore;
+      const score = resolveScoreValue(sc);
       if (score >= target) targetAttainedCount++;
     });
     const overallAttainmentRate = totalSubmissions > 0
@@ -985,7 +1000,7 @@ export class AnalyticsService {
       const grStudents = eligibleStudents.filter(s => grClassIds.has(s.classId));
       const grStudentIds = new Set(grStudents.map(s => s.id));
       const grScores = filteredScores.filter(s => grStudentIds.has(s.studentId));
-      const vals = grScores.map(s => s.calculatedScore);
+      const vals = grScores.map(s => resolveScoreValue(s));
       const grSum = vals.reduce((a, b) => a + b, 0);
       const grAvg = vals.length > 0 ? Math.round((grSum / vals.length) * 10) / 10 : 0;
       const grMed = AnalyticsService.calculateMedian(vals);
@@ -1005,7 +1020,7 @@ export class AnalyticsService {
       const clsStudents = eligibleStudents.filter(s => s.classId === cls.id);
       const clsStudentIds = new Set(clsStudents.map(s => s.id));
       const clsScores = filteredScores.filter(s => clsStudentIds.has(s.studentId));
-      const vals = clsScores.map(s => s.calculatedScore);
+      const vals = clsScores.map(s => resolveScoreValue(s));
       const clsSum = vals.reduce((a, b) => a + b, 0);
       const clsAvg = vals.length > 0 ? Math.round((clsSum / vals.length) * 10) / 10 : 0;
       const clsMed = AnalyticsService.calculateMedian(vals);
@@ -1016,7 +1031,7 @@ export class AnalyticsService {
       let clsAttain = 0;
       clsScores.forEach(sc => {
         const st = clsStudents.find(s => s.id === sc.studentId);
-        if (sc.calculatedScore >= (st?.targetScore || passingGrade)) clsAttain++;
+        if (resolveScoreValue(sc) >= (st?.targetScore || passingGrade)) clsAttain++;
       });
 
       return {
@@ -1039,9 +1054,7 @@ export class AnalyticsService {
         const st = eligibleStudents.find(s => s.id === sc.studentId);
         const cls = eligibleClasses.find(c => c.id === st?.classId);
         const target = st?.targetScore || passingGrade;
-        const score = (filters.subjectId && filters.subjectId !== 'ALL' && sc.subjectScores?.[filters.subjectId])
-          ? sc.subjectScores[filters.subjectId]
-          : sc.calculatedScore;
+        const score = resolveScoreValue(sc);
         const attainPct = Math.round((score / target) * 100 * 10) / 10;
 
         return {
@@ -1064,9 +1077,7 @@ export class AnalyticsService {
         const st = eligibleStudents.find(s => s.id === sc.studentId);
         const cls = eligibleClasses.find(c => c.id === st?.classId);
         const target = st?.targetScore || passingGrade;
-        const score = (filters.subjectId && filters.subjectId !== 'ALL' && sc.subjectScores?.[filters.subjectId])
-          ? sc.subjectScores[filters.subjectId]
-          : sc.calculatedScore;
+        const score = resolveScoreValue(sc);
         const gap = Math.round((score - target) * 10) / 10;
 
         return {

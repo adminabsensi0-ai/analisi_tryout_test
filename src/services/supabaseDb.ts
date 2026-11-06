@@ -735,6 +735,43 @@ class SupabaseDbService {
     return null;
   }
 
+  /**
+   * Helper: Mengambil seluruh baris dari tabel Supabase secara bertahap (paginated)
+   * untuk melewati batas maksimal 1.000 baris per request milik PostgREST (db-max-rows = 1000).
+   * Diurutkan berdasarkan primary key `id` agar urutan halaman deterministik 100%.
+   */
+  private async fetchAllRows<T = Record<string, unknown>>(
+    table: string,
+    pageSize = 1000,
+    maxPages = 100
+  ): Promise<{ data: T[]; error: { message: string } | null }> {
+    if (!supabase) return { data: [], error: null };
+    const allRows: T[] = [];
+    let from = 0;
+
+    for (let page = 0; page < maxPages; page++) {
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .order('id', { ascending: true })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        return { data: allRows, error: { message: error.message } };
+      }
+      if (!data || data.length === 0) {
+        break;
+      }
+      allRows.push(...(data as T[]));
+      if (data.length < pageSize) {
+        break;
+      }
+      from += pageSize;
+    }
+
+    return { data: allRows, error: null };
+  }
+
   // ----------------------------------------------------------
   // FETCH: Load all core state from Supabase
   // Used on fresh devices and background cloud sync
@@ -743,7 +780,7 @@ class SupabaseDbService {
     if (!this.isAvailable() || !supabase) return null;
 
     try {
-      // Fetch semua data secara paralel termasuk materi, KD, soal, dan jawaban
+      // Fetch semua data secara paralel (gunakan fetchAllRows untuk tabel besar >1.000 baris)
       const [
         ayRes, classRes, subjectRes, userRes, teacherRes, studentRes,
         pkgRes, pkgSubRes, toRes, spRes, respRes, scRes,
@@ -754,17 +791,17 @@ class SupabaseDbService {
         supabase.from('subjects').select('*'),
         supabase.from('users').select('*'),
         supabase.from('teachers').select('*'),
-        supabase.from('students').select('*'),
+        this.fetchAllRows('students'),
         supabase.from('exam_packages').select('*'),
         supabase.from('exam_package_subjects').select('*'),
         supabase.from('tryouts').select('*'),
         supabase.from('school_profile').select('*').limit(1).maybeSingle(),
-        supabase.from('responses').select('*').limit(50000),
-        supabase.from('scores').select('*').limit(50000),
+        this.fetchAllRows('responses'),
+        this.fetchAllRows('scores'),
         supabase.from('materials').select('*'),
         supabase.from('competencies').select('*'),
-        supabase.from('questions').select('*').limit(50000),
-        supabase.from('answers').select('*').limit(50000),
+        this.fetchAllRows('questions'),
+        this.fetchAllRows('answers'),
       ]);
 
       if (ayRes.error) throw new Error('academic_years: ' + ayRes.error.message);
@@ -773,6 +810,8 @@ class SupabaseDbService {
       if (userRes.error) throw new Error('users: ' + userRes.error.message);
       if (teacherRes.error) throw new Error('teachers: ' + teacherRes.error.message);
       if (studentRes.error) throw new Error('students: ' + studentRes.error.message);
+      if (respRes.error) throw new Error('responses: ' + respRes.error.message);
+      if (scRes.error) throw new Error('scores: ' + scRes.error.message);
 
       // Build mapping: Supabase UUID → local data
       const academicYears: AcademicYear[] = (ayRes.data || []).map(fromSupabaseAcademicYear);
@@ -1541,11 +1580,62 @@ class SupabaseDbService {
   public async syncAnswersBatch(answers: Answer[]): Promise<void> {
     if (!this.isAvailable() || !supabase || answers.length === 0) return;
     try {
-      const payloads = answers
-        .filter(a => isValidUuid(a.responseId) && isValidUuid(a.studentId) && isValidUuid(a.tryoutId) && isValidUuid(a.questionId))
-        .map(a => toSupabaseAnswer(a));
+      const validAnswers = answers.filter(
+        a => isValidUuid(a.responseId) && isValidUuid(a.studentId) && isValidUuid(a.tryoutId) && isValidUuid(a.questionId)
+      );
+      if (validAnswers.length === 0) return;
 
-      if (payloads.length === 0) return;
+      // 1. Deduplikasi di memori berdasarkan (tryoutId, studentId, questionId)
+      const dedupedByKey = new Map<string, Answer>();
+      validAnswers.forEach(a => {
+        dedupedByKey.set(`${a.tryoutId}_${a.studentId}_${a.questionId}`, a);
+      });
+      const uniqueAnswers = Array.from(dedupedByKey.values());
+
+      // 2. Selaraskan ID dengan baris yang sudah ada di Supabase & bersihkan duplikat lama jika ada
+      const tryoutIds = Array.from(new Set(uniqueAnswers.map(a => a.tryoutId)));
+      const existingIdByComposite = new Map<string, string>();
+      const duplicateIdsToDelete: string[] = [];
+
+      for (const toId of tryoutIds) {
+        let from = 0;
+        const pageSize = 1000;
+        for (let page = 0; page < 100; page++) {
+          const { data, error } = await supabase
+            .from('answers')
+            .select('id, student_id, question_id')
+            .eq('tryout_id', toId)
+            .order('id', { ascending: true })
+            .range(from, from + pageSize - 1);
+          if (error || !data || data.length === 0) break;
+          for (const row of data as Array<{ id: string; student_id: string; question_id: string }>) {
+            const compKey = `${toId}_${row.student_id}_${row.question_id}`;
+            if (!existingIdByComposite.has(compKey)) {
+              existingIdByComposite.set(compKey, String(row.id));
+            } else {
+              duplicateIdsToDelete.push(String(row.id));
+            }
+          }
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+      }
+
+      if (duplicateIdsToDelete.length > 0) {
+        for (let i = 0; i < duplicateIdsToDelete.length; i += 200) {
+          const delChunk = duplicateIdsToDelete.slice(i, i + 200);
+          await supabase.from('answers').delete().in('id', delChunk);
+        }
+      }
+
+      const payloads = uniqueAnswers.map(a => {
+        const compKey = `${a.tryoutId}_${a.studentId}_${a.questionId}`;
+        const canonicalId = existingIdByComposite.get(compKey);
+        if (canonicalId) {
+          a.id = canonicalId;
+        }
+        return toSupabaseAnswer(a);
+      });
 
       for (let i = 0; i < payloads.length; i += 200) {
         const chunk = payloads.slice(i, i + 200);

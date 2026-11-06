@@ -294,27 +294,26 @@ export class DatabaseService {
 
         // 2. Dorong nilai (scores & responses) lokal yang belum masuk ke Supabase untuk tryout yang masih aktif di cloud
         const validCloudTryoutIds = new Set((cloudState.tryouts || []).map(ct => ct.id));
+        const cloudScoreKeys = new Set(
+          (cloudState.scores || []).map(cs => `${cs.tryoutId}_${cs.studentId}`)
+        );
         const unsyncedScores = (this.state.scores || []).filter(s => {
           if (!validCloudTryoutIds.has(s.tryoutId)) return false;
-          const cloudMatch = (cloudState.scores || []).find(
-            cs => cs.tryoutId === s.tryoutId && cs.studentId === s.studentId
-          );
-          if (!cloudMatch) return true;
-          const calcDiff = Math.abs((cloudMatch.calculatedScore || 0) - (s.calculatedScore || 0)) > 0.01;
-          const localSubKeys = Object.keys(s.subjectScores || {}).length;
-          const cloudSubKeys = Object.keys(cloudMatch.subjectScores || {}).length;
-          return calcDiff || (localSubKeys > 0 && cloudSubKeys === 0);
+          return !cloudScoreKeys.has(`${s.tryoutId}_${s.studentId}`);
         });
 
         if (unsyncedScores.length > 0) {
-          console.info(`[DB] Menyinkronkan delta ${unsyncedScores.length} nilai siswa yang belum masuk cloud ke Supabase...`);
+          console.info(`[DB] Menyinkronkan delta ${unsyncedScores.length} nilai siswa baru yang belum masuk cloud ke Supabase...`);
           this.isPushingCloud = true;
           try {
             const tryoutIdsWithUnsyncedScores = Array.from(new Set(unsyncedScores.map(s => s.tryoutId)));
             for (const toId of tryoutIdsWithUnsyncedScores) {
-              const toResponses = (this.state.responses || []).filter(r => r.tryoutId === toId);
-              const toScores = (this.state.scores || []).filter(s => s.tryoutId === toId);
-              await sdb.syncResponsesAndScores(toId, toResponses, toScores);
+              const toUnsyncedScores = unsyncedScores.filter(s => s.tryoutId === toId);
+              const unsyncedStudentIds = new Set(toUnsyncedScores.map(s => s.studentId));
+              const toUnsyncedResponses = (this.state.responses || []).filter(
+                r => r.tryoutId === toId && unsyncedStudentIds.has(r.studentId)
+              );
+              await sdb.syncResponsesAndScores(toId, toUnsyncedResponses, toUnsyncedScores);
             }
           } finally {
             this.isPushingCloud = false;
@@ -448,7 +447,7 @@ export class DatabaseService {
       if (!exists) { this.state.academicYears.push(cloudAy); changed = true; }
     });
 
-    // Merge subjects (by code) — update name/category if changed
+    // Merge subjects (by code) — update name/category/id if changed & remap references
     cloud.subjects.forEach(cloudSub => {
       const idx = this.state.subjects.findIndex(s => s.code === cloudSub.code);
       if (idx === -1) {
@@ -456,8 +455,38 @@ export class DatabaseService {
         changed = true;
       } else {
         const local = this.state.subjects[idx];
-        if (local.name !== cloudSub.name || local.category !== cloudSub.category || local.id !== cloudSub.id) {
+        const oldSubId = local.id;
+        const idDiff = Boolean(cloudSub.id && oldSubId !== cloudSub.id);
+        if (local.name !== cloudSub.name || local.category !== cloudSub.category || idDiff) {
           this.state.subjects[idx] = { ...local, ...cloudSub };
+          if (idDiff) {
+            (this.state.tryouts || []).forEach(t => {
+              if (t.subjectId === oldSubId) t.subjectId = cloudSub.id;
+              if (t.externalSubjectIds && t.externalSubjectIds.includes(oldSubId)) {
+                t.externalSubjectIds = t.externalSubjectIds.map(sid => sid === oldSubId ? cloudSub.id : sid);
+              }
+            });
+            (this.state.teachers || []).forEach(tch => {
+              if (tch.subjectPermissions && tch.subjectPermissions.includes(oldSubId)) {
+                tch.subjectPermissions = tch.subjectPermissions.map(sid => sid === oldSubId ? cloudSub.id : sid);
+              }
+            });
+            (this.state.questions || []).forEach(q => {
+              if (q.subjectId === oldSubId) q.subjectId = cloudSub.id;
+            });
+            (this.state.materials || []).forEach(m => {
+              if (m.subjectId === oldSubId) m.subjectId = cloudSub.id;
+            });
+            (this.state.competencies || []).forEach(c => {
+              if (c.subjectId === oldSubId) c.subjectId = cloudSub.id;
+            });
+            (this.state.scores || []).forEach(sc => {
+              if (sc.subjectScores && sc.subjectScores[oldSubId] !== undefined) {
+                sc.subjectScores[cloudSub.id] = sc.subjectScores[oldSubId];
+                delete sc.subjectScores[oldSubId];
+              }
+            });
+          }
           changed = true;
         }
       }
@@ -814,50 +843,93 @@ export class DatabaseService {
 
     if (cloud.answers && Array.isArray(cloud.answers) && cloud.answers.length > 0) {
       if (!this.state.answers) this.state.answers = [];
-      const existingAnsKeys = new Set(this.state.answers.map(a => `${a.tryoutId}:${a.studentId}:${a.questionId}`));
+      // Deduplicate existing local answers first
+      const ansByComposite = new Map<string, Answer>();
+      this.state.answers.forEach(a => {
+        ansByComposite.set(`${a.tryoutId}:${a.studentId}:${a.questionId}`, a);
+      });
+      if (ansByComposite.size !== this.state.answers.length) {
+        changed = true;
+      }
       cloud.answers.forEach(ca => {
         const key = `${ca.tryoutId}:${ca.studentId}:${ca.questionId}`;
-        if (!existingAnsKeys.has(key)) {
-          this.state.answers.push(ca);
-          existingAnsKeys.add(key);
+        const existing = ansByComposite.get(key);
+        if (!existing) {
+          ansByComposite.set(key, ca);
+          changed = true;
+        } else if (
+          existing.studentAnswer !== ca.studentAnswer ||
+          existing.isCorrect !== ca.isCorrect ||
+          existing.score !== ca.score ||
+          existing.id !== ca.id
+        ) {
+          ansByComposite.set(key, { ...existing, ...ca });
           changed = true;
         }
       });
+      this.state.answers = Array.from(ansByComposite.values());
     }
 
     // Merge scores
     if (cloud.scores && Array.isArray(cloud.scores) && cloud.scores.length > 0) {
       if (!this.state.scores) this.state.scores = [];
+      // Deduplicate local scores by (tryoutId, studentId) first
+      const localScoresDedup = new Map<string, Score>();
+      this.state.scores.forEach(s => {
+        localScoresDedup.set(`${s.tryoutId}:${s.studentId}`, s);
+      });
+      if (localScoresDedup.size !== this.state.scores.length) {
+        this.state.scores = Array.from(localScoresDedup.values());
+        changed = true;
+      }
+
       cloud.scores.forEach(cloudScore => {
+        const to = this.state.tryouts.find(t => t.id === cloudScore.tryoutId);
+        const isGFormSource = to?.scoringConfig?.scoreSource === 'GOOGLE_FORM';
+
+        // Normalize subjectScores for single-subject tryouts & GForm scoreSource
+        const normalizedCloudScore: Score = {
+          ...cloudScore,
+          subjectScores: { ...(cloudScore.subjectScores || {}) },
+        };
+        if (isGFormSource && normalizedCloudScore.googleFormScore && normalizedCloudScore.googleFormScore > 0) {
+          normalizedCloudScore.calculatedScore = normalizedCloudScore.googleFormScore;
+          normalizedCloudScore.scoringStatus = 'MATCH';
+          normalizedCloudScore.scoreDifference = 0;
+          if (to?.subjectId) {
+            normalizedCloudScore.subjectScores[to.subjectId] = normalizedCloudScore.googleFormScore;
+          }
+          Object.keys(normalizedCloudScore.subjectScores).forEach(k => {
+            normalizedCloudScore.subjectScores[k] = normalizedCloudScore.googleFormScore;
+          });
+        } else if (to?.isExternal && to.externalSubjectIds?.length === 1) {
+          const singleSubId = to.externalSubjectIds[0];
+          if (normalizedCloudScore.subjectScores[singleSubId] === undefined) {
+            normalizedCloudScore.subjectScores[singleSubId] = normalizedCloudScore.calculatedScore;
+          }
+        } else if (!to?.isExternal && to?.subjectId) {
+          if (normalizedCloudScore.subjectScores[to.subjectId] === undefined) {
+            normalizedCloudScore.subjectScores[to.subjectId] = normalizedCloudScore.calculatedScore;
+          }
+        }
+
         const idx = this.state.scores.findIndex(
-          s => s.tryoutId === cloudScore.tryoutId && s.studentId === cloudScore.studentId
+          s => s.tryoutId === normalizedCloudScore.tryoutId && s.studentId === normalizedCloudScore.studentId
         );
         if (idx === -1) {
-          this.state.scores.push(cloudScore);
+          this.state.scores.push(normalizedCloudScore);
           changed = true;
         } else {
           const local = this.state.scores[idx];
-          const to = this.state.tryouts.find(t => t.id === cloudScore.tryoutId);
-          const isGFormSource = to?.scoringConfig?.scoreSource === 'GOOGLE_FORM';
-
-          // Jika tryout disetel memakai Google Form dan lokal sudah disinkronkan, jangan revert ke nilai lama cloud
-          if (isGFormSource && local.scoringStatus === 'MATCH' && cloudScore.scoringStatus === 'SCORING_MISMATCH') {
-            return;
-          }
-
           const localSubScores = JSON.stringify(local.subjectScores || {});
-          const cloudSubScores = JSON.stringify(cloudScore.subjectScores || {});
+          const cloudSubScores = JSON.stringify(normalizedCloudScore.subjectScores || {});
           if (
-            local.calculatedScore !== cloudScore.calculatedScore ||
-            local.scoringStatus !== cloudScore.scoringStatus ||
+            local.calculatedScore !== normalizedCloudScore.calculatedScore ||
+            local.scoringStatus !== normalizedCloudScore.scoringStatus ||
             localSubScores !== cloudSubScores ||
-            local.id !== cloudScore.id
+            local.id !== normalizedCloudScore.id
           ) {
-            this.state.scores[idx] = { ...local, ...cloudScore };
-            if (isGFormSource && this.state.scores[idx].googleFormScore && this.state.scores[idx].googleFormScore > 0) {
-              this.state.scores[idx].calculatedScore = this.state.scores[idx].googleFormScore;
-              this.state.scores[idx].scoringStatus = 'MATCH';
-            }
+            this.state.scores[idx] = { ...local, ...normalizedCloudScore };
             changed = true;
           }
         }
@@ -873,6 +945,12 @@ export class DatabaseService {
         );
         if (idx === -1) {
           this.state.responses.push(cloudResp);
+          changed = true;
+        } else if (
+          this.state.responses[idx].id !== cloudResp.id ||
+          this.state.responses[idx].rawScoreGForm !== cloudResp.rawScoreGForm
+        ) {
+          this.state.responses[idx] = { ...this.state.responses[idx], ...cloudResp };
           changed = true;
         }
       });
@@ -930,8 +1008,10 @@ export class DatabaseService {
   /**
    * Pull terbaru dari Supabase dan merge ke state lokal.
    * Dilengkapi single-flight lock (isPullingCloud) agar tidak pernah tumpang tindih.
+   * Jika pushUnsynced=true (misal saat pengguna menekan tombol "Sinkronkan Cloud"),
+   * nilai ujian lokal yang belum masuk ke Supabase akan otomatis didorong terlebih dahulu.
    */
-  public async pullFromCloud(): Promise<void> {
+  public async pullFromCloud(pushUnsynced = false): Promise<void> {
     if (!sdb.isAvailable() || this.isPullingCloud || this.isPushingCloud) return;
     this.isPullingCloud = true;
     try {
@@ -943,6 +1023,29 @@ export class DatabaseService {
         this.rebuildIndexes();
         this.notifyListeners();
         console.info('[DB] Cloud pull: data berhasil diperbarui dari Supabase.');
+      }
+
+      if (pushUnsynced) {
+        const validCloudTryoutIds = new Set((cloudState.tryouts || []).map(ct => ct.id));
+        const cloudScoreKeys = new Set(
+          (cloudState.scores || []).map(cs => `${cs.tryoutId}_${cs.studentId}`)
+        );
+        const unsyncedScores = (this.state.scores || []).filter(s => {
+          if (!validCloudTryoutIds.has(s.tryoutId)) return false;
+          return !cloudScoreKeys.has(`${s.tryoutId}_${s.studentId}`);
+        });
+
+        if (unsyncedScores.length > 0) {
+          const tryoutIdsWithUnsynced = Array.from(new Set(unsyncedScores.map(s => s.tryoutId)));
+          for (const toId of tryoutIdsWithUnsynced) {
+            const toUnsyncedScores = unsyncedScores.filter(s => s.tryoutId === toId);
+            const unsyncedStudentIds = new Set(toUnsyncedScores.map(s => s.studentId));
+            const toUnsyncedResponses = (this.state.responses || []).filter(
+              r => r.tryoutId === toId && unsyncedStudentIds.has(r.studentId)
+            );
+            await sdb.syncResponsesAndScores(toId, toUnsyncedResponses, toUnsyncedScores);
+          }
+        }
       }
     } catch (err) {
       console.warn('[DB] pullFromCloud error:', err);
@@ -1149,12 +1252,14 @@ export class DatabaseService {
           });
         }
         if (parsed.answers && Array.isArray(parsed.answers)) {
-          parsed.answers = parsed.answers.filter((a: any) => {
-            if (legacyMockToIds.has(a.tryoutId) || a.id?.startsWith('ans-')) return false;
+          const ansDedup = new Map<string, any>();
+          parsed.answers.forEach((a: any) => {
+            if (!a || legacyMockToIds.has(a.tryoutId) || a.id?.startsWith('ans-')) return;
             const toId = (a.tryoutId || '').toLowerCase().trim();
-            if (deletedTryouts.has(toId)) return false;
-            return true;
+            if (deletedTryouts.has(toId)) return;
+            ansDedup.set(`${a.tryoutId}:${a.studentId}:${a.questionId}`, a);
           });
+          parsed.answers = Array.from(ansDedup.values());
         }
         if (parsed.questions && Array.isArray(parsed.questions)) {
           parsed.questions = parsed.questions.filter((q: any) => !q.uniqueCode?.startsWith('MAT-TO03-'));
@@ -2321,7 +2426,33 @@ export class DatabaseService {
   }
   public updateTryoutScoringConfig(id: string, scoringConfig: ScoringConfig, currentUser: any) {
     this.assertAdminOrTeacher(currentUser, 'UPDATE_SCORING_CONFIG');
+    const to = this.state.tryouts.find(t => t.id === id);
     this.state.tryouts = this.state.tryouts.map(t => t.id === id ? { ...t, scoringConfig } : t);
+
+    let scoresUpdated = false;
+    if (scoringConfig.scoreSource === 'GOOGLE_FORM') {
+      this.state.scores = this.state.scores.map(s => {
+        if (s.tryoutId === id && s.googleFormScore !== undefined && s.googleFormScore > 0) {
+          scoresUpdated = true;
+          const updatedSubjectScores = { ...(s.subjectScores || {}) };
+          if (to?.subjectId) {
+            updatedSubjectScores[to.subjectId] = s.googleFormScore;
+          }
+          Object.keys(updatedSubjectScores).forEach(subjId => {
+            updatedSubjectScores[subjId] = s.googleFormScore!;
+          });
+          return {
+            ...s,
+            calculatedScore: s.googleFormScore,
+            subjectScores: updatedSubjectScores,
+            scoreDifference: 0,
+            scoringStatus: 'MATCH',
+          };
+        }
+        return s;
+      });
+    }
+
     this.logAudit(
       currentUser,
       'UPDATE_SCORING_CONFIG',
@@ -2331,7 +2462,14 @@ export class DatabaseService {
     this.persistState();
     this.notifyListeners();
     const updated = this.state.tryouts.find(t => t.id === id);
-    if (this.supabaseSyncEnabled && updated) sdb.syncTryout(updated).catch(() => {});
+    if (this.supabaseSyncEnabled && updated) {
+      sdb.syncTryout(updated).catch(() => {});
+      if (scoresUpdated) {
+        const toResponses = (this.state.responses || []).filter(r => r.tryoutId === id);
+        const toScores = (this.state.scores || []).filter(s => s.tryoutId === id);
+        sdb.syncResponsesAndScores(id, toResponses, toScores).catch(() => {});
+      }
+    }
   }
   public deleteTryout(id: string, currentUser: any) {
     this.assertAdminOrTeacher(currentUser, 'DELETE_TRYOUT');
@@ -2894,7 +3032,10 @@ export class DatabaseService {
 
     this.state.answers = [
       ...this.state.answers.filter(
-        a => !droppedResponseIds.has(a.responseId) && !newResponses.some(r => r.id === a.responseId)
+        a =>
+          !studentTryoutKeys.has(`${a.studentId}___${a.tryoutId}`) &&
+          !droppedResponseIds.has(a.responseId) &&
+          !newResponses.some(r => r.id === a.responseId)
       ),
       ...newAnswers,
     ];
