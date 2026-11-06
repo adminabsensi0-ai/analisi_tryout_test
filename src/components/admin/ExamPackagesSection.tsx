@@ -29,6 +29,7 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
   onShowToast
 }) => {
   const [packages, setPackages] = useState<ExamPackage[]>(() => dbService.getExamPackages());
+  const [, setSyncTick] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | TryoutStatus>('ALL');
   const [selectedPackage, setSelectedPackage] = useState<ExamPackage | null>(null);
@@ -64,6 +65,7 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
   const refreshData = () => {
     const pkgs = dbService.getExamPackages();
     setPackages([...pkgs]);
+    setSyncTick(t => t + 1);
     if (selectedPackage) {
       const updated = pkgs.find(p => p.id === selectedPackage.id) || null;
       setSelectedPackage(updated);
@@ -587,15 +589,31 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
                           <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200">
                             {toItem.code}
                           </span>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                              isExt
-                                ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800'
-                                : 'bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border-teal-300 dark:border-teal-800'
-                            }`}
-                          >
-                            {isExt ? 'TO Eksternal' : 'TO Internal'}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                isExt
+                                  ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+                                  : 'bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border-teal-300 dark:border-teal-800'
+                              }`}
+                            >
+                              {isExt ? 'TO Eksternal' : 'TO Internal'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Hapus jadwal Try Out '${toItem.title}' (${toItem.code}) beserta seluruh nilainya dari sistem?`)) {
+                                  dbService.deleteTryout(toItem.id, currentUser);
+                                  onShowToast(`Try Out '${toItem.title}' (${toItem.code}) berhasil dihapus dari semua perangkat.`);
+                                  refreshData();
+                                }
+                              }}
+                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
+                              title={`Hapus ${toItem.code}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="text-xs font-bold text-slate-900 dark:text-slate-100 line-clamp-1">

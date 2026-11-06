@@ -76,6 +76,10 @@ export class DatabaseService {
   private isPullingCloud = false;
   private isPushingCloud = false;
   private realtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingTryoutIds = new Set<string>();
+  private pendingPackageIds = new Set<string>();
+  private focusSyncHandler: (() => void) | null = null;
+  private visibilitySyncHandler: (() => void) | null = null;
 
   // Fast In-Memory Performance Indexes for O(1) Lookups
   private responsesByTryoutStudent = new Map<string, Response>();
@@ -209,6 +213,38 @@ export class DatabaseService {
       });
     }
 
+    // 7. Standarisasi Responses & Scores ke UUID (khususnya data lama TO Eksternal)
+    if (this.state.responses) {
+      this.state.responses.forEach(r => {
+        if (!isValidUuid(r.id)) {
+          const oldRespId = r.id;
+          const newRespUuid = generateUuid();
+          r.id = newRespUuid;
+          changed = true;
+          if (this.state.scores) {
+            this.state.scores.forEach(sc => {
+              if (sc.responseId === oldRespId) sc.responseId = newRespUuid;
+            });
+          }
+        }
+      });
+    }
+    if (this.state.scores) {
+      this.state.scores.forEach(sc => {
+        if (!isValidUuid(sc.id)) {
+          sc.id = generateUuid();
+          changed = true;
+        }
+        if (!sc.responseId || !isValidUuid(sc.responseId)) {
+          const matchingResp = (this.state.responses || []).find(
+            r => r.tryoutId === sc.tryoutId && r.studentId === sc.studentId && isValidUuid(r.id)
+          );
+          sc.responseId = matchingResp ? matchingResp.id : generateUuid();
+          changed = true;
+        }
+      });
+    }
+
     if (changed) {
       this.persistState();
       console.info('[DB] Migrasi ID lokal ke UUID standar berhasil dilakukan.');
@@ -234,8 +270,8 @@ export class DatabaseService {
   /**
    * Async: Initialize Supabase sync.
    * Cerdas & Otomatis:
-   * - Jika cloud sudah ada data (dari perangkat lain), langsung sinkronkan ke perangkat ini.
-   * - Jika cloud masih kosong (inisialisasi awal), otomatis unggah data lokal ke cloud di latar belakang tanpa perlu klik tombol.
+   * - Jika cloud sudah ada data (dari perangkat lain), langsung sinkronkan secara otoritatif ke perangkat ini.
+   * - Jika di perangkat ini terdapat nilai ujian (scores) pada tryout aktif yang belum masuk ke cloud, otomatis dorong ke Supabase.
    */
   private async initSupabaseSync(): Promise<void> {
     if (!sdb.isAvailable()) return;
@@ -247,7 +283,7 @@ export class DatabaseService {
       const cloudState = await sdb.fetchCoreState();
 
       if (cloudState) {
-        // 1. Sinkronkan data dari cloud ke perangkat ini
+        // 1. Sinkronkan data dari cloud ke perangkat ini (termasuk rekonsiliasi tryout yang sudah dihapus di cloud)
         const hadChanges = this.mergeCloudState(cloudState);
         if (hadChanges) {
           this.persistState();
@@ -256,49 +292,26 @@ export class DatabaseService {
           console.info('[DB] Sinkronisasi otomatis: data perangkat ini telah diselaraskan dengan cloud.');
         }
 
-        // 2. Sinkronisasi Dua Arah Otomatis:
-        // Jika di perangkat ini ada kelas, murid, atau penugasan Wali Kelas yang belum tersinkron di cloud,
-        // otomatis dorong (push) ke cloud agar seluruh device mendapatkan data yang sama!
-        const unsyncedClasses = this.state.classes.filter(
-          c => !cloudState.classes.some(cc => cc.name.toLowerCase() === c.name.toLowerCase())
-        );
-        const unsyncedStudents = this.state.students.filter(
-          s => !cloudState.students.some(cs => cs.nisn === s.nisn)
-        );
-        const unsyncedTryouts = (this.state.tryouts || []).filter(
-          t => !(cloudState.tryouts || []).some(ct => ct.code.toLowerCase() === t.code.toLowerCase())
-        );
-        const unsyncedScores = (this.state.scores || []).filter(
-          s => !(cloudState.scores || []).some(cs => cs.tryoutId === s.tryoutId && cs.studentId === s.studentId)
-        );
-        const hasUnsyncedWaliKelas = this.state.classes.some(
-          c => c.homeRoomTeacherId && !cloudState.classes.some(cc => cc.name.toLowerCase() === c.name.toLowerCase() && cc.homeRoomTeacherId)
-        ) || this.state.teachers.some(
-          t => t.isWaliKelas && t.homeRoomClassId && !cloudState.teachers.some(ct => ct.nip === t.nip && ct.homeRoomClassId)
-        );
+        // 2. Dorong nilai (scores & responses) lokal yang belum masuk ke Supabase untuk tryout yang masih aktif di cloud
+        const validCloudTryoutIds = new Set((cloudState.tryouts || []).map(ct => ct.id));
+        const unsyncedScores = (this.state.scores || []).filter(s => {
+          if (!validCloudTryoutIds.has(s.tryoutId)) return false;
+          const cloudMatch = (cloudState.scores || []).find(
+            cs => cs.tryoutId === s.tryoutId && cs.studentId === s.studentId
+          );
+          if (!cloudMatch) return true;
+          const calcDiff = Math.abs((cloudMatch.calculatedScore || 0) - (s.calculatedScore || 0)) > 0.01;
+          const localSubKeys = Object.keys(s.subjectScores || {}).length;
+          const cloudSubKeys = Object.keys(cloudMatch.subjectScores || {}).length;
+          return calcDiff || (localSubKeys > 0 && cloudSubKeys === 0);
+        });
 
-        if (unsyncedClasses.length > 0 || unsyncedStudents.length > 0 || hasUnsyncedWaliKelas) {
-          console.info(`[DB] Terdeteksi master data belum tersinkron di cloud. Menyinkronkan ke Supabase...`);
+        if (unsyncedScores.length > 0) {
+          console.info(`[DB] Menyinkronkan delta ${unsyncedScores.length} nilai siswa yang belum masuk cloud ke Supabase...`);
           this.isPushingCloud = true;
           try {
-            await this.exportToSupabase();
-          } finally {
-            this.isPushingCloud = false;
-          }
-        } else if (unsyncedTryouts.length > 0 || unsyncedScores.length > 0) {
-          // Hanya sinkronkan delta tryout & nilai yang belum masuk cloud (sangat cepat, < 1 detik!)
-          console.info(`[DB] Menyinkronkan delta ${unsyncedTryouts.length} tryout & ${unsyncedScores.length} nilai ke Supabase...`);
-          this.isPushingCloud = true;
-          try {
-            for (const to of unsyncedTryouts) {
-              await sdb.syncTryout(to);
-            }
             const tryoutIdsWithUnsyncedScores = Array.from(new Set(unsyncedScores.map(s => s.tryoutId)));
             for (const toId of tryoutIdsWithUnsyncedScores) {
-              const toObj = this.state.tryouts.find(t => t.id === toId);
-              if (toObj && !unsyncedTryouts.some(ut => ut.id === toId)) {
-                await sdb.syncTryout(toObj);
-              }
               const toResponses = (this.state.responses || []).filter(r => r.tryoutId === toId);
               const toScores = (this.state.scores || []).filter(s => s.tryoutId === toId);
               await sdb.syncResponsesAndScores(toId, toResponses, toScores);
@@ -393,6 +406,10 @@ export class DatabaseService {
     classes: ClassRoom[];
     academicYears: AcademicYear[];
     subjects: Subject[];
+    materials?: Material[];
+    competencies?: Competency[];
+    questions?: Question[];
+    answers?: Answer[];
     examPackages?: ExamPackage[];
     tryouts?: Tryout[];
     schoolProfile?: SchoolProfile;
@@ -593,16 +610,37 @@ export class DatabaseService {
           const localSubsJson = JSON.stringify((local.subjects || []).map((s: any) => ({ code: s.code, url: s.googleSheetUrl })));
           const cloudSubsJson = JSON.stringify((cloudPkg.subjects || []).map((s: any) => ({ code: s.code, url: s.googleSheetUrl })));
           if (
+            local.id !== cloudPkg.id ||
             local.title !== cloudPkg.title ||
             local.status !== cloudPkg.status ||
             local.updatedAt !== cloudPkg.updatedAt ||
             localSubsJson !== cloudSubsJson
           ) {
-            this.state.examPackages[idx] = { ...local, ...cloudPkg, id: local.id };
+            this.state.examPackages[idx] = { ...local, ...cloudPkg, id: cloudPkg.id || local.id };
             changed = true;
           }
         }
       });
+
+      // Reconcile deleted exam packages jika cloud sudah terinisialisasi
+      if (this.supabaseInitDone || cloud.students.length > 0 || (cloud.tryouts && cloud.tryouts.length > 0)) {
+        const cloudPkgCodes = new Set(cloud.examPackages.map(p => (p.code || '').toLowerCase().trim()));
+        const cloudPkgIds = new Set(cloud.examPackages.map(p => (p.id || '').toLowerCase().trim()));
+        const beforePkgCount = this.state.examPackages.length;
+        this.state.examPackages = this.state.examPackages.filter(p => {
+          const idKey = (p.id || '').toLowerCase().trim();
+          const codeKey = (p.code || '').toLowerCase().trim();
+          return (
+            cloudPkgIds.has(idKey) ||
+            cloudPkgCodes.has(codeKey) ||
+            this.pendingPackageIds.has(p.id) ||
+            this.pendingPackageIds.has(codeKey)
+          );
+        });
+        if (this.state.examPackages.length !== beforePkgCount) {
+          changed = true;
+        }
+      }
     }
 
     // Merge tryouts (match by id or code, align with cloud UUID)
@@ -611,8 +649,7 @@ export class DatabaseService {
       const deletedTryouts = this.getDeletedTryoutIdentifiers();
       cloud.tryouts.forEach(cloudTo => {
         const toId = (cloudTo.id || '').toLowerCase().trim();
-        if (deletedTryouts.has(toId)) {
-          // Jangan pernah mengimpor / membangkitkan kembali tryout yang sudah dihapus pengguna!
+        if (toId === 'to000000-0000-0000-0000-000000000001' && deletedTryouts.has(toId)) {
           return;
         }
         const idx = this.state.tryouts.findIndex(
@@ -637,24 +674,36 @@ export class DatabaseService {
           const oldToId = local.id;
           const idDiff = Boolean(authoritativeId && local.id !== authoritativeId);
 
+          const resolvedIsExternal = Boolean(
+            cloudTo.isExternal === true ||
+            (cloudTo.isExternal === undefined && local.isExternal === true) ||
+            cloudTo.source === 'EXTERNAL'
+          );
+          const mergedExtSubjects =
+            cloudTo.externalSubjects && cloudTo.externalSubjects.length > 0
+              ? cloudTo.externalSubjects
+              : local.externalSubjects;
+          const mergedExtSubjectIds =
+            cloudTo.externalSubjectIds && cloudTo.externalSubjectIds.length > 0
+              ? cloudTo.externalSubjectIds
+              : local.externalSubjectIds;
+
           if (
             idDiff ||
             local.title !== cloudTo.title ||
             local.status !== cloudTo.status ||
+            local.packageId !== cloudTo.packageId ||
             local.googleSheetUrl !== cloudTo.googleSheetUrl ||
             local.googleFormUrl !== cloudTo.googleFormUrl ||
             JSON.stringify(local.scoringConfig) !== JSON.stringify(cloudTo.scoringConfig) ||
             JSON.stringify(local.selectedQuestionColumns) !== JSON.stringify(mergedSelectedCols) ||
             JSON.stringify(local.answerKey) !== JSON.stringify(mergedAnswerKey) ||
+            JSON.stringify(local.externalSubjects) !== JSON.stringify(mergedExtSubjects) ||
+            JSON.stringify(local.externalSubjectIds) !== JSON.stringify(mergedExtSubjectIds) ||
             local.subjectId !== (cloudTo.subjectId || local.subjectId) ||
-            local.isExternal !== cloudTo.isExternal ||
-            local.source !== cloudTo.source
+            local.isExternal !== resolvedIsExternal ||
+            local.source !== (resolvedIsExternal ? 'EXTERNAL' : 'INTERNAL')
           ) {
-            const resolvedIsExternal = Boolean(
-              cloudTo.isExternal === true ||
-              (cloudTo.isExternal === undefined && local.isExternal === true) ||
-              cloudTo.source === 'EXTERNAL'
-            );
             this.state.tryouts[idx] = {
               ...local,
               ...cloudTo,
@@ -664,8 +713,8 @@ export class DatabaseService {
               subjectId: resolvedIsExternal ? (cloudTo.subjectId || undefined) : (cloudTo.subjectId || local.subjectId),
               isExternal: resolvedIsExternal,
               source: resolvedIsExternal ? 'EXTERNAL' : 'INTERNAL',
-              externalSubjects: cloudTo.externalSubjects || local.externalSubjects,
-              externalSubjectIds: cloudTo.externalSubjectIds || local.externalSubjectIds,
+              externalSubjects: mergedExtSubjects,
+              externalSubjectIds: mergedExtSubjectIds,
               externalScoreScale: cloudTo.externalScoreScale || local.externalScoreScale || (resolvedIsExternal ? 'SCALE_100' : undefined),
             };
 
@@ -680,6 +729,98 @@ export class DatabaseService {
 
             changed = true;
           }
+        }
+      });
+
+      // Reconcile deleted tryouts: hapus dari state lokal jika tryout sudah dihapus dari Supabase (dan tidak sedang dalam proses push)
+      if (this.supabaseInitDone || cloud.tryouts.length > 0 || cloud.students.length > 0) {
+        const cloudToIds = new Set(cloud.tryouts.map(t => (t.id || '').toLowerCase().trim()));
+        const cloudToCodes = new Set(cloud.tryouts.map(t => (t.code || '').toLowerCase().trim()));
+        const removedTryoutIds = new Set<string>();
+        const beforeToCount = this.state.tryouts.length;
+
+        this.state.tryouts = this.state.tryouts.filter(t => {
+          const idKey = (t.id || '').toLowerCase().trim();
+          const codeKey = (t.code || '').toLowerCase().trim();
+          const existsInCloud = cloudToIds.has(idKey) || cloudToCodes.has(codeKey);
+          const isPending =
+            this.pendingTryoutIds.has(t.id) ||
+            this.pendingTryoutIds.has(idKey) ||
+            this.pendingTryoutIds.has(codeKey);
+          if (!existsInCloud && !isPending) {
+            removedTryoutIds.add(t.id);
+            return false;
+          }
+          return true;
+        });
+
+        if (this.state.tryouts.length !== beforeToCount) {
+          changed = true;
+          if (removedTryoutIds.size > 0) {
+            this.state.scores = (this.state.scores || []).filter(s => !removedTryoutIds.has(s.tryoutId));
+            this.state.responses = (this.state.responses || []).filter(r => !removedTryoutIds.has(r.tryoutId));
+            this.state.answers = (this.state.answers || []).filter(a => !removedTryoutIds.has(a.tryoutId));
+          }
+        }
+      }
+    }
+
+    // Merge materials, competencies, questions, answers (agar Bank Soal & Analisis Butir Soal 100% sinkron lintas device)
+    if (cloud.materials && Array.isArray(cloud.materials) && cloud.materials.length > 0) {
+      if (!this.state.materials) this.state.materials = [];
+      cloud.materials.forEach(cm => {
+        const idx = this.state.materials.findIndex(m => m.id === cm.id || (m.subjectId === cm.subjectId && m.code === cm.code));
+        if (idx === -1) {
+          this.state.materials.push(cm);
+          changed = true;
+        } else if (this.state.materials[idx].title !== cm.title || this.state.materials[idx].id !== cm.id) {
+          this.state.materials[idx] = { ...this.state.materials[idx], ...cm };
+          changed = true;
+        }
+      });
+    }
+
+    if (cloud.competencies && Array.isArray(cloud.competencies) && cloud.competencies.length > 0) {
+      if (!this.state.competencies) this.state.competencies = [];
+      cloud.competencies.forEach(cc => {
+        const idx = this.state.competencies.findIndex(c => c.id === cc.id || (c.subjectId === cc.subjectId && c.code === cc.code));
+        if (idx === -1) {
+          this.state.competencies.push(cc);
+          changed = true;
+        } else if (this.state.competencies[idx].statement !== cc.statement || this.state.competencies[idx].id !== cc.id) {
+          this.state.competencies[idx] = { ...this.state.competencies[idx], ...cc };
+          changed = true;
+        }
+      });
+    }
+
+    if (cloud.questions && Array.isArray(cloud.questions) && cloud.questions.length > 0) {
+      if (!this.state.questions) this.state.questions = [];
+      cloud.questions.forEach(cq => {
+        const idx = this.state.questions.findIndex(q => q.id === cq.id || q.uniqueCode === cq.uniqueCode);
+        if (idx === -1) {
+          this.state.questions.push(cq);
+          changed = true;
+        } else if (
+          this.state.questions[idx].correctAnswer !== cq.correctAnswer ||
+          this.state.questions[idx].questionText !== cq.questionText ||
+          this.state.questions[idx].id !== cq.id
+        ) {
+          this.state.questions[idx] = { ...this.state.questions[idx], ...cq };
+          changed = true;
+        }
+      });
+    }
+
+    if (cloud.answers && Array.isArray(cloud.answers) && cloud.answers.length > 0) {
+      if (!this.state.answers) this.state.answers = [];
+      const existingAnsKeys = new Set(this.state.answers.map(a => `${a.tryoutId}:${a.studentId}:${a.questionId}`));
+      cloud.answers.forEach(ca => {
+        const key = `${ca.tryoutId}:${ca.studentId}:${ca.questionId}`;
+        if (!existingAnsKeys.has(key)) {
+          this.state.answers.push(ca);
+          existingAnsKeys.add(key);
+          changed = true;
         }
       });
     }
@@ -811,9 +952,10 @@ export class DatabaseService {
   }
 
   /**
-   * Mulai sinkronisasi otomatis dua arah:
-   * 1. Supabase Realtime subscription (dengan debounce agar batch upsert tidak memicu ratusan request)
-   * 2. Polling berkala setiap 20 detik sebagai fallback
+   * Mulai sinkronisasi otomatis dua arah secara realtime:
+   * 1. Supabase Realtime subscription (debounce 500ms)
+   * 2. Instant pull saat pindah tab / window fokus kembali (visibilitychange & focus)
+   * 3. Polling berkala setiap 8 detik sebagai jaring pengaman
    */
   public startRealtimeSync(): () => void {
     if (!sdb.isAvailable()) return () => {};
@@ -825,21 +967,35 @@ export class DatabaseService {
       // 1. Lakukan pull awal agar data langsung sinkron
       this.pullFromCloud();
 
-      // 2. Subscribe Realtime Supabase dengan debounce 1.2 detik (mencegah Realtime storm saat batch upsert)
+      // 2. Subscribe Realtime Supabase dengan debounce 500ms
       this.realtimeChannel = sdb.subscribeToChanges(() => {
         if (this.isPushingCloud) return;
         if (this.realtimeDebounceTimer) clearTimeout(this.realtimeDebounceTimer);
         this.realtimeDebounceTimer = setTimeout(() => {
           this.pullFromCloud();
-        }, 1200);
+        }, 500);
       });
 
-      // 3. Polling fallback setiap 20 detik
+      // 3. Instant sync saat browser tab atau window kembali difokuskan
+      if (typeof window !== 'undefined') {
+        this.focusSyncHandler = () => {
+          if (!this.isPushingCloud) this.pullFromCloud();
+        };
+        this.visibilitySyncHandler = () => {
+          if (document.visibilityState === 'visible' && !this.isPushingCloud) {
+            this.pullFromCloud();
+          }
+        };
+        window.addEventListener('focus', this.focusSyncHandler);
+        document.addEventListener('visibilitychange', this.visibilitySyncHandler);
+      }
+
+      // 4. Polling fallback setiap 8 detik
       this.syncInterval = setInterval(() => {
         if (!this.isPushingCloud) {
           this.pullFromCloud();
         }
-      }, 20_000);
+      }, 8_000);
     }
 
     // Return cleanup function
@@ -853,6 +1009,16 @@ export class DatabaseService {
         if (this.syncInterval) {
           clearInterval(this.syncInterval);
           this.syncInterval = null;
+        }
+        if (typeof window !== 'undefined') {
+          if (this.focusSyncHandler) {
+            window.removeEventListener('focus', this.focusSyncHandler);
+            this.focusSyncHandler = null;
+          }
+          if (this.visibilitySyncHandler) {
+            document.removeEventListener('visibilitychange', this.visibilitySyncHandler);
+            this.visibilitySyncHandler = null;
+          }
         }
         if (this.realtimeChannel) {
           sdb.unsubscribe(this.realtimeChannel);
@@ -1927,7 +2093,18 @@ export class DatabaseService {
     }
 
     this.persistState();
-    if (this.supabaseSyncEnabled) sdb.syncExamPackage(toSave).catch(() => {});
+    this.notifyListeners();
+    if (this.supabaseSyncEnabled) {
+      const codeKey = (toSave.code || '').toLowerCase().trim();
+      this.pendingPackageIds.add(toSave.id);
+      if (codeKey) this.pendingPackageIds.add(codeKey);
+      sdb.syncExamPackage(toSave)
+        .catch(() => {})
+        .finally(() => {
+          this.pendingPackageIds.delete(toSave.id);
+          if (codeKey) this.pendingPackageIds.delete(codeKey);
+        });
+    }
     return toSave;
   }
 
@@ -1942,6 +2119,7 @@ export class DatabaseService {
       this.logAudit(currentUser, 'DELETE_EXAM_PACKAGE', 'TRYOUT', `Menghapus Paket Ujian: ${pkg.title} (${pkg.code})`);
     }
     this.persistState();
+    this.notifyListeners();
     if (this.supabaseSyncEnabled && pkg?.code) sdb.removeExamPackageByCode(pkg.code).catch(() => {});
   }
 
@@ -2084,7 +2262,17 @@ export class DatabaseService {
     }
     this.persistState();
     this.notifyListeners();
-    if (this.supabaseSyncEnabled) sdb.syncTryout(to).catch(() => {});
+    if (this.supabaseSyncEnabled) {
+      const codeKey = (to.code || '').toLowerCase().trim();
+      this.pendingTryoutIds.add(to.id);
+      if (codeKey) this.pendingTryoutIds.add(codeKey);
+      sdb.syncTryout(to)
+        .catch(() => {})
+        .finally(() => {
+          this.pendingTryoutIds.delete(to.id);
+          if (codeKey) this.pendingTryoutIds.delete(codeKey);
+        });
+    }
     return to;
   }
   public getTryoutById(id: string): Tryout | undefined {
@@ -2095,11 +2283,22 @@ export class DatabaseService {
     if (this.state.tryouts.some(t => t.code.toLowerCase() === to.code.trim().toLowerCase())) {
       throw new Error(`Validasi Gagal: Kode Try Out '${to.code}' sudah digunakan.`);
     }
-    const newTo: Tryout = { ...to, id: `to-${Date.now()}` };
+    const newTo: Tryout = { ...to, id: generateUuid() };
     this.state.tryouts.push(newTo);
     this.logAudit(currentUser, 'CREATE_TRYOUT', 'TRYOUT', `Membuat Try Out baru: ${newTo.title} (${newTo.code})`);
     this.persistState();
-    if (this.supabaseSyncEnabled) sdb.syncTryout(newTo).catch(() => {});
+    this.notifyListeners();
+    if (this.supabaseSyncEnabled) {
+      const codeKey = (newTo.code || '').toLowerCase().trim();
+      this.pendingTryoutIds.add(newTo.id);
+      if (codeKey) this.pendingTryoutIds.add(codeKey);
+      sdb.syncTryout(newTo)
+        .catch(() => {})
+        .finally(() => {
+          this.pendingTryoutIds.delete(newTo.id);
+          if (codeKey) this.pendingTryoutIds.delete(codeKey);
+        });
+    }
     return newTo;
   }
   public updateTryout(id: string, updates: Partial<Tryout>, currentUser: any) {
@@ -2138,6 +2337,10 @@ export class DatabaseService {
     this.assertAdminOrTeacher(currentUser, 'DELETE_TRYOUT');
     const to = this.state.tryouts.find(t => t.id === id);
     this.recordDeletedTryoutIdentifier(id, to?.id);
+    if (to) {
+      this.pendingTryoutIds.delete(to.id);
+      this.pendingTryoutIds.delete((to.code || '').toLowerCase().trim());
+    }
     this.state.tryouts = this.state.tryouts.filter(t => t.id !== id);
 
     // Hapus semua data terkait tryout ini (scores, answers, responses, tryoutSubjects)
@@ -2176,6 +2379,7 @@ export class DatabaseService {
     this.logAudit(currentUser, 'DELETE_TRYOUT', 'TRYOUT',
       `Menghapus Try Out: ${to?.title || id} (${to?.code || ''}) beserta ${deletedScoreIds.size} nilai dan jawaban terkait`);
     this.persistState();
+    this.rebuildIndexes();
     this.notifyListeners();
     if (this.supabaseSyncEnabled) sdb.removeTryout(id, to?.code).catch(() => {});
   }
@@ -2699,7 +2903,21 @@ export class DatabaseService {
     this.rebuildIndexes();
     this.notifyListeners();
     if (this.supabaseSyncEnabled) {
-      sdb.syncResponsesAndScores(tryoutId, newResponses, newScores).catch(() => {});
+      (async () => {
+        this.isPushingCloud = true;
+        try {
+          await sdb.syncResponsesAndScores(tryoutId, newResponses, newScores);
+          if (newAnswers && newAnswers.length > 0) {
+            await sdb.syncAnswersBatch(newAnswers);
+          }
+          this.persistState();
+          this.rebuildIndexes();
+        } catch (err) {
+          console.warn('[DB] saveImportedResponsesAndScores sync error:', err);
+        } finally {
+          this.isPushingCloud = false;
+        }
+      })();
     }
   }
 
@@ -2769,34 +2987,23 @@ export class DatabaseService {
     let cloudError: string | undefined;
 
     if (this.supabaseSyncEnabled) {
-      const pushTask = (async () => {
-        this.isPushingCloud = true;
-        try {
-          const currentTo = this.state.tryouts.find(t => t.id === tryoutId);
-          if (currentTo) {
-            await sdb.syncTryout(currentTo);
-          }
-          await sdb.syncResponsesAndScores(tryoutId, newResponses, newScores);
-          console.info(`[DB] Berhasil menyinkronkan ${newScores.length} nilai TO Eksternal ke cloud Supabase.`);
-          return { ok: true as const };
-        } catch (err: any) {
-          console.warn('[DB] syncExternalScores cloud sync error:', err);
-          return { ok: false as const, error: err.message || 'Gagal tersambung ke Supabase.' };
-        } finally {
-          this.isPushingCloud = false;
+      this.isPushingCloud = true;
+      try {
+        const currentTo = this.state.tryouts.find(t => t.id === tryoutId);
+        if (currentTo) {
+          await sdb.syncTryout(currentTo);
         }
-      })();
-
-      // Tunggu maksimal 2.5 detik untuk respons cepat; jika jaringan lambat, selesaikan di latar belakang agar UI tetap instan
-      const raceResult = await Promise.race([
-        pushTask,
-        new Promise<{ ok: 'background' }>(resolve => setTimeout(() => resolve({ ok: 'background' }), 2500)),
-      ]);
-
-      if (raceResult.ok === true || raceResult.ok === 'background') {
+        await sdb.syncResponsesAndScores(tryoutId, newResponses, newScores);
+        this.persistState();
+        this.rebuildIndexes();
+        this.notifyListeners();
         cloudSynced = true;
-      } else {
-        cloudError = raceResult.error;
+        console.info(`[DB] Berhasil menyinkronkan ${newScores.length} nilai TO Eksternal ke cloud Supabase.`);
+      } catch (err: any) {
+        console.warn('[DB] syncExternalScores cloud sync error:', err);
+        cloudError = err.message || 'Gagal tersambung ke Supabase.';
+      } finally {
+        this.isPushingCloud = false;
       }
     }
 

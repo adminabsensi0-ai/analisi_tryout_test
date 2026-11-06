@@ -10,7 +10,7 @@
  * - Natural key upsert: gunakan email/nip/nisn untuk menghindari duplikat
  */
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { isValidUuid } from '../utils/idUtils';
+import { isValidUuid, generateUuid } from '../utils/idUtils';
 import {
   User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout, SchoolProfile, Response, Score, Material, Competency, Question, Answer
 } from '../types/database';
@@ -1295,18 +1295,20 @@ class SupabaseDbService {
       // 1. Ambil pemetaan response dan score secara PARALEL dari Supabase untuk tryout ini
       const cloudRespMap = new Map<string, string>(); // student_id -> response_id
       const cloudScoreMap = new Map<string, string>(); // student_id -> score_id
+      const cloudScoreByRespMap = new Map<string, string>(); // response_id -> score_id
 
       try {
         const [respLookup, scoreLookup] = await Promise.all([
           supabase.from('responses').select('id, student_id').eq('tryout_id', tryoutId),
-          supabase.from('scores').select('id, student_id').eq('tryout_id', tryoutId),
+          supabase.from('scores').select('id, student_id, response_id').eq('tryout_id', tryoutId),
         ]);
 
         (respLookup.data || []).forEach((cr: any) => {
-          if (cr.student_id && cr.id) cloudRespMap.set(cr.student_id, cr.id);
+          if (cr.student_id && cr.id) cloudRespMap.set(String(cr.student_id), String(cr.id));
         });
         (scoreLookup.data || []).forEach((cs: any) => {
-          if (cs.student_id && cs.id) cloudScoreMap.set(cs.student_id, cs.id);
+          if (cs.student_id && cs.id) cloudScoreMap.set(String(cs.student_id), String(cs.id));
+          if (cs.response_id && cs.id) cloudScoreByRespMap.set(String(cs.response_id), String(cs.id));
         });
       } catch (e) {
         // Abaikan fetch error jika tabel masih kosong
@@ -1335,7 +1337,7 @@ class SupabaseDbService {
       // B. Untuk setiap score yang belum memiliki response, buatkan response record
       scores.forEach(sc => {
         if (!isValidUuid(sc.studentId) || !isValidUuid(sc.tryoutId)) return;
-        let assignedRespId = cloudRespMap.get(sc.studentId);
+        let assignedRespId = cloudRespMap.get(sc.studentId) || respPayloadsMap.get(sc.studentId)?.id;
         if (!assignedRespId) {
           if (sc.responseId && isValidUuid(sc.responseId)) {
             assignedRespId = sc.responseId;
@@ -1361,31 +1363,51 @@ class SupabaseDbService {
       if (respPayloadList.length > 0) {
         for (let i = 0; i < respPayloadList.length; i += 200) {
           const chunk = respPayloadList.slice(i, i + 200);
-          const { error: rErr } = await supabase
+          const { data: upsertedResps, error: rErr } = await supabase
             .from('responses')
-            .upsert(chunk, { onConflict: 'id' });
-          if (rErr) {
-            const { error: rErr2 } = await supabase
+            .upsert(chunk, { onConflict: 'tryout_id,student_id' })
+            .select('id, student_id');
+          if (!rErr && upsertedResps) {
+            upsertedResps.forEach((cr: any) => {
+              if (cr.student_id && cr.id) cloudRespMap.set(String(cr.student_id), String(cr.id));
+            });
+          } else if (rErr) {
+            const { data: upsertedById, error: rErr2 } = await supabase
               .from('responses')
-              .upsert(chunk, { onConflict: 'tryout_id,student_id' });
-            if (rErr2) this.log('syncResponses error: ' + rErr2.message, 'warn');
+              .upsert(chunk, { onConflict: 'id' })
+              .select('id, student_id');
+            if (!rErr2 && upsertedById) {
+              upsertedById.forEach((cr: any) => {
+                if (cr.student_id && cr.id) cloudRespMap.set(String(cr.student_id), String(cr.id));
+              });
+            } else if (rErr2) {
+              this.log('syncResponses error: ' + rErr2.message, 'warn');
+            }
           }
         }
       }
 
-      // 3. Susun score payloads dan sinkronkan ke tabel scores
+      // 3. Susun score payloads (deduplikasi per student_id) dan sinkronkan ke tabel scores
       if (scores.length > 0) {
-        const scorePayloads = scores
+        const dedupedScoreMap = new Map<string, any>();
+        scores
           .filter(s => isValidUuid(s.tryoutId) && isValidUuid(s.studentId))
-          .map(s => {
-            const resolvedScoreId = cloudScoreMap.get(s.studentId) || (isValidUuid(s.id) ? s.id : generateUuid());
+          .forEach(s => {
+            const resolvedResponseId =
+              cloudRespMap.get(s.studentId) ||
+              respPayloadsMap.get(s.studentId)?.id ||
+              (s.responseId && isValidUuid(s.responseId) ? s.responseId : null);
+
+            if (!resolvedResponseId) return;
+            s.responseId = resolvedResponseId;
+
+            const resolvedScoreId =
+              cloudScoreByRespMap.get(resolvedResponseId) ||
+              cloudScoreMap.get(s.studentId) ||
+              (isValidUuid(s.id) ? s.id : generateUuid());
             s.id = resolvedScoreId;
 
-            const resolvedResponseId = s.responseId && isValidUuid(s.responseId)
-              ? s.responseId
-              : respPayloadsMap.get(s.studentId)?.id || cloudRespMap.get(s.studentId) || null;
-
-            return {
+            dedupedScoreMap.set(s.studentId, {
               id: resolvedScoreId,
               response_id: resolvedResponseId,
               student_id: s.studentId,
@@ -1399,9 +1421,10 @@ class SupabaseDbService {
               total_incorrect: s.totalIncorrect || 0,
               total_unanswered: s.totalUnanswered || 0,
               created_at: s.createdAt || new Date().toISOString(),
-            };
+            });
           });
 
+        const scorePayloads = Array.from(dedupedScoreMap.values());
         if (scorePayloads.length > 0) {
           for (let i = 0; i < scorePayloads.length; i += 200) {
             const chunk = scorePayloads.slice(i, i + 200);
@@ -1409,13 +1432,23 @@ class SupabaseDbService {
               .from('scores')
               .upsert(chunk, { onConflict: 'id' });
             if (sErr) {
-              this.log('syncScores upsert by id: ' + sErr.message + ', retrying onConflict tryout_id,student_id', 'warn');
+              this.log('syncScores upsert by id: ' + sErr.message + ', retrying onConflict response_id', 'warn');
               const { error: sErr2 } = await supabase
                 .from('scores')
-                .upsert(chunk, { onConflict: 'tryout_id,student_id' });
+                .upsert(chunk, { onConflict: 'response_id' });
               if (sErr2) {
-                this.log('syncScores critical error: ' + sErr2.message, 'warn');
-                throw new Error('Gagal menyimpan nilai ke Supabase: ' + sErr2.message);
+                // Fallback terakhir: hapus skor lama pada tryout & student_id terkait lalu insert bersih
+                const studentIdsInChunk = chunk.map((c: any) => c.student_id);
+                await supabase
+                  .from('scores')
+                  .delete()
+                  .eq('tryout_id', tryoutId)
+                  .in('student_id', studentIdsInChunk);
+                const { error: sErr3 } = await supabase.from('scores').insert(chunk);
+                if (sErr3) {
+                  this.log('syncScores critical error: ' + sErr3.message, 'warn');
+                  throw new Error('Gagal menyimpan nilai ke Supabase: ' + sErr3.message);
+                }
               }
             }
           }
