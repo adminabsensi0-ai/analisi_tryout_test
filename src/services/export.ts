@@ -2,9 +2,17 @@ import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 import {
   Score, Student, Tryout, Question, ClassRoom, User, Explanation,
-  Material, Competency, AcademicYear, Answer, QuestionAnalysis, SchoolProfile
+  Material, Competency, AcademicYear, Answer, QuestionAnalysis, SchoolProfile,
+  Teacher, Subject, ExamPackage
 } from '../types/database';
 import { AnalyticsService, QuestionAnalysisResult, StudentAnalyticsResult, ClassAnalyticsResult } from './analytics';
+import {
+  buildTryoutStageGroups,
+  getStudentStageCompositeScore,
+  getStudentStageSubjectScore,
+  extractSubjectScoreFromScoreRecord,
+  getFriendlyTryoutStageLabel,
+} from '../utils/tryoutGroupUtils';
 
 export interface ReportTestCaseResult {
   testId: number;
@@ -24,9 +32,124 @@ export interface ReportTestSuiteResult {
 
 export class ExportService {
   /**
+   * Helper: Ambil state database dari localStorage untuk melengkapi informasi Sekolah, Wali Kelas,
+   * Peringkat, Rekap Lintas TO, dan Grafik secara otomatis jika pemanggil tidak mengirimkannya.
+   */
+  private static getStoredDbState(): {
+    schoolProfile?: SchoolProfile;
+    teachers: Teacher[];
+    classes: ClassRoom[];
+    students: Student[];
+    subjects: Subject[];
+    tryouts: Tryout[];
+    examPackages: ExamPackage[];
+    questions: Question[];
+    scores: Score[];
+    answers: Answer[];
+    explanations: Explanation[];
+  } {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('school_tryout_analytics_db_v1') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          schoolProfile: parsed.schoolProfile,
+          teachers: parsed.teachers || [],
+          classes: parsed.classes || [],
+          students: parsed.students || [],
+          subjects: parsed.subjects || [],
+          tryouts: parsed.tryouts || [],
+          examPackages: parsed.examPackages || [],
+          questions: parsed.questions || [],
+          scores: parsed.scores || [],
+          answers: parsed.answers || [],
+          explanations: parsed.explanations || [],
+        };
+      }
+    } catch {
+      // ignore storage read error
+    }
+    return {
+      teachers: [],
+      classes: [],
+      students: [],
+      subjects: [],
+      tryouts: [],
+      examPackages: [],
+      questions: [],
+      scores: [],
+      answers: [],
+      explanations: [],
+    };
+  }
+
+  /**
+   * Helper: Resolusi Profil Sekolah sesuai yang diatur di Admin
+   */
+  public static resolveSchoolProfile(provided?: SchoolProfile): SchoolProfile {
+    if (provided && provided.name && provided.name !== 'NAMA SEKOLAH ANDA') {
+      return provided;
+    }
+    const dbState = this.getStoredDbState();
+    if (dbState.schoolProfile) {
+      return dbState.schoolProfile;
+    }
+    return provided || {
+      name: 'NAMA SEKOLAH ANDA',
+      subHeader: 'SISTEM ASESMEN & ANALISIS TRY OUT TERPADU',
+      address: 'Alamat Sekolah · Kota · Akreditasi · NPSN',
+      principalName: 'Nama Kepala Sekolah',
+      principalNip: '-',
+      academicYear: '2025/2026 (Semester Genap)',
+    };
+  }
+
+  /**
+   * Helper: Resolusi Nama & NIP Wali Kelas sesuai yang diatur di Admin
+   */
+  public static resolveWaliKelas(
+    classObj?: ClassRoom,
+    providedName?: string,
+    providedNip?: string
+  ): { name: string; nip: string } {
+    if (providedName && providedName.trim()) {
+      return { name: providedName.trim(), nip: providedNip?.trim() || '-' };
+    }
+    const dbState = this.getStoredDbState();
+    const teachers = dbState.teachers || [];
+    const classes = dbState.classes || [];
+
+    const targetClass =
+      (classObj && classes.find(c => c.id === classObj.id || c.name.toLowerCase() === classObj.name.toLowerCase())) ||
+      classObj;
+
+    if (targetClass) {
+      const matchedTeacher = teachers.find(
+        t =>
+          (targetClass.homeRoomTeacherId && (t.id === targetClass.homeRoomTeacherId || t.nip === targetClass.homeRoomTeacherId)) ||
+          (t.isWaliKelas &&
+            t.homeRoomClassId &&
+            (t.homeRoomClassId === targetClass.id ||
+              t.homeRoomClassId.toLowerCase() === targetClass.name.toLowerCase()))
+      );
+      if (matchedTeacher) {
+        return {
+          name: matchedTeacher.name || 'Wali Kelas',
+          nip: matchedTeacher.nip || '-',
+        };
+      }
+    }
+
+    return {
+      name: '........................................',
+      nip: '-',
+    };
+  }
+
+  /**
    * 1. STUDENT INDIVIDUAL PDF REPORT (Phase 11 Specification)
-   * Includes: Student Identity, Class, Try Out, Scores, Benar/Salah/Kosong, Target, Target Status,
-   * Competency Analysis, Weak Areas, Progress, and Explanation Modules Info.
+   * Disamakan 100% antara unduhan dari Portal Siswa dan dari Halaman Guru Mapel,
+   * lengkap dengan Kop Surat Sekolah Admin serta Nama & NIP Wali Kelas sesuai data Admin.
    */
   public static exportStudentPDF(
     student: Student,
@@ -64,6 +187,8 @@ export class ExportService {
         classAverage: number;
       }>;
       schoolProfile?: SchoolProfile;
+      waliKelasName?: string;
+      waliKelasNip?: string;
     }
   ) {
     const doc = new jsPDF();
@@ -72,14 +197,194 @@ export class ExportService {
     const rightMargin = 196;
     const contentWidth = 182;
 
-    const schoolInfo: SchoolProfile = extraMetrics?.schoolProfile || {
-      name: 'NAMA SEKOLAH ANDA',
-      subHeader: 'SISTEM ASESMEN & ANALISIS TRY OUT TERPADU',
-      address: 'Alamat Sekolah | Akreditasi | NPSN',
-      principalName: 'Nama Kepala Sekolah',
-      principalNip: '-',
-      academicYear: '2025/2026 (Semester Genap)',
-    };
+    const dbState = this.getStoredDbState();
+    const schoolInfo: SchoolProfile = this.resolveSchoolProfile(extraMetrics?.schoolProfile);
+    const resolvedClassObj =
+      classObj || dbState.classes.find(c => c.id === student.classId);
+    const waliInfo = this.resolveWaliKelas(
+      resolvedClassObj,
+      extraMetrics?.waliKelasName,
+      extraMetrics?.waliKelasNip
+    );
+    const friendlyStageLabel = getFriendlyTryoutStageLabel(tryout, dbState.tryouts, dbState.examPackages);
+
+    // Otomatis hitung metrik peringkat, rekap mapel lintas TO, dan riwayat grafik jika dipanggil dari halaman Guru Mapel
+    const allStudents = dbState.students.filter(s => !s.isAnswerKeyAccount);
+    const allScores = dbState.scores;
+    const allQuestions = dbState.questions;
+    const allAnswers = dbState.answers;
+    const activeSubjects = dbState.subjects.filter(s => (s.code || '').toUpperCase().trim() !== 'BIND');
+
+    const mathSubj = activeSubjects.find(s => s.code === 'MAT' || s.name.toLowerCase().includes('matematika')) || activeSubjects[0];
+    const mathQIds = new Set(allQuestions.filter(q => q.subjectId === mathSubj?.id).map(q => q.id));
+    const getMathCorrect = (sid: string, tid: string) =>
+      allAnswers.filter(a => a.studentId === sid && a.tryoutId === tid && mathQIds.has(a.questionId) && a.isCorrect).length;
+
+    const sortWithTieBreaker = (list: Score[], tid: string) =>
+      [...list].sort((a, b) => {
+        if (b.calculatedScore !== a.calculatedScore) return b.calculatedScore - a.calculatedScore;
+        if ((b.totalCorrect ?? 0) !== (a.totalCorrect ?? 0)) return (b.totalCorrect ?? 0) - (a.totalCorrect ?? 0);
+        return getMathCorrect(b.studentId, tid) - getMathCorrect(a.studentId, tid);
+      });
+
+    const validStudentIds = new Set(allStudents.map(s => s.id));
+    const tryoutScoresAll = sortWithTieBreaker(
+      allScores.filter(s => s.tryoutId === tryout.id && validStudentIds.has(s.studentId)),
+      tryout.id
+    );
+    const classStudentIds = new Set(allStudents.filter(s => s.classId === student.classId).map(s => s.id));
+    const tryoutScoresClass = sortWithTieBreaker(
+      tryoutScoresAll.filter(s => classStudentIds.has(s.studentId)),
+      tryout.id
+    );
+
+    const computedOverallRankIdx = tryoutScoresAll.findIndex(s => s.studentId === student.id);
+    const computedClassRankIdx = tryoutScoresClass.findIndex(s => s.studentId === student.id);
+
+    const resolvedClassRank = extraMetrics?.classRank ?? (computedClassRankIdx !== -1 ? computedClassRankIdx + 1 : 1);
+    const resolvedClassTotal = extraMetrics?.classTotalStudents ?? Math.max(1, tryoutScoresClass.length || classStudentIds.size);
+    const resolvedOverallRank = extraMetrics?.overallRank ?? (computedOverallRankIdx !== -1 ? computedOverallRankIdx + 1 : 1);
+    const resolvedOverallTotal = extraMetrics?.overallTotalStudents ?? Math.max(1, tryoutScoresAll.length || allStudents.length);
+    const resolvedClassAvg =
+      extraMetrics?.classAvgScore ??
+      (tryoutScoresClass.length > 0
+        ? Math.round((tryoutScoresClass.reduce((acc, s) => acc + s.calculatedScore, 0) / tryoutScoresClass.length) * 10) / 10
+        : 75.0);
+
+    // Otomatis susun subjectRecapData & progressHistory lintas siklus TO jika belum dikirim
+    const stageGroups = buildTryoutStageGroups(dbState.tryouts, dbState.examPackages).filter(stage =>
+      stage.tryouts.some(t => allScores.some(s => s.studentId === student.id && s.tryoutId === t.id))
+    );
+
+    const resolvedSubjectRecap =
+      subjectRecapData && subjectRecapData.length > 0
+        ? subjectRecapData
+        : activeSubjects
+            .map(subj => {
+              const toScores: Record<string, number> = {};
+              const validVals: number[] = [];
+              stageGroups.forEach(stage => {
+                const scVal = getStudentStageSubjectScore(student.id, subj, stage, allScores, allAnswers, allQuestions);
+                if (scVal !== null) {
+                  toScores[stage.groupKey] = scVal;
+                  validVals.push(scVal);
+                } else {
+                  toScores[stage.groupKey] = 0;
+                }
+              });
+              const avgScore =
+                validVals.length > 0
+                  ? Math.round((validVals.reduce((a, b) => a + b, 0) / validVals.length) * 10) / 10
+                  : 0;
+              const passingGrade = subj.passingGrade ?? 75;
+              const isPassing = avgScore >= passingGrade && validVals.length > 0;
+              const trend =
+                validVals.length > 1
+                  ? Math.round((validVals[validVals.length - 1] - validVals[0]) * 10) / 10
+                  : 0;
+              return { subject: subj, toScores, avgScore, isPassing, trend };
+            })
+            .filter(r => Object.values(r.toScores).some(v => v > 0) || activeSubjects.length <= 12);
+
+    const classmates = allStudents.filter(s => s.classId === student.classId);
+    const resolvedProgressHistory =
+      extraMetrics?.progressHistory && extraMetrics.progressHistory.length > 0
+        ? extraMetrics.progressHistory
+        : stageGroups.map(stage => {
+            const stComp = getStudentStageCompositeScore(student.id, stage, activeSubjects, allScores, allAnswers, allQuestions);
+            const clsComps: number[] = [];
+            classmates.forEach(cm => {
+              const cRes = getStudentStageCompositeScore(cm.id, stage, activeSubjects, allScores, allAnswers, allQuestions);
+              if (cRes.compositeScore !== null) clsComps.push(cRes.compositeScore);
+            });
+            const cAvg =
+              clsComps.length > 0
+                ? Math.round((clsComps.reduce((a, b) => a + b, 0) / clsComps.length) * 10) / 10
+                : 75.0;
+            const dObj = new Date(stage.startDate);
+            const dateStr = !isNaN(dObj.getTime())
+              ? dObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+              : '';
+            return {
+              code: stage.groupKey,
+              title: stage.title,
+              date: dateStr,
+              score: stComp.compositeScore ?? 0,
+              classAverage: cAvg,
+            };
+          });
+
+    // Otomatis susun activeSubjectCards untuk Try Out aktif jika belum dikirim
+    const resolvedActiveSubjectCards = (() => {
+      if (extraMetrics?.activeSubjectCards && extraMetrics.activeSubjectCards.length > 0) {
+        return extraMetrics.activeSubjectCards;
+      }
+      const studentAns = allAnswers.filter(a => a.studentId === student.id && a.tryoutId === tryout.id);
+      let relSubjects: Subject[] = [];
+      if (tryout.isExternal) {
+        const tNames = new Set((tryout.externalSubjects || []).map(s => s.toLowerCase().trim()));
+        const tIds = new Set(tryout.externalSubjectIds || []);
+        const scKeys = new Set(Object.keys(score.subjectScores || {}).map(k => k.toLowerCase().trim()));
+        relSubjects = activeSubjects.filter(
+          s =>
+            tIds.has(s.id) ||
+            tNames.has(s.name.toLowerCase().trim()) ||
+            scKeys.has(s.id.toLowerCase().trim()) ||
+            scKeys.has(s.name.toLowerCase().trim()) ||
+            scKeys.has(s.code.toLowerCase().trim())
+        );
+      } else if (tryout.subjectId) {
+        const m = activeSubjects.find(s => s.id === tryout.subjectId);
+        if (m) relSubjects = [m];
+      }
+      if (relSubjects.length === 0 && score.subjectScores && Object.keys(score.subjectScores).length > 0) {
+        const scKeys = new Set(Object.keys(score.subjectScores).map(k => k.toLowerCase().trim()));
+        relSubjects = activeSubjects.filter(
+          s =>
+            scKeys.has(s.id.toLowerCase().trim()) ||
+            scKeys.has(s.name.toLowerCase().trim()) ||
+            scKeys.has(s.code.toLowerCase().trim())
+        );
+      }
+      if (relSubjects.length === 0) {
+        // Cek apakah ada tryout lain pada siklus TO yang sama untuk melengkapi tampilan nilai per mapel siswa
+        const matchedStage = stageGroups.find(sg => sg.tryouts.some(t => t.id === tryout.id));
+        if (matchedStage) {
+          const cardsFromStage: Array<{
+            subject: { code: string; name: string; passingGrade?: number };
+            score: number;
+            passingGrade: number;
+            isPassing: boolean;
+          }> = [];
+          activeSubjects.forEach(subj => {
+            const val = getStudentStageSubjectScore(student.id, subj, matchedStage, allScores, allAnswers, allQuestions);
+            if (val !== null) {
+              const pg = subj.passingGrade ?? 75;
+              cardsFromStage.push({
+                subject: subj,
+                score: val,
+                passingGrade: pg,
+                isPassing: val >= pg,
+              });
+            }
+          });
+          if (cardsFromStage.length > 0) return cardsFromStage;
+        }
+        relSubjects = activeSubjects.slice(0, 4);
+      }
+      return relSubjects.map(subj => {
+        const subjQs = allQuestions.filter(q => q.subjectId === subj.id);
+        const val = extractSubjectScoreFromScoreRecord(score, tryout, subj, studentAns, subjQs);
+        const finalScore = val !== null ? val : score.calculatedScore;
+        const pg = subj.passingGrade ?? 75;
+        return {
+          subject: subj,
+          score: finalScore,
+          passingGrade: pg,
+          isPassing: finalScore >= pg,
+        };
+      });
+    })();
 
     // Helper Predikat Akademik Kurikulum
     const calculatedScore = score.calculatedScore;
@@ -87,11 +392,6 @@ export class ExportService {
       calculatedScore >= 88 ? 'A' :
       calculatedScore >= 78 ? 'B' :
       calculatedScore >= 65 ? 'C' : 'D'
-    );
-    const gradeLabel = extraMetrics?.academicPredicate?.label || (
-      calculatedScore >= 88 ? 'Sangat Baik' :
-      calculatedScore >= 78 ? 'Baik' :
-      calculatedScore >= 65 ? 'Cukup' : 'Perlu Bimbingan'
     );
 
     // ==========================================
@@ -136,7 +436,7 @@ export class ExportService {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Paket Ujian: ${tryout.title} (${tryout.code}) - Berdasarkan Data Respons Terverifikasi`, leftMargin, yPos + 4.5);
+    doc.text(`Paket Ujian: [${friendlyStageLabel}] ${tryout.title} - Berdasarkan Data Respons Terverifikasi`, leftMargin, yPos + 4.5);
 
     // 2. KARTU IDENTITAS SISWA (Box Profil Elegan)
     yPos += 9.5;
@@ -157,22 +457,22 @@ export class ExportService {
     doc.setFont('helvetica', 'bold');
     doc.text(`:  ${student.name.toUpperCase()}`, leftMargin + 30, yPos + 6.5);
     doc.text(`:  ${student.nisn || '-'} / ${student.nis || '-'}`, leftMargin + 30, yPos + 13);
-    doc.text(`:  ${classObj?.name || 'XII IPA 1'} (Tingkat ${classObj?.gradeLevel || 'XII'})`, leftMargin + 30, yPos + 19.5);
+    doc.text(`:  ${resolvedClassObj?.name || 'XII IPA 1'} (Tingkat ${resolvedClassObj?.gradeLevel || 'XII'})`, leftMargin + 30, yPos + 19.5);
 
     // Kolom 2 Metadata Ujian
     const col2LabelX = leftMargin + 105;
     const col2ValueX = leftMargin + 130;
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text('Paket / Kode', col2LabelX, yPos + 6.5);
+    doc.text('Paket / Siklus', col2LabelX, yPos + 6.5);
     doc.text('Tahun Ajaran', col2LabelX, yPos + 13);
     doc.text('Tanggal Ujian', col2LabelX, yPos + 19.5);
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
-    const tryoutTitleShort = tryout.title.length > 20 ? tryout.title.slice(0, 20) + '..' : tryout.title;
-    doc.text(`:  ${tryout.code} - ${tryoutTitleShort}`, col2ValueX, yPos + 6.5);
+    const tryoutTitleShort = tryout.title.length > 22 ? tryout.title.slice(0, 22) + '..' : tryout.title;
+    doc.text(`:  [${friendlyStageLabel}] ${tryoutTitleShort}`, col2ValueX, yPos + 6.5);
     doc.text(`:  ${schoolInfo.academicYear}`, col2ValueX, yPos + 13);
     doc.text(`:  ${(tryout as any).date || (tryout.startDate ? new Date(tryout.startDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }))}`, col2ValueX, yPos + 19.5);
     doc.setFontSize(8); // restore
@@ -210,11 +510,11 @@ export class ExportService {
     doc.setFontSize(7.2);
     doc.text('PERINGKAT KELAS', card2X + 4, yPos + 5.5);
     doc.setFontSize(17);
-    doc.text(`#${extraMetrics?.classRank ?? 1}`, card2X + 4, yPos + 16);
+    doc.text(`#${resolvedClassRank}`, card2X + 4, yPos + 16);
     doc.setFontSize(6.8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 53, 15);
-    doc.text(`Dari ${extraMetrics?.classTotalStudents ?? 30} Siswa (${classObj?.name || 'Kelas'})`, card2X + 4, yPos + 22);
+    doc.text(`Dari ${resolvedClassTotal} Siswa (${resolvedClassObj?.name || 'Kelas'})`, card2X + 4, yPos + 22);
 
     // Card 3: Peringkat Angkatan
     const card3X = card2X + cardW + cardGap;
@@ -227,11 +527,11 @@ export class ExportService {
     doc.setFontSize(7.2);
     doc.text('PERINGKAT ANGKATAN', card3X + 4, yPos + 5.5);
     doc.setFontSize(17);
-    doc.text(`#${extraMetrics?.overallRank ?? 1}`, card3X + 4, yPos + 16);
+    doc.text(`#${resolvedOverallRank}`, card3X + 4, yPos + 16);
     doc.setFontSize(6.8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(20, 83, 45);
-    doc.text(`Dari ${extraMetrics?.overallTotalStudents ?? 180} Peserta Paralel`, card3X + 4, yPos + 22);
+    doc.text(`Dari ${resolvedOverallTotal} Peserta Paralel`, card3X + 4, yPos + 22);
 
     // Card 4: Predikat & KKM
     const card4X = card3X + cardW + cardGap;
@@ -249,7 +549,7 @@ export class ExportService {
     doc.setFontSize(6.8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 116, 139);
-    doc.text(`Rerata Kelas: ${(extraMetrics?.classAvgScore ?? 75.0).toFixed(1)} Poin`, card4X + 4, yPos + 22);
+    doc.text(`Rerata Kelas: ${resolvedClassAvg.toFixed(1)} Poin`, card4X + 4, yPos + 22);
 
     // Keterangan Regulasi Standar Predikat Kurikulum (1 Baris Rapi)
     yPos += cardH + 3.5;
@@ -283,24 +583,24 @@ export class ExportService {
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(21, 128, 61); // green
-    doc.text(`• Jawaban Benar : ${score.totalCorrect} Soal`, leftMargin + 5, yPos + 6.5);
+    doc.text(`• Jawaban Benar : ${score.totalCorrect ?? 0} Soal`, leftMargin + 5, yPos + 6.5);
 
     doc.setTextColor(225, 29, 72); // rose
-    doc.text(`• Jawaban Salah : ${score.totalIncorrect} Soal`, leftMargin + 48, yPos + 6.5);
+    doc.text(`• Jawaban Salah : ${score.totalIncorrect ?? 0} Soal`, leftMargin + 48, yPos + 6.5);
 
     doc.setTextColor(217, 119, 6); // amber
-    doc.text(`• Tidak Dijawab : ${score.totalUnanswered} Soal`, leftMargin + 92, yPos + 6.5);
+    doc.text(`• Tidak Dijawab : ${score.totalUnanswered ?? 0} Soal`, leftMargin + 92, yPos + 6.5);
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.text(`• Total Akurasi : ${akurasiPct}% (${score.totalCorrect}/${totalSoal} Soal)`, leftMargin + 135, yPos + 6.5);
+    doc.text(`• Total Akurasi : ${akurasiPct}% (${score.totalCorrect ?? 0}/${totalSoal} Soal)`, leftMargin + 135, yPos + 6.5);
 
     // 5. RINCIAN CAPAIAN NILAI PER MATA PELAJARAN (PAKET AKTIF)
     yPos += 15.5;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
-    doc.text(`II. PEROLEHAN NILAI SELURUH MATA PELAJARAN (${tryout.code})`, leftMargin, yPos);
+    doc.text(`II. PEROLEHAN NILAI SELURUH MATA PELAJARAN (${friendlyStageLabel})`, leftMargin, yPos);
 
     yPos += 3.5;
     // Table Header (Widths: No 8, Code 16, Mapel 68, KKM 20, Nilai 24, Predikat 20, Status 26 = 182)
@@ -319,12 +619,7 @@ export class ExportService {
 
     yPos += 6.5;
 
-    const subjectCards = extraMetrics?.activeSubjectCards || (subjectRecapData ? subjectRecapData.map(r => ({
-      subject: r.subject,
-      score: r.toScores[tryout.code] ?? r.avgScore,
-      passingGrade: r.subject.passingGrade ?? 75,
-      isPassing: (r.toScores[tryout.code] ?? r.avgScore) >= (r.subject.passingGrade ?? 75),
-    })) : []);
+    const subjectCards = resolvedActiveSubjectCards;
 
     subjectCards.forEach((sc, idx) => {
       const isEven = idx % 2 === 0;
@@ -365,7 +660,7 @@ export class ExportService {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
-    doc.text(`III. MATRIKS REKAP PENGERJAAN BUTIR SOAL PER MATA PELAJARAN (${tryout.code})`, leftMargin, yPos);
+    doc.text(`III. MATRIKS REKAP PENGERJAAN BUTIR SOAL PER MATA PELAJARAN (${friendlyStageLabel})`, leftMargin, yPos);
 
     yPos += 3.5;
     const p1QuestionsList = studentAnalytics?.questionPerformance || [];
@@ -383,8 +678,8 @@ export class ExportService {
         let subCode = 'MAPEL';
         let subName = 'Mata Pelajaran';
 
-        if (subjectRecapData && subjectRecapData.length > 0) {
-          const matchedSub = subjectRecapData.find(
+        if (resolvedSubjectRecap && resolvedSubjectRecap.length > 0) {
+          const matchedSub = resolvedSubjectRecap.find(
             s => qp.uniqueCode.toUpperCase().startsWith(s.subject.code.toUpperCase()) ||
                  s.subject.id === (qp as any).subjectId
           );
@@ -513,7 +808,7 @@ export class ExportService {
     doc.text('TRANSKRIP AKADEMIK LINTAS TRY OUT & LEMBAR EVALUASI SOAL', leftMargin, 11);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text(`Siswa: ${student.name.toUpperCase()} | NISN: ${student.nisn || '-'} | Kelas: ${classObj?.name || 'XII IPA 1'} | ${schoolInfo.name}`, leftMargin, 18);
+    doc.text(`Siswa: ${student.name.toUpperCase()} | NISN: ${student.nisn || '-'} | Kelas: ${resolvedClassObj?.name || 'XII IPA 1'} | ${schoolInfo.name}`, leftMargin, 18);
     doc.text('Halaman 2 dari 2', rightMargin, 18, { align: 'right' });
 
     let p2Y = 32;
@@ -524,12 +819,12 @@ export class ExportService {
     doc.setFontSize(9);
 
     // Derive TO columns dynamically from progressHistory or subjectRecapData keys
-    const progressItems = extraMetrics?.progressHistory || [];
+    const progressItems = resolvedProgressHistory;
     const toColumnKeys: string[] = progressItems.length > 0
       ? progressItems.map(p => p.code)
-      : (subjectRecapData && subjectRecapData.length > 0
-        ? Object.keys(subjectRecapData[0].toScores)
-        : ['TO-1', 'TO-2', 'TO-3', 'TO-4']);
+      : (resolvedSubjectRecap && resolvedSubjectRecap.length > 0
+        ? Object.keys(resolvedSubjectRecap[0].toScores)
+        : ['TO 1', 'TO 2', 'TO 3']);
     const toColumnCount = Math.min(toColumnKeys.length, 4); // max 4 columns
     const activeToKeys = toColumnKeys.slice(0, toColumnCount);
 
@@ -561,8 +856,8 @@ export class ExportService {
 
     p2Y += 6.5;
 
-    if (subjectRecapData && subjectRecapData.length > 0) {
-      subjectRecapData.forEach((row, idx) => {
+    if (resolvedSubjectRecap && resolvedSubjectRecap.length > 0) {
+      resolvedSubjectRecap.forEach((row, idx) => {
         const isEven = idx % 2 === 0;
         doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
         doc.rect(leftMargin, p2Y, contentWidth, 5.2, 'F');
@@ -596,7 +891,7 @@ export class ExportService {
       });
 
       // Composite Row
-      const compositeAvg = subjectRecapData.reduce((acc, r) => acc + r.avgScore, 0) / Math.max(1, subjectRecapData.length);
+      const compositeAvg = resolvedSubjectRecap.reduce((acc, r) => acc + r.avgScore, 0) / Math.max(1, resolvedSubjectRecap.length);
       doc.setFillColor(241, 245, 249);
       doc.rect(leftMargin, p2Y, contentWidth, 5.8, 'F');
       doc.setFont('helvetica', 'bold');
@@ -615,7 +910,7 @@ export class ExportService {
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`IV. GRAFIK PERKEMBANGAN NILAI TIAP-TIAP MATA PELAJARAN (LINTAS ${activeToKeys[0] || 'TO-1'} S/D ${activeToKeys[activeToKeys.length - 1] || 'TO-4'})`, leftMargin, p2Y);
+    doc.text(`IV. GRAFIK PERKEMBANGAN NILAI TIAP-TIAP MATA PELAJARAN (LINTAS ${activeToKeys[0] || 'TO 1'} S/D ${activeToKeys[activeToKeys.length - 1] || 'TO 3'})`, leftMargin, p2Y);
 
     p2Y += 3.8;
     const lineChartH = 44;
@@ -645,7 +940,7 @@ export class ExportService {
     });
 
     // TO X Positions - dynamic from activeToKeys
-    const chartToLabels = activeToKeys.length > 0 ? activeToKeys : ['TO-1', 'TO-2', 'TO-3', 'TO-4'];
+    const chartToLabels = activeToKeys.length > 0 ? activeToKeys : ['TO 1', 'TO 2', 'TO 3'];
     const xStep = chartWidth / Math.max(1, chartToLabels.length - 1);
     const xCoords = chartToLabels.map((_, i) => chartLeft + i * xStep);
 
@@ -668,8 +963,8 @@ export class ExportService {
     ];
 
     // Gambar Garis Tren tiap Mapel - use dynamic keys
-    if (subjectRecapData && subjectRecapData.length > 0) {
-      subjectRecapData.slice(0, 6).forEach((row, sIdx) => {
+    if (resolvedSubjectRecap && resolvedSubjectRecap.length > 0) {
+      resolvedSubjectRecap.slice(0, 6).forEach((row, sIdx) => {
         const color = lineColors[sIdx % lineColors.length];
         const scores = activeToKeys.map(key => row.toScores[key] ?? 0);
 
@@ -707,11 +1002,11 @@ export class ExportService {
     }
 
     // Gambar Garis Rata-Rata Try Out (Garis Putus-Putus Abu-Abu / Slate)
-    const pHistory = extraMetrics?.progressHistory || [];
+    const pHistory = resolvedProgressHistory;
     if (pHistory.length > 0) {
       const avgPoints = activeToKeys.map((key, idx) => {
         const matchedH = pHistory.find(h => h.code === key);
-        const avgVal = matchedH?.classAverage ?? (extraMetrics?.classAvgScore ?? 75);
+        const avgVal = matchedH?.classAverage ?? resolvedClassAvg;
         return {
           x: xCoords[idx],
           y: chartBottom - (Math.min(100, Math.max(0, avgVal)) / 100) * chartHeight,
@@ -734,7 +1029,7 @@ export class ExportService {
       });
 
       // Legend for average line
-      const legYAvg = p2Y + 7 + Math.min(6, subjectRecapData?.length || 0) * 4.6;
+      const legYAvg = p2Y + 7 + Math.min(6, resolvedSubjectRecap?.length || 0) * 4.6;
       doc.setDrawColor(100, 116, 139);
       doc.setLineWidth(0.6);
       doc.setLineDashPattern([2, 1], 0);
@@ -834,7 +1129,7 @@ export class ExportService {
     }
 
     // SECTION 3: AKSES MEDIA PEMBAHASAN RESMI (Ringkas 1 Baris)
-    const pubExps = explanations?.filter(e => e.tryoutId === tryout.id && e.status === 'PUBLISHED') || [];
+    const pubExps = (explanations || dbState.explanations || []).filter(e => e.tryoutId === tryout.id && e.status === 'PUBLISHED');
     doc.setFillColor(241, 245, 249);
     doc.rect(leftMargin, p2Y, contentWidth, 7, 'F');
     doc.setDrawColor(226, 232, 240);
@@ -853,26 +1148,26 @@ export class ExportService {
       p2Y + 4.5
     );
 
-    // SECTION 4: LEMBAR PENGESAHAN RESMI (TANDA TANGAN DI HALAMAN 2)
+    // SECTION 4: LEMBAR PENGESAHAN RESMI (TANDA TANGAN DI HALAMAN 2 — DINAMIS DARI DATA ADMIN)
     const signY = 248;
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.text('Mengetahui / Mengesahkan,', leftMargin + 10, signY);
-    doc.text(`Jakarta, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightMargin - 45, signY);
+    doc.text(`Diterbitkan: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightMargin - 50, signY);
 
     doc.setFont('helvetica', 'bold');
     doc.text(`Kepala ${schoolInfo.name}`, leftMargin + 10, signY + 4.5);
-    doc.text(`Wali Kelas ${classObj?.name || 'XII IPA 1'}`, rightMargin - 45, signY + 4.5);
+    doc.text(`Wali Kelas ${resolvedClassObj?.name || ''}`, rightMargin - 50, signY + 4.5);
 
     doc.text(schoolInfo.principalName, leftMargin + 10, signY + 21);
-    doc.text('Drs. Bambang Sugiarto', rightMargin - 45, signY + 21);
+    doc.text(waliInfo.name, rightMargin - 50, signY + 21);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`NIP. ${schoolInfo.principalNip}`, leftMargin + 10, signY + 25);
-    doc.text('NIP. 197205151998021001', rightMargin - 45, signY + 25);
+    doc.text(`NIP. ${schoolInfo.principalNip || '-'}`, leftMargin + 10, signY + 25);
+    doc.text(`NIP. ${waliInfo.nip || '-'}`, rightMargin - 50, signY + 25);
 
     // Footer Page 2
     doc.setFontSize(6.8);
@@ -881,7 +1176,7 @@ export class ExportService {
     doc.text('WIKAN — "Ubah Data Menjadi Tindakan Nyata"', rightMargin, 288, { align: 'right' });
 
     const cleanNisn = student.nisn || '0000000000';
-    const cleanCode = (tryout.code || 'TO3').replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const cleanCode = (friendlyStageLabel || tryout.code || 'TO').replace(/[^a-zA-Z0-9_\-]/g, '_');
     const fileName = `Rapor_Hasil_Tryout_${cleanNisn}_${cleanCode}.pdf`;
     doc.save(fileName);
     return fileName;
@@ -926,8 +1221,11 @@ export class ExportService {
 
   /**
    * 2. TEACHER / CLASS / TRYOUT ANALYTICS PDF REPORT
-   * Includes: Try Out Summary, Class Analysis, Student Scores Rank, Competency Analysis,
-   * Item Psychometrics (Difficulty, Discrimination, Distractor), and Progress Tracking.
+   * Menampilkan:
+   * - Kop Surat Resmi Sekolah sesuai data yang ditulis di Admin
+   * - Ringkasan Statistik Kelas & Wali Kelas dari Admin
+   * - Tabel Peringkat SELURUH Siswa di Kelas (diurutkan sesuai peringkat, multi-halaman otomatis)
+   * - Analisis Butir Soal Kelas & Lembar Pengesahan Kepala Sekolah + Wali Kelas
    */
   public static exportTeacherClassAnalyticsPDF(
     cls: ClassRoom,
@@ -937,135 +1235,439 @@ export class ExportService {
     questionAnalysisList?: QuestionAnalysisResult[],
     competencies?: Competency[],
     classAnalytics?: ClassAnalyticsResult | null,
-    students?: Student[]
+    students?: Student[],
+    schoolProfile?: SchoolProfile
   ) {
     const doc = new jsPDF();
+    const pageWidth = 210;
+    const leftMargin = 14;
+    const rightMargin = 196;
+    const contentWidth = 182;
 
-    // Page Header
-    doc.setFillColor(15, 23, 42); // Slate Charcoal
-    doc.rect(0, 0, 210, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(15);
-    doc.text('SMA NEGERI 1 UTAMA', 14, 15);
-    doc.setFontSize(10);
-    doc.text(`LAPORAN COMPREHENSIVE ANALITIK KELAS: ${cls.name} — ${tryout.title}`, 14, 23);
+    const dbState = this.getStoredDbState();
+    const schoolInfo = this.resolveSchoolProfile(schoolProfile);
+    const waliInfo = this.resolveWaliKelas(cls);
+    const friendlyStageLabel = getFriendlyTryoutStageLabel(tryout, dbState.tryouts, dbState.examPackages);
+
+    const allStudentsList = (students && students.length > 0 ? students : dbState.students).filter(
+      st => !st.isAnswerKeyAccount
+    );
+    const classStudents = allStudentsList.filter(st => st.classId === cls.id);
+    const classStudentIds = new Set(classStudents.map(st => st.id));
+
+    // Filter scores khusus untuk siswa di kelas ini (jika ada), bila kosong fallback ke scores yang dikirim
+    const classSpecificScores = scores.filter(s => classStudentIds.has(s.studentId));
+    const effectiveScores = classSpecificScores.length > 0 ? classSpecificScores : scores.filter(s => {
+      const st = allStudentsList.find(std => std.id === s.studentId);
+      return st ? st.classId === cls.id : true;
+    });
+
+    // Urutkan semua siswa berdasarkan peringkat nilai tertinggi -> jumlah benar -> nama
+    const sortedScores = [...effectiveScores].sort((a, b) => {
+      if (b.calculatedScore !== a.calculatedScore) return b.calculatedScore - a.calculatedScore;
+      if ((b.totalCorrect ?? 0) !== (a.totalCorrect ?? 0)) return (b.totalCorrect ?? 0) - (a.totalCorrect ?? 0);
+      const nameA = allStudentsList.find(st => st.id === a.studentId)?.name || '';
+      const nameB = allStudentsList.find(st => st.id === b.studentId)?.name || '';
+      return nameA.localeCompare(nameB);
+    });
+
+    const drawOfficialHeader = (isContinuation = false) => {
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, pageWidth, isContinuation ? 22 : 28, 'F');
+      doc.setFillColor(79, 70, 229);
+      doc.rect(0, isContinuation ? 22 : 28, pageWidth, 2, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      if (!isContinuation) {
+        doc.setFontSize(12.5);
+        doc.text(schoolInfo.name.toUpperCase(), leftMargin, 11);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.text(schoolInfo.subHeader.toUpperCase(), leftMargin, 17);
+        doc.setFontSize(7);
+        doc.text(schoolInfo.address, leftMargin, 23);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.text('LAPORAN ANALITIK KELAS', rightMargin, 11, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.text(
+          `Tercetak: ${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}`,
+          rightMargin,
+          17,
+          { align: 'right' }
+        );
+        doc.text(`T.A: ${schoolInfo.academicYear}`, rightMargin, 23, { align: 'right' });
+      } else {
+        doc.setFontSize(10);
+        doc.text(`${schoolInfo.name.toUpperCase()} — LAPORAN ANALITIK KELAS ${cls.name.toUpperCase()}`, leftMargin, 10);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.text(`Paket: [${friendlyStageLabel}] ${tryout.title} | Wali Kelas: ${waliInfo.name}`, leftMargin, 16.5);
+      }
+    };
+
+    const drawStudentTableHeader = (topY: number): number => {
+      doc.setFillColor(15, 23, 42);
+      doc.rect(leftMargin, topY, contentWidth, 7, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.2);
+      doc.setTextColor(255, 255, 255);
+      doc.text('RANK', leftMargin + 6, topY + 4.8, { align: 'center' });
+      doc.text('NISN', leftMargin + 24, topY + 4.8, { align: 'center' });
+      doc.text('NAMA LENGKAP SISWA', leftMargin + 40, topY + 4.8);
+      doc.text('B / S / K', leftMargin + 112, topY + 4.8, { align: 'center' });
+      doc.text('NILAI AKHIR', leftMargin + 134, topY + 4.8, { align: 'center' });
+      doc.text('GFORM', leftMargin + 154, topY + 4.8, { align: 'center' });
+      doc.text('STATUS KKM', leftMargin + 171, topY + 4.8, { align: 'center' });
+      return topY + 7;
+    };
+
+    // Halaman 1: Kop Surat & Ringkasan Kelas
+    drawOfficialHeader(false);
+
+    let yPos = 36;
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(`LAPORAN REKAPITULASI NILAI & ANALISIS BUTIR SOAL KELAS ${cls.name.toUpperCase()}`, leftMargin, yPos);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Paket Ujian: [${friendlyStageLabel}] ${tryout.title} (${tryout.code}) — Diurutkan Berdasarkan Peringkat Nilai Siswa`, leftMargin, yPos + 4.5);
 
     // Section 1: Try Out & Class Summary Box
+    yPos += 8.5;
     doc.setFillColor(248, 250, 252);
-    doc.rect(14, 36, 182, 38, 'F');
+    doc.rect(leftMargin, yPos, contentWidth, 26, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.rect(14, 36, 182, 38, 'S');
+    doc.setLineWidth(0.4);
+    doc.rect(leftMargin, yPos, contentWidth, 26, 'S');
+
+    const mean =
+      classAnalytics?.average ??
+      (sortedScores.length > 0 ? sortedScores.reduce((a, b) => a + b.calculatedScore, 0) / sortedScores.length : 0);
+    const highest =
+      classAnalytics?.highest ??
+      (sortedScores.length > 0 ? Math.max(...sortedScores.map(s => s.calculatedScore)) : 0);
+    const lowest =
+      classAnalytics?.lowest ??
+      (sortedScores.length > 0 ? Math.min(...sortedScores.map(s => s.calculatedScore)) : 0);
+    const passedCount = sortedScores.filter(s => s.calculatedScore >= 75).length;
+    const passRate =
+      classAnalytics?.attainment?.passedPercentage ??
+      (sortedScores.length > 0 ? Math.round((passedCount / sortedScores.length) * 100) : 0);
+
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Kelas / Rombel', leftMargin + 4, yPos + 6);
+    doc.text('Wali Kelas', leftMargin + 4, yPos + 12);
+    doc.text('Paket Try Out', leftMargin + 4, yPos + 18);
+    doc.text('Peserta Ujian', leftMargin + 4, yPos + 24);
 
     doc.setTextColor(15, 23, 42);
-    doc.setFontSize(10);
-    doc.text(`Kelas / Rombel       : ${cls.name}`, 20, 46);
-    doc.text(`Try Out             : ${tryout.title} (${tryout.code})`, 20, 54);
-    doc.text(`Jumlah Peserta      : ${scores.length} Siswa`, 20, 62);
-    doc.text(`KKM / Passing Grade : 75.00`, 20, 70);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`:  ${cls.name} (Tingkat ${cls.gradeLevel || '-'})`, leftMargin + 32, yPos + 6);
+    doc.text(`:  ${waliInfo.name} (NIP. ${waliInfo.nip})`, leftMargin + 32, yPos + 12);
+    doc.text(`:  [${friendlyStageLabel}] ${tryout.title.slice(0, 32)}`, leftMargin + 32, yPos + 18);
+    doc.text(`:  ${sortedScores.length} Siswa Mengerjakan (dari ${Math.max(sortedScores.length, classStudents.length)} Siswa)`, leftMargin + 32, yPos + 24);
 
-    const mean = classAnalytics?.average ?? (scores.length > 0 ? scores.reduce((a, b) => a + b.calculatedScore, 0) / scores.length : 0);
-    const highest = classAnalytics?.highest ?? (scores.length > 0 ? Math.max(...scores.map(s => s.calculatedScore)) : 0);
-    const lowest = classAnalytics?.lowest ?? (scores.length > 0 ? Math.min(...scores.map(s => s.calculatedScore)) : 0);
-    const passRate = classAnalytics?.attainment?.passedPercentage ?? (scores.length > 0 ? Math.round((scores.filter(s => s.calculatedScore >= 75).length / scores.length) * 100) : 0);
+    const colRightLabel = leftMargin + 112;
+    const colRightVal = leftMargin + 145;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('Rata-Rata Kelas', colRightLabel, yPos + 6);
+    doc.text('Nilai Tertinggi', colRightLabel, yPos + 12);
+    doc.text('Nilai Terendah', colRightLabel, yPos + 18);
+    doc.text('Ketuntasan KKM (75)', colRightLabel, yPos + 24);
 
-    doc.text(`Rata-Rata Kelas     : ${mean.toFixed(1)}`, 110, 46);
-    doc.text(`Nilai Tertinggi     : ${highest.toFixed(1)}`, 110, 54);
-    doc.text(`Nilai Terendah      : ${lowest.toFixed(1)}`, 110, 62);
-    doc.text(`Tingkat Kelulusan   : ${passRate}%`, 110, 70);
-
-    // Section 2: Student Score Rank Table
-    doc.setFontSize(11);
-    doc.text('I. PERINGKAT SKOR SISWA DALAM KELAS', 14, 84);
-
-    let yPos = 90;
-    doc.setFillColor(241, 245, 249);
-    doc.rect(14, yPos, 182, 8, 'F');
-    doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    doc.text('No', 18, yPos + 6);
-    doc.text('NISN', 28, yPos + 6);
-    doc.text('Nama Siswa', 60, yPos + 6);
-    doc.text('Calculated', 125, yPos + 6);
-    doc.text('GForm', 148, yPos + 6);
-    doc.text('Scoring Status', 170, yPos + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`:  ${mean.toFixed(1)} Poin`, colRightVal, yPos + 6);
+    doc.setTextColor(21, 128, 61);
+    doc.text(`:  ${highest.toFixed(1)} Poin`, colRightVal, yPos + 12);
+    doc.setTextColor(225, 29, 72);
+    doc.text(`:  ${lowest.toFixed(1)} Poin`, colRightVal, yPos + 18);
+    doc.setTextColor(79, 70, 229);
+    doc.text(`:  ${passRate}% (${passedCount}/${sortedScores.length} Lulus)`, colRightVal, yPos + 24);
 
-    yPos += 8;
-    const sortedScores = [...scores].sort((a, b) => b.calculatedScore - a.calculatedScore);
+    // Section 2: Student Score Rank Table (SEMUA SISWA DIURUTKAN SESUAI PERINGKAT)
+    yPos += 32;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`I. DAFTAR PERINGKAT NILAI SELURUH SISWA KELAS ${cls.name.toUpperCase()} (${sortedScores.length} SISWA)`, leftMargin, yPos);
 
-    sortedScores.slice(0, 8).forEach((s, idx) => {
-      const std = students?.find(st => st.id === s.studentId);
-      doc.setFontSize(8);
-      doc.setTextColor(51, 65, 85);
-      doc.text(`${idx + 1}`, 18, yPos + 5);
-      doc.text(`${std?.nisn || s.studentId.slice(0, 10)}`, 28, yPos + 5);
-      doc.text(`${(std?.name || 'Siswa Assessment').slice(0, 28)}`, 60, yPos + 5);
-      doc.text(`${s.calculatedScore.toFixed(1)}`, 128, yPos + 5);
-      doc.text(`${(s.googleFormScore ?? 0).toFixed(1)}`, 150, yPos + 5);
-      doc.text(`${s.scoringStatus}`, 170, yPos + 5);
+    yPos += 3.5;
+    yPos = drawStudentTableHeader(yPos);
 
-      doc.setDrawColor(241, 245, 249);
-      doc.line(14, yPos + 7, 196, yPos + 7);
-      yPos += 7;
+    if (sortedScores.length === 0) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(leftMargin, yPos, contentWidth, 8, 'F');
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Belum ada data nilai siswa untuk kelas dan paket Try Out ini.', leftMargin + contentWidth / 2, yPos + 5, { align: 'center' });
+      yPos += 8;
+    } else {
+      sortedScores.forEach((s, idx) => {
+        if (yPos > 268) {
+          doc.addPage();
+          drawOfficialHeader(true);
+          yPos = 30;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text(`I. DAFTAR PERINGKAT NILAI SISWA KELAS ${cls.name.toUpperCase()} (LANJUTAN)`, leftMargin, yPos);
+          yPos += 3;
+          yPos = drawStudentTableHeader(yPos);
+        }
+
+        const std = allStudentsList.find(st => st.id === s.studentId);
+        const isEven = idx % 2 === 0;
+        doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
+        doc.rect(leftMargin, yPos, contentWidth, 6, 'F');
+
+        const isPass = s.calculatedScore >= 75;
+        const bskText = `${s.totalCorrect ?? 0} / ${s.totalIncorrect ?? 0} / ${s.totalUnanswered ?? 0}`;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.2);
+        doc.setTextColor(79, 70, 229);
+        doc.text(`#${idx + 1}`, leftMargin + 6, yPos + 4.2, { align: 'center' });
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(71, 85, 105);
+        doc.text(`${std?.nisn || '-'}`, leftMargin + 24, yPos + 4.2, { align: 'center' });
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text(`${(std?.name || 'Siswa Peserta').slice(0, 36)}`, leftMargin + 40, yPos + 4.2);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(71, 85, 105);
+        doc.text(bskText, leftMargin + 112, yPos + 4.2, { align: 'center' });
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text(`${s.calculatedScore.toFixed(1)}`, leftMargin + 134, yPos + 4.2, { align: 'center' });
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 116, 139);
+        doc.text(`${(s.googleFormScore ?? s.calculatedScore).toFixed(1)}`, leftMargin + 154, yPos + 4.2, { align: 'center' });
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(isPass ? 21 : 225, isPass ? 128 : 29, isPass ? 61 : 72);
+        doc.text(isPass ? 'LULUS KKM' : 'REMEDIAL', leftMargin + 171, yPos + 4.2, { align: 'center' });
+
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.2);
+        doc.line(leftMargin, yPos + 6, rightMargin, yPos + 6);
+        yPos += 6;
+      });
+    }
+
+    // Section 3: Item Psychometric Analysis (SELURUH BUTIR SOAL 1..N)
+    let items: any[] = [...(questionAnalysisList || [])];
+    const tryoutAnswersForClass = (dbState.answers || []).filter(
+      a => a.tryoutId === tryout.id && (classStudentIds.size === 0 || classStudentIds.has(a.studentId))
+    );
+    const tryoutAnswerQIds = Array.from(new Set(tryoutAnswersForClass.map(a => a.questionId)));
+
+    // Pastikan jika terdapat soal di answers atau daftar soal tryout yang belum masuk ke questionAnalysisList,
+    // seluruh butir soal (1..N) tetap dihitung dan ditampilkan lengkap tanpa ada yang terpotong
+    if (tryoutAnswerQIds.length > items.length) {
+      const existingQIds = new Set(items.map((it: any) => it.questionId || it.id));
+      const allKnownQuestions = questions && questions.length > 0 ? questions : dbState.questions;
+      const missingQuestions: Question[] = [];
+
+      tryoutAnswerQIds.forEach((qId, idx) => {
+        if (existingQIds.has(qId)) return;
+        const foundQ = allKnownQuestions.find(q => q.id === qId);
+        if (foundQ) {
+          missingQuestions.push(foundQ);
+        } else {
+          const numMatch = qId.match(/(\d+)$/);
+          const qNum = numMatch ? parseInt(numMatch[1], 10) : idx + 1;
+          const correctSample = tryoutAnswersForClass.find(
+            a => a.questionId === qId && a.isCorrect && a.studentAnswer && a.studentAnswer.trim() !== ''
+          );
+          missingQuestions.push({
+            id: qId,
+            uniqueCode: `${tryout.code || 'SOAL'}-Q${String(qNum).padStart(2, '0')}`,
+            questionNumber: qNum,
+            subjectId: tryout.subjectId || 'sub-1',
+            materialId: '',
+            competencyId: '',
+            questionText: `Butir Soal Nomor ${qNum}`,
+            options: [
+              { key: 'A', text: 'Pilihan A' },
+              { key: 'B', text: 'Pilihan B' },
+              { key: 'C', text: 'Pilihan C' },
+              { key: 'D', text: 'Pilihan D' },
+              { key: 'E', text: 'Pilihan E' },
+            ],
+            correctAnswer: correctSample?.studentAnswer?.trim().toUpperCase() || '-',
+            weight: 1,
+            status: 'ACTIVE',
+          });
+        }
+      });
+
+      if (missingQuestions.length > 0) {
+        const computedMissing = AnalyticsService.calculateQuestionItemAnalysis(
+          missingQuestions,
+          tryoutAnswersForClass,
+          sortedScores
+        );
+        items = [...items, ...computedMissing];
+      }
+    }
+
+    // Urutkan seluruh butir soal berdasarkan nomor soal (1..N)
+    items.sort((a: any, b: any) => {
+      const numA = a.questionNumber ?? (parseInt(String(a.uniqueCode || a.questionId || '').match(/(\d+)$/)?.[1] || '0', 10) || 0);
+      const numB = b.questionNumber ?? (parseInt(String(b.uniqueCode || b.questionId || '').match(/(\d+)$/)?.[1] || '0', 10) || 0);
+      return numA - numB;
     });
 
-    // Section 3: Item Psychometric Analysis
-    yPos += 6;
-    doc.setFontSize(11);
+    if (items.length > 0) {
+      if (yPos > 240) {
+        doc.addPage();
+        drawOfficialHeader(true);
+        yPos = 30;
+      } else {
+        yPos += 8;
+      }
+
+      const drawItemTableHeader = (topY: number): number => {
+        doc.setFillColor(15, 23, 42);
+        doc.rect(leftMargin, topY, contentWidth, 7, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.8);
+        doc.setTextColor(255, 255, 255);
+        doc.text('NO', leftMargin + 5, topY + 4.8, { align: 'center' });
+        doc.text('KODE SOAL', leftMargin + 21, topY + 4.8, { align: 'center' });
+        doc.text('KUNCI', leftMargin + 38, topY + 4.8, { align: 'center' });
+        doc.text('B / S / K', leftMargin + 54, topY + 4.8, { align: 'center' });
+        doc.text('OPSI (A/B/C/D/E)', leftMargin + 82, topY + 4.8, { align: 'center' });
+        doc.text('KESUKARAN (p)', leftMargin + 116, topY + 4.8, { align: 'center' });
+        doc.text('DAYA PEMBEDA (D)', leftMargin + 146, topY + 4.8, { align: 'center' });
+        doc.text('REKOMENDASI', leftMargin + 171, topY + 4.8, { align: 'center' });
+        return topY + 7;
+      };
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`II. ANALISIS BUTIR SOAL KELAS ${cls.name.toUpperCase()} — SELURUH SOAL (${items.length} BUTIR SOAL)`, leftMargin, yPos);
+
+      yPos += 3.5;
+      yPos = drawItemTableHeader(yPos);
+
+      items.forEach((item: any, idx: number) => {
+        if (yPos > 268) {
+          doc.addPage();
+          drawOfficialHeader(true);
+          yPos = 30;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text(`II. ANALISIS BUTIR SOAL KELAS ${cls.name.toUpperCase()} (LANJUTAN — TOTAL ${items.length} SOAL)`, leftMargin, yPos);
+          yPos += 3;
+          yPos = drawItemTableHeader(yPos);
+        }
+
+        const isEven = idx % 2 === 0;
+        doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
+        doc.rect(leftMargin, yPos, contentWidth, 5.8, 'F');
+
+        const qNum = item.questionNumber || idx + 1;
+        const qCode = (item.uniqueCode || item.questionCode || `SOAL-${qNum}`).slice(0, 14);
+        const keyAns = item.correctAnswer || '-';
+        const bsk = `${item.correctCount ?? 0}/${item.incorrectCount ?? 0}/${item.unansweredCount ?? 0}`;
+        const counts = item.distractorCounts || {};
+        const distText = ['A', 'B', 'C', 'D', 'E'].map(opt => counts[opt] ?? 0).join('/');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.8);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`${qNum}`, leftMargin + 5, yPos + 4, { align: 'center' });
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text(qCode, leftMargin + 21, yPos + 4, { align: 'center' });
+
+        doc.setTextColor(79, 70, 229);
+        doc.text(keyAns, leftMargin + 38, yPos + 4, { align: 'center' });
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(71, 85, 105);
+        doc.text(bsk, leftMargin + 54, yPos + 4, { align: 'center' });
+
+        doc.setFontSize(6.5);
+        doc.text(distText, leftMargin + 82, yPos + 4, { align: 'center' });
+
+        doc.setFontSize(6.8);
+        doc.text(`${(item.difficultyIndex ?? 0).toFixed(2)} (${item.difficultyCategory || 'SEDANG'})`, leftMargin + 116, yPos + 4, { align: 'center' });
+        doc.text(`${(item.discriminationIndex ?? 0).toFixed(2)} (${item.discriminationCategory || 'CUKUP'})`, leftMargin + 146, yPos + 4, { align: 'center' });
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(79, 70, 229);
+        doc.text(`${(item.reviewRecommendation || 'Valid').slice(0, 18)}`, leftMargin + 171, yPos + 4, { align: 'center' });
+
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.2);
+        doc.line(leftMargin, yPos + 5.8, rightMargin, yPos + 5.8);
+        yPos += 5.8;
+      });
+    }
+
+    // Section 4: Blok Tanda Tangan Pengesahan Kepala Sekolah & Wali Kelas (Sesuai Data Admin)
+    if (yPos > 236) {
+      doc.addPage();
+      drawOfficialHeader(true);
+      yPos = 36;
+    } else {
+      yPos += 10;
+    }
+
     doc.setTextColor(15, 23, 42);
-    doc.text('II. ANALISIS BUTIR SOAL (TINGKAT KESUKARAN & DAYA PEMBEDA)', 14, yPos);
-
-    yPos += 6;
-    doc.setFillColor(241, 245, 249);
-    doc.rect(14, yPos, 182, 8, 'F');
-    doc.setFontSize(8.5);
-    doc.setTextColor(15, 23, 42);
-    doc.text('Kode Soal', 18, yPos + 6);
-    doc.text('Total', 60, yPos + 6);
-    doc.text('Tingkat Kesukaran (p)', 80, yPos + 6);
-    doc.text('Daya Pembeda (D)', 125, yPos + 6);
-    doc.text('Rekomendasi', 165, yPos + 6);
-
-    yPos += 8;
-
-    const items = questionAnalysisList || [
-      { questionCode: 'MAT-TO03-Q001', totalRespondents: scores.length, difficultyIndex: 0.85, difficultyCategory: 'MUDAH', discriminationIndex: 0.45, discriminationCategory: 'SANGAT_BAIK', reviewRecommendation: 'Good / Valid Question' },
-      { questionCode: 'MAT-TO03-Q002', totalRespondents: scores.length, difficultyIndex: 0.65, difficultyCategory: 'SEDANG', discriminationIndex: 0.35, discriminationCategory: 'BAIK', reviewRecommendation: 'Good / Valid Question' },
-      { questionCode: 'MAT-TO03-Q003', totalRespondents: scores.length, difficultyIndex: 0.25, difficultyCategory: 'SULIT', discriminationIndex: 0.15, discriminationCategory: 'BURUK', reviewRecommendation: 'Needs Review' },
-    ];
-
-    items.slice(0, 6).forEach((item: any) => {
-      doc.setFontSize(8);
-      doc.setTextColor(51, 65, 85);
-      doc.text(item.questionCode || 'MAT-TO03-Q001', 18, yPos + 5);
-      doc.text(`${item.totalRespondents || scores.length}`, 62, yPos + 5);
-      doc.text(`${(item.difficultyIndex || 0.70).toFixed(2)} (${item.difficultyCategory || 'SEDANG'})`, 80, yPos + 5);
-      doc.text(`${(item.discriminationIndex || 0.35).toFixed(2)} (${item.discriminationCategory || 'BAIK'})`, 125, yPos + 5);
-      doc.text(`${item.reviewRecommendation || 'Valid'}`, 165, yPos + 5);
-
-      doc.setDrawColor(241, 245, 249);
-      doc.line(14, yPos + 7, 196, yPos + 7);
-      yPos += 7;
-    });
-
-    // Section 4: Distractor Choice Analysis
-    yPos += 6;
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text('III. DISTRACTOR ANALYSIS (DISTRIBUSI OPSI JAWABAN SISWA)', 14, yPos);
-
-    yPos += 6;
-    doc.setFontSize(8.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text('Distractor efektif jika dipilih oleh minimal 5% peserta yang menjawab salah.', 14, yPos);
-
-    // Footer
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Dokumen Resmi ${cls.name} | Laporan Analitik Try Out`, 14, 282);
-    doc.text('Dikembangkan oleh MIDStudio (2026)', 196, 282, { align: 'right' });
+    doc.text('Mengetahui / Mengesahkan,', leftMargin + 10, yPos);
+    doc.text(`Diterbitkan: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, rightMargin - 55, yPos);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Kepala ${schoolInfo.name}`, leftMargin + 10, yPos + 4.5);
+    doc.text(`Wali Kelas ${cls.name}`, rightMargin - 55, yPos + 4.5);
+
+    doc.text(schoolInfo.principalName, leftMargin + 10, yPos + 21);
+    doc.text(waliInfo.name, rightMargin - 55, yPos + 21);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`NIP. ${schoolInfo.principalNip || '-'}`, leftMargin + 10, yPos + 25);
+    doc.text(`NIP. ${waliInfo.nip || '-'}`, rightMargin - 55, yPos + 25);
+
+    // Nomor Halaman Dinamis di Semua Halaman
+    const totalPages = doc.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Dokumen Resmi ${schoolInfo.name} | Analitik Kelas ${cls.name} | Hal. ${p} dari ${totalPages}`, leftMargin, 288);
+      doc.text('WIKAN — Wadah Informasi Kemampuan dan Analisis Nilai', rightMargin, 288, { align: 'right' });
+    }
 
     const cleanClassName = cls.name.replace(/\s+/g, '_');
-    const cleanCode = tryout.code.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const cleanCode = (friendlyStageLabel || tryout.code).replace(/[^a-zA-Z0-9_\-]/g, '_');
     const fileName = `Laporan_Analitik_${cleanClassName}_${cleanCode}.pdf`;
     doc.save(fileName);
     return fileName;

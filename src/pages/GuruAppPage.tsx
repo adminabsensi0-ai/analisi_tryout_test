@@ -4066,6 +4066,32 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 const currentTo = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
                                 if (currentCls && currentTo) {
                                   const classScores = dbService.getScoresByTryout(currentTo.id);
+                                  const qaList = dbService.getQuestionAnalysis(currentTo.id, 'ALL', currentCls.id, currentUser);
+                                  const fileName = ExportService.exportTeacherClassAnalyticsPDF(
+                                    currentCls,
+                                    currentTo,
+                                    classScores,
+                                    questions,
+                                    qaList,
+                                    competencies,
+                                    classAnalyticsData,
+                                    students,
+                                    dbService.getSchoolProfile()
+                                  );
+                                  triggerToast(`Laporan PDF Kelas ${currentCls.name} ('${fileName}') berhasil diunduh!`);
+                                }
+                              }}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center space-x-1 cursor-pointer transition-colors"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Unduh PDF Kelas</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                const currentCls = classes.find(c => c.id === classAnalyticsData.classId);
+                                const currentTo = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
+                                if (currentCls && currentTo) {
+                                  const classScores = dbService.getScoresByTryout(currentTo.id);
                                   ExportService.exportClassAnalysisExcel(currentCls, currentTo, classScores, students);
                                   triggerToast(`Laporan Rekap Nilai ${currentCls.name} berhasil diunduh!`);
                                 }
@@ -4285,7 +4311,44 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </div>
 
                           {/* Action: Unduh Laporan Siswa */}
-                          <div className="self-end pt-3 sm:pt-0">
+                          <div className="self-end pt-3 sm:pt-0 flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                const targetStudent = students.find(s => s.id === activeStudentIdForAnalytics);
+                                const targetTo = tryouts.find(t => t.id === activeStudentTryoutId) || tryouts[0];
+                                if (targetStudent && targetTo && studentAnalyticsData) {
+                                  const studentCls = classes.find(c => c.id === targetStudent.classId);
+                                  const studentScoreObj = dbService.getScoresByStudent(targetStudent.id).find(s => s.tryoutId === targetTo.id) || {
+                                    id: `sc-${targetStudent.id}`,
+                                    responseId: `resp-${targetStudent.id}`,
+                                    studentId: targetStudent.id,
+                                    tryoutId: targetTo.id,
+                                    subjectScores: {},
+                                    googleFormScore: studentAnalyticsData.score.rawScoreGForm,
+                                    calculatedScore: studentAnalyticsData.score.calculatedScore,
+                                    scoreDifference: studentAnalyticsData.score.scoreDifference,
+                                    scoringStatus: studentAnalyticsData.score.scoringStatus,
+                                    totalCorrect: studentAnalyticsData.correctCount,
+                                    totalIncorrect: studentAnalyticsData.incorrectCount,
+                                    totalUnanswered: studentAnalyticsData.unansweredCount,
+                                    createdAt: new Date().toISOString()
+                                  };
+                                  const fileName = ExportService.exportStudentPDF(
+                                    targetStudent as any,
+                                    studentScoreObj,
+                                    targetTo,
+                                    studentCls,
+                                    studentAnalyticsData,
+                                    explanations
+                                  );
+                                  triggerToast(`Rapor PDF Siswa ${targetStudent.name} ('${fileName}') berhasil diunduh!`);
+                                }
+                              }}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg flex items-center space-x-1.5 shadow-xs transition-colors cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Unduh Rapor PDF</span>
+                            </button>
                             <button
                               onClick={() => {
                                 if (studentAnalyticsData) {
@@ -6739,9 +6802,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             triggerError('Data TryOut belum tersedia untuk diekspor.');
                             return;
                           }
-                          const scores = dbService.getScoresByTryout(selectedTryoutId);
-                          const answers = dbService.getAnswers().filter(a => a.tryoutId === selectedTryoutId);
-                          const qaList = dbService.getQuestionAnalysis(selectedTryoutId, 'ALL', 'ALL', currentUser);
+                          const scores = dbService.getScoresByTryout(activeTo.id);
+                          const answers = dbService.getAnswers().filter(a => a.tryoutId === activeTo.id);
+                          const qaList = dbService.getQuestionAnalysis(activeTo.id, 'ALL', 'ALL', currentUser);
 
                           const fileName = ExportService.exportComprehensiveWorkbookExcel(
                             activeTo,
@@ -6788,9 +6851,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             triggerError('Data kelas atau TryOut belum tersedia untuk diekspor.');
                             return;
                           }
-                          const scores = dbService.getScoresByTryout(selectedTryoutId);
-                          const qaList = dbService.getQuestionAnalysis(selectedTryoutId, 'ALL', activeCls.id, currentUser);
-                          const classAnalytics = dbService.getClassAnalytics(activeCls.id, selectedTryoutId, currentUser);
+                          const scores = dbService.getScoresByTryout(activeTo.id);
+                          const qaList = dbService.getQuestionAnalysis(activeTo.id, 'ALL', activeCls.id, currentUser);
+                          const classAnalytics = dbService.getClassAnalytics(activeCls.id, activeTo.id, currentUser);
 
                           const fileName = ExportService.exportTeacherClassAnalyticsPDF(
                             activeCls,
@@ -6800,7 +6863,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             qaList,
                             competencies,
                             classAnalytics,
-                            students
+                            students,
+                            dbService.getSchoolProfile()
                           );
                           triggerToast(`Laporan PDF Analitik Kelas ('${fileName}') berhasil diunduh.`);
                         }}
@@ -6824,37 +6888,79 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         </div>
                         <h3 className="text-sm font-bold text-slate-900 dark:text-white">Rapor Individual Hasil Try Out Siswa</h3>
                         <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                          Rapor PDF resmi siswa berisi skor akhir, verifikasi GForm, rincian capaian per butir soal, dan tren perkembangan TO 1 &rarr; TO 3.
+                          Rapor PDF 2 halaman (identik dengan unduhan Portal Siswa) lengkap dengan kop sekolah, tanda tangan Wali Kelas &amp; Kepala Sekolah sesuai Admin, matriks soal, dan grafik perkembangan lintas TO.
                         </p>
+                        <div className="pt-1">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                            Pilih Siswa:
+                          </label>
+                          <select
+                            value={activeStudentIdForAnalytics}
+                            onChange={e => setSelectedStudentForAnalytics(e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 font-semibold focus:ring-1 focus:ring-indigo-500"
+                          >
+                            {(classFilter && classFilter !== 'ALL'
+                              ? students.filter(s => s.classId === classFilter)
+                              : students
+                            ).map(s => {
+                              const cls = classes.find(c => c.id === s.classId);
+                              return (
+                                <option key={s.id} value={s.id}>
+                                  {s.name} ({s.nisn}) — {cls?.name || s.classId}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
                       </div>
 
                       <button
                         onClick={() => {
                           const activeTo = tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
-                          const sampleStudent = students[0];
-                          if (!sampleStudent) return;
-                          const sampleScore = dbService.getScoresByStudent(sampleStudent.id).find(s => s.tryoutId === selectedTryoutId) || {
-                            id: 'sc-1', responseId: 'resp-1', studentId: sampleStudent.id, tryoutId: selectedTryoutId,
-                            subjectScores: {}, googleFormScore: 87.5, calculatedScore: 87.5, scoreDifference: 0,
-                            scoringStatus: 'MATCH', totalCorrect: 7, totalIncorrect: 1, totalUnanswered: 0, createdAt: ''
+                          const filteredStudents = classFilter && classFilter !== 'ALL'
+                            ? students.filter(s => s.classId === classFilter)
+                            : students;
+                          const targetStudent =
+                            filteredStudents.find(s => s.id === activeStudentIdForAnalytics) ||
+                            students.find(s => s.id === activeStudentIdForAnalytics) ||
+                            filteredStudents[0] ||
+                            students[0];
+                          if (!targetStudent || !activeTo) {
+                            triggerError('Data siswa atau TryOut belum tersedia untuk diekspor.');
+                            return;
+                          }
+                          const studentScore = dbService.getScoresByStudent(targetStudent.id).find(s => s.tryoutId === activeTo.id) || {
+                            id: `sc-${targetStudent.id}`,
+                            responseId: `resp-${targetStudent.id}`,
+                            studentId: targetStudent.id,
+                            tryoutId: activeTo.id,
+                            subjectScores: {},
+                            googleFormScore: 0,
+                            calculatedScore: 0,
+                            scoreDifference: 0,
+                            scoringStatus: 'MATCH' as const,
+                            totalCorrect: 0,
+                            totalIncorrect: 0,
+                            totalUnanswered: 0,
+                            createdAt: new Date().toISOString()
                           };
-                          const studentClass = classes.find(c => c.id === sampleStudent.classId);
-                          const studentAnalytics = dbService.getStudentAnalytics(sampleStudent.id, selectedTryoutId);
+                          const studentClass = classes.find(c => c.id === targetStudent.classId);
+                          const studentAnalytics = dbService.getStudentAnalytics(targetStudent.id, activeTo.id);
 
                           const fileName = ExportService.exportStudentPDF(
-                            sampleStudent as any,
-                            sampleScore,
+                            targetStudent as any,
+                            studentScore,
                             activeTo,
                             studentClass,
                             studentAnalytics,
                             explanations
                           );
-                          triggerToast(`Rapor PDF Siswa ('${fileName}') berhasil diunduh.`);
+                          triggerToast(`Rapor PDF Siswa ${targetStudent.name} ('${fileName}') berhasil diunduh.`);
                         }}
                         className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center space-x-1.5 shadow-sm"
                       >
                         <Download className="w-4 h-4" />
-                        <span>Unduh Rapor PDF Siswa (Sample)</span>
+                        <span>Unduh Rapor PDF Siswa</span>
                       </button>
                     </div>
                   </div>

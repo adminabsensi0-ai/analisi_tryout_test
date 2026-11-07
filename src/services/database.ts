@@ -2975,15 +2975,47 @@ export class DatabaseService {
         .filter(tq => tq.tryoutId === tryoutId)
         .map(tq => tq.questionId)
     );
-    const answerQIds = new Set(
-      (this.state.answers || [])
-        .filter(a => a.tryoutId === tryoutId)
-        .map(a => a.questionId)
-    );
+    const tryoutAnswers = (this.state.answers || []).filter(a => a.tryoutId === tryoutId);
+    const answerQIds = new Set(tryoutAnswers.map(a => a.questionId));
 
     let result = this.state.questions.filter(
       q => linkedQIds.has(q.id) || answerQIds.has(q.id)
     );
+
+    // Jika terdapat questionId pada answers yang belum terdaftar di tabel questions (misal hasil sinkronisasi / impor),
+    // bentuk entitas Question otomatis agar seluruh butir soal (1..N) tampil utuh di halaman maupun PDF analisis
+    if (answerQIds.size > result.length) {
+      const existingIds = new Set(result.map(q => q.id));
+      let fallbackIdx = result.length + 1;
+      Array.from(answerQIds).forEach(qId => {
+        if (existingIds.has(qId)) return;
+        const numMatch = qId.match(/(\d+)$/);
+        const qNum = numMatch ? parseInt(numMatch[1], 10) : fallbackIdx++;
+        const correctSample = tryoutAnswers.find(
+          a => a.questionId === qId && a.isCorrect && a.studentAnswer && a.studentAnswer.trim() !== ''
+        );
+        const inferredKey = correctSample?.studentAnswer?.trim().toUpperCase() || '-';
+        result.push({
+          id: qId,
+          uniqueCode: `${tryout?.code || 'SOAL'}-Q${String(qNum).padStart(2, '0')}`,
+          questionNumber: qNum,
+          subjectId: targetSubjectId || 'sub-1',
+          materialId: '',
+          competencyId: '',
+          questionText: tryout?.selectedQuestionColumns?.[qNum - 1] || `Butir Soal Nomor ${qNum}`,
+          options: [
+            { key: 'A', text: 'Pilihan A' },
+            { key: 'B', text: 'Pilihan B' },
+            { key: 'C', text: 'Pilihan C' },
+            { key: 'D', text: 'Pilihan D' },
+            { key: 'E', text: 'Pilihan E' },
+          ],
+          correctAnswer: inferredKey,
+          weight: 1,
+          status: 'ACTIVE',
+        });
+      });
+    }
 
     if (result.length === 0 && targetSubjectId) {
       result = this.state.questions.filter(q => q.subjectId === targetSubjectId);
