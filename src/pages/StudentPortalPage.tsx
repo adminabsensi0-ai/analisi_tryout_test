@@ -1233,16 +1233,16 @@ export const StudentPortalPage: React.FC = () => {
 
             {/* TAB 2: GRAFIK PROGRES LINTAS TO & REKAP SELURUH MAPEL */}
             {portalTab === 'TREND_RECAP' && (
-              <div className="space-y-8 animate-fade-in">
+              <div className="space-y-6 sm:space-y-8 animate-fade-in">
                 {/* 1. Overall Progress across TO1 -> TO4 SVG Chart */}
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-6 transition-colors">
+                <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4 sm:space-y-6 transition-colors">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
                     <div>
                       <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 text-xs font-bold uppercase tracking-wider font-mono">
                         <TrendingUp className="w-4 h-4" />
                         <span>Grafik Perkembangan Try Out Keseluruhan</span>
                       </div>
-                      <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
+                      <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
                         Progres Nilai Siswa Lintas Try Out
                       </h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -1274,19 +1274,25 @@ export const StudentPortalPage: React.FC = () => {
                     const polygonPoints = `${firstX},260 ${svgPolyPoints} ${lastX},260`;
 
                     return (
-                      <div className="p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-5">
+                      <div className="p-3.5 sm:p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-4">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 pb-3">
                           <span className="flex items-center gap-2">
                             <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block" />
                             <span>Bagan Grafik Pertumbuhan Belajar Siswa</span>
                           </span>
-                          <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                          <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 self-start sm:self-auto">
                             Komparasi vs Rata-Rata Kelas
                           </span>
                         </div>
 
-                        <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
-                          <svg className="w-full h-auto overflow-visible" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
+                        {/* Petunjuk Geser di Layar HP */}
+                        <div className="flex sm:hidden items-center justify-between text-[11px] font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-200/70 dark:border-indigo-800/70 px-3 py-1.5 rounded-xl">
+                          <span>Geser grafik ke samping untuk melihat detail tiap TO</span>
+                          <span className="font-mono font-bold">↔ Geser</span>
+                        </div>
+
+                        <div className="relative w-full mobile-chart-scroll bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 shadow-2xs">
+                          <svg className="min-w-[600px] sm:min-w-0 w-full h-auto min-h-[215px] sm:min-h-[250px] overflow-visible" viewBox="0 0 1000 315" preserveAspectRatio="xMidYMid meet">
                             <defs>
                               <linearGradient id="studentChartGradMain" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#6366f1" stopOpacity="0.30" />
@@ -1296,35 +1302,35 @@ export const StudentPortalPage: React.FC = () => {
 
                             {/* Y Guidelines */}
                             <line x1="60" y1="40" x2="940" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                            <text x="45" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
+                            <text x="46" y="45" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">100</text>
                             <line x1="60" y1="95" x2="940" y2="95" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" strokeDasharray="4 4" />
-                            <text x="45" y="99" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">75</text>
+                            <text x="46" y="100" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">75</text>
                             <line x1="60" y1="150" x2="940" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" strokeDasharray="4 4" />
-                            <text x="45" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
+                            <text x="46" y="155" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">50</text>
                             <line x1="60" y1="205" x2="940" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" strokeDasharray="4 4" />
-                            <text x="45" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
+                            <text x="46" y="210" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">25</text>
                             <line x1="60" y1="260" x2="940" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-700" strokeWidth="1.5" />
-                            <text x="45" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+                            <text x="46" y="265" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">0</text>
 
                             {/* Polygon Area Fill */}
                             {coords.length > 1 && <polygon points={polygonPoints} fill="url(#studentChartGradMain)" />}
 
                             {/* Class Average Polyline */}
                             {coords.length > 1 ? (
-                              <polyline fill="none" stroke="#10b981" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.85" points={classAvgPolyPoints} />
+                              <polyline fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray="6 5" opacity="0.9" points={classAvgPolyPoints} />
                             ) : coords.length === 1 ? (
-                              <line x1="60" y1={coords[0].classAvgY} x2="940" y2={coords[0].classAvgY} stroke="#10b981" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.85" />
+                              <line x1="60" y1={coords[0].classAvgY} x2="940" y2={coords[0].classAvgY} stroke="#10b981" strokeWidth="3" strokeDasharray="6 5" opacity="0.9" />
                             ) : null}
 
                             {/* Student Score Polyline */}
                             {coords.length > 1 ? (
-                              <polyline fill="none" stroke="#6366f1" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={svgPolyPoints} />
+                              <polyline fill="none" stroke="#6366f1" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" points={svgPolyPoints} />
                             ) : coords.length === 1 ? (
-                              <line x1="60" y1={coords[0].y} x2="940" y2={coords[0].y} stroke="#6366f1" strokeWidth="3.5" strokeLinecap="round" opacity="0.85" />
+                              <line x1="60" y1={coords[0].y} x2="940" y2={coords[0].y} stroke="#6366f1" strokeWidth="4" strokeLinecap="round" opacity="0.9" />
                             ) : null}
 
                             {coords.length === 0 && (
-                              <text x="500" y="150" textAnchor="middle" className="text-[13px] font-sans fill-slate-400">
+                              <text x="500" y="150" textAnchor="middle" className="text-[14px] font-sans fill-slate-400">
                                 Belum ada data nilai Try Out yang dapat ditampilkan.
                               </text>
                             )}
@@ -1333,25 +1339,25 @@ export const StudentPortalPage: React.FC = () => {
                             {coords.map((node, i) => (
                               <g key={i}>
                                 <line x1={node.x} y1="40" x2={node.x} y2="260" stroke="currentColor" className="text-slate-100 dark:text-slate-800/60" strokeDasharray="3 3" />
-                                <circle cx={node.x} cy={node.classAvgY} r="4" fill="#10b981" stroke="#ffffff" strokeWidth="1.5" />
-                                <circle cx={node.x} cy={node.y} r="9" fill="#6366f1" opacity="0.2" />
-                                <circle cx={node.x} cy={node.y} r="5.5" fill="#6366f1" stroke="#ffffff" strokeWidth="2.5" />
+                                <circle cx={node.x} cy={node.classAvgY} r="5" fill="#10b981" stroke="#ffffff" strokeWidth="2" />
+                                <circle cx={node.x} cy={node.y} r="11" fill="#6366f1" opacity="0.22" />
+                                <circle cx={node.x} cy={node.y} r="6.5" fill="#6366f1" stroke="#ffffff" strokeWidth="2.5" />
 
-                                <g transform={`translate(${node.x - 38}, ${node.y - 32})`}>
-                                  <rect width="76" height="22" rx="7" className="fill-slate-900 dark:fill-slate-100 shadow-sm" />
-                                  <text x="38" y="15" textAnchor="middle" className="text-[11px] font-mono font-bold fill-indigo-300 dark:fill-indigo-700">
+                                <g transform={`translate(${node.x - 44}, ${node.y - 36})`}>
+                                  <rect width="88" height="26" rx="8" className="fill-slate-900 dark:fill-slate-100 shadow-sm" />
+                                  <text x="44" y="17" textAnchor="middle" className="text-[12.5px] font-mono font-extrabold fill-indigo-300 dark:fill-indigo-700">
                                     {node.score.toFixed(1)} Poin
                                   </text>
                                 </g>
 
-                                <text x={node.x} y="280" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-800 dark:fill-slate-200">
+                                <text x={node.x} y="284" textAnchor="middle" className="text-[14px] font-mono font-extrabold fill-slate-800 dark:fill-slate-200">
                                   {node.code}
                                 </text>
-                                <text x={node.x} y="295" textAnchor="middle" className="text-[10px] font-sans fill-slate-400">
+                                <text x={node.x} y="302" textAnchor="middle" className="text-[11.5px] font-sans fill-slate-400">
                                   {node.date}
                                 </text>
                                 {node.subjectBreakdownLabel && (
-                                  <text x={node.x} y={Math.min(node.y, node.classAvgY) - 40 < 20 ? Math.max(node.y, node.classAvgY) + 22 : Math.min(node.y, node.classAvgY) - 40} textAnchor="middle" className="text-[10px] font-mono font-semibold fill-slate-500 dark:fill-slate-400">
+                                  <text x={node.x} y={Math.min(node.y, node.classAvgY) - 44 < 20 ? Math.max(node.y, node.classAvgY) + 24 : Math.min(node.y, node.classAvgY) - 44} textAnchor="middle" className="text-[11.5px] font-mono font-bold fill-slate-500 dark:fill-slate-400">
                                     {node.subjectBreakdownLabel}
                                   </text>
                                 )}
@@ -1360,8 +1366,42 @@ export const StudentPortalPage: React.FC = () => {
                           </svg>
                         </div>
 
+                        {/* Ringkasan Cepat Angka Per Siklus TO (Sangat Mudah Dibaca di HP & Desktop) */}
+                        {coords.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                            {coords.map((node, i) => (
+                              <div
+                                key={node.code || i}
+                                className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shadow-2xs"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-mono font-extrabold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                      {node.code}
+                                    </span>
+                                    <span className="text-[11px] text-slate-400 font-mono truncate">{node.date}</span>
+                                  </div>
+                                  {node.subjectBreakdownLabel && (
+                                    <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-1 truncate">
+                                      {node.subjectBreakdownLabel}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="text-base font-black font-mono text-indigo-600 dark:text-indigo-400">
+                                    {node.score.toFixed(1)}
+                                  </div>
+                                  <div className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">
+                                    Kelas: {(node.classAverage ?? 75).toFixed(1)}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         {/* Chart Legend */}
-                        <div className="flex flex-wrap items-center justify-center gap-6 pt-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 pt-1 text-xs font-medium text-slate-600 dark:text-slate-300">
                           <div className="flex items-center gap-2">
                             <span className="w-5 h-1 bg-indigo-600 rounded-full inline-block" />
                             <span>Rata-Rata Gabungan Siswa (seluruh mapel per TO)</span>

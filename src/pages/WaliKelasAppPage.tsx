@@ -579,7 +579,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
           return (
             <div className="space-y-6">
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
+              <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4 sm:space-y-6">
                 
                 {/* Header */}
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
@@ -588,7 +588,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                       <TrendingUp className="w-4 h-4" />
                       <span>Grafik Perkembangan TryOut</span>
                     </div>
-                    <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
+                    <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
                       Progres Nilai TryOut Rombel {assignedClass.name}
                     </h2>
                     <p className="text-xs text-slate-500 mt-0.5">
@@ -597,11 +597,11 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                   </div>
 
                   {allSubjects.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
+                    <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-semibold overflow-x-auto flex-nowrap sm:flex-wrap">
                       <button
                         type="button"
                         onClick={() => setSelectedSubjectFilter('ALL')}
-                        className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                        className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 ${
                           selectedSubjectFilter === 'ALL'
                             ? 'bg-emerald-600 text-white shadow-xs font-bold'
                             : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -614,7 +614,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                           key={sub.id}
                           type="button"
                           onClick={() => setSelectedSubjectFilter(sub.id)}
-                          className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                          className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 whitespace-nowrap ${
                             selectedSubjectFilter === sub.id
                               ? 'bg-emerald-600 text-white shadow-xs font-bold'
                               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -638,9 +638,9 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                 ) : (
                   <>
                     {/* SVG Trend Area */}
-                    <div className="p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-4">
+                    <div className="p-3.5 sm:p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-bold text-slate-900 dark:text-slate-100">
                             {selectedSubjectFilter === 'ALL' 
                               ? 'Rata-Rata Multimapel Rombel' 
@@ -654,8 +654,14 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                         </div>
                       </div>
 
+                      {/* Petunjuk Geser di Layar HP */}
+                      <div className="flex sm:hidden items-center justify-between text-[11px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50/80 dark:bg-emerald-950/50 border border-emerald-200/70 dark:border-emerald-800/70 px-3 py-1.5 rounded-xl">
+                        <span>Geser grafik ke samping untuk melihat detail tiap TO</span>
+                        <span className="font-mono font-bold">↔ Geser</span>
+                      </div>
+
                       {/* SVG Canvas */}
-                      <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+                      <div className="relative w-full mobile-chart-scroll bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 shadow-2xs">
                         {(() => {
                           const validPoints = tryoutProgressData
                             .map((d, idx) => ({
@@ -669,7 +675,6 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                           if (validPoints.length === 0) return null;
 
                           const width = 1000;
-                          const height = 300;
                           const paddingX = 80;
                           const stepX = validPoints.length > 1 ? (width - paddingX * 2) / (validPoints.length - 1) : 0;
 
@@ -682,10 +687,10 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                           const polylinePoints = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
 
                           return (
-                            <svg className="w-full h-auto text-emerald-500 overflow-visible" viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet">
+                            <svg className="min-w-[600px] sm:min-w-0 w-full h-auto min-h-[215px] sm:min-h-[250px] text-emerald-500 overflow-visible" viewBox="0 0 1000 310" preserveAspectRatio="xMidYMid meet">
                               {/* Horizontal Grid */}
                               <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                              <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
+                              <text x="38" y="45" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">100</text>
 
                               {/* KKM Line dynamic */}
                               {(() => {
@@ -695,8 +700,8 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                                 const yPos = 260 - ((targetKKM / 100) * 220);
                                 return (
                                   <>
-                                    <line x1="50" y1={yPos} x2="950" y2={yPos} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
-                                    <text x="35" y={yPos + 4} textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">
+                                    <line x1="50" y1={yPos} x2="950" y2={yPos} stroke="#f59e0b" strokeWidth="2.5" strokeDasharray="6 4" />
+                                    <text x="38" y={yPos + 4} textAnchor="end" className="text-[13px] fill-amber-500 font-mono font-extrabold">
                                       {targetKKM.toFixed(0)}
                                     </text>
                                   </>
@@ -704,33 +709,44 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                               })()}
 
                               <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                              <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
+                              <text x="38" y="155" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">50</text>
 
                               <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
-                              <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+                              <text x="38" y="265" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">0</text>
 
                               {/* Connecting Line */}
-                              {coords.length > 1 && (
+                              {coords.length > 1 ? (
                                 <polyline
                                   fill="none"
                                   stroke="#10b981"
-                                  strokeWidth="4"
+                                  strokeWidth="4.5"
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                   points={polylinePoints}
                                 />
-                              )}
+                              ) : coords.length === 1 ? (
+                                <line
+                                  x1="50"
+                                  y1={coords[0].y}
+                                  x2="950"
+                                  y2={coords[0].y}
+                                  stroke="#10b981"
+                                  strokeWidth="4"
+                                  strokeLinecap="round"
+                                  opacity="0.85"
+                                />
+                              ) : null}
 
                               {/* Nodes */}
                               {coords.map((pt, i) => (
                                 <g key={i}>
-                                  <rect x={pt.x - 30} y={pt.y - 34} width="60" height="22" rx="8" className="fill-slate-900 dark:fill-slate-100 shadow-md" />
-                                  <text x={pt.x} y={pt.y - 19} textAnchor="middle" className="text-[11px] font-mono font-bold fill-emerald-400 dark:fill-emerald-700">
+                                  <rect x={pt.x - 36} y={pt.y - 36} width="72" height="25" rx="8" className="fill-slate-900 dark:fill-slate-100 shadow-md" />
+                                  <text x={pt.x} y={pt.y - 19} textAnchor="middle" className="text-[12.5px] font-mono font-extrabold fill-emerald-400 dark:fill-emerald-700">
                                     {pt.score.toFixed(1)}
                                   </text>
-                                  <circle cx={pt.x} cy={pt.y} r="10" fill="#10b981" opacity="0.25" />
-                                  <circle cx={pt.x} cy={pt.y} r="5.5" fill="#10b981" stroke="#ffffff" strokeWidth="2.5" />
-                                  <text x={pt.x} y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">
+                                  <circle cx={pt.x} cy={pt.y} r="11" fill="#10b981" opacity="0.25" />
+                                  <circle cx={pt.x} cy={pt.y} r="6.5" fill="#10b981" stroke="#ffffff" strokeWidth="2.5" />
+                                  <text x={pt.x} y="295" textAnchor="middle" className="text-[14px] font-mono font-extrabold fill-slate-600 dark:fill-slate-300">
                                     {pt.label}
                                   </text>
                                 </g>

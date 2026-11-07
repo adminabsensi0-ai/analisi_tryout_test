@@ -78,14 +78,14 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
   return (
     <div className="space-y-6 animate-fade-in">
       {/* 1. GRAFIK PERKEMBANGAN PER-MATA PELAJARAN */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-6 transition-colors">
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4 sm:space-y-6 transition-colors">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div>
             <div className="flex items-center gap-2 text-teal-600 dark:text-teal-400 text-xs font-bold uppercase tracking-wider font-mono">
               <BookOpen className="w-4 h-4" />
               <span>Grafik Try Out Per-Mata Pelajaran</span>
             </div>
-            <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
+            <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 mt-1">
               {selectedSubjectChartId === 'ALL'
                 ? 'Perkembangan Seluruh Mata Pelajaran'
                 : `Perkembangan Nilai ${activeSubjectObj?.name}`}
@@ -96,11 +96,11 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
           </div>
 
           {/* Subject Filter Pills */}
-          <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
+          <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-semibold overflow-x-auto flex-nowrap sm:flex-wrap">
             <button
               type="button"
               onClick={() => setSelectedSubjectChartId('ALL')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0 ${
                 selectedSubjectChartId === 'ALL'
                   ? 'bg-indigo-600 text-white shadow-xs font-bold'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -113,21 +113,21 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                 key={s.id}
                 type="button"
                 onClick={() => setSelectedSubjectChartId(s.id)}
-                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                   selectedSubjectChartId === s.id
                     ? 'bg-teal-600 text-white shadow-xs font-bold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <span className="font-mono text-[10px] px-1 rounded bg-black/10 dark:bg-white/10 font-bold">{s.code}</span>
-                <span>{s.name}</span>
+                <span className="whitespace-nowrap">{s.name}</span>
               </button>
             ))}
           </div>
         </div>
 
         {/* Chart Viewport */}
-        <div className="p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-5">
+        <div className="p-3.5 sm:p-6 bg-slate-50/70 dark:bg-slate-950/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono font-bold text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-teal-600 dark:text-teal-400" />
@@ -138,16 +138,22 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
               </span>
             </div>
             {selectedSubjectChartId !== 'ALL' && (
-              <span className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-800">
+              <span className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-1 rounded-lg border border-amber-200 dark:border-amber-800 self-start sm:self-auto">
                 Batas KKM Target: {currentPassingGrade.toFixed(1)} Poin
               </span>
             )}
           </div>
 
-          <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+          {/* Petunjuk Geser di Layar HP */}
+          <div className="flex sm:hidden items-center justify-between text-[11px] font-medium text-teal-700 dark:text-teal-300 bg-teal-50/80 dark:bg-teal-950/50 border border-teal-200/70 dark:border-teal-800/70 px-3 py-1.5 rounded-xl">
+            <span>Geser grafik ke samping untuk melihat detail tiap TO</span>
+            <span className="font-mono font-bold">↔ Geser</span>
+          </div>
+
+          <div className="relative w-full mobile-chart-scroll bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 shadow-2xs">
             <svg
-              className="w-full h-auto overflow-visible"
-              viewBox="0 0 1000 300"
+              className="min-w-[600px] sm:min-w-0 w-full h-auto min-h-[215px] sm:min-h-[250px] overflow-visible"
+              viewBox="0 0 1000 315"
               preserveAspectRatio="xMidYMid meet"
             >
               <defs>
@@ -159,19 +165,19 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
 
               {/* Horizontal Grid lines */}
               <line x1="60" y1="40" x2="940" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-              <text x="45" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
+              <text x="46" y="45" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">100</text>
 
               <line x1="60" y1="95" x2="940" y2="95" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" strokeDasharray="4 4" />
-              <text x="45" y="99" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">75</text>
+              <text x="46" y="100" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">75</text>
 
               <line x1="60" y1="150" x2="940" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" strokeDasharray="4 4" />
-              <text x="45" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
+              <text x="46" y="155" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">50</text>
 
               <line x1="60" y1="205" x2="940" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" strokeDasharray="4 4" />
-              <text x="45" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
+              <text x="46" y="210" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">25</text>
 
               <line x1="60" y1="260" x2="940" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-700" strokeWidth="1.5" />
-              <text x="45" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+              <text x="46" y="265" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-bold">0</text>
 
               {/* SINGLE SUBJECT VIEW */}
               {selectedSubjectChartId !== 'ALL' && activeRow && (() => {
@@ -204,9 +210,9 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                 return (
                   <g>
                     {/* KKM Target Line */}
-                    <line x1="60" y1={targetY} x2="940" y2={targetY} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
-                    <rect x="780" y={targetY - 12} width="150" height="20" rx="6" fill="#f59e0b" />
-                    <text x="855" y={targetY + 2} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">
+                    <line x1="60" y1={targetY} x2="940" y2={targetY} stroke="#f59e0b" strokeWidth="2.5" strokeDasharray="6 4" />
+                    <rect x="765" y={targetY - 13} width="165" height="24" rx="7" fill="#f59e0b" />
+                    <text x="847" y={targetY + 3} textAnchor="middle" className="text-[11.5px] font-mono font-extrabold fill-slate-950">
                       KKM Target ({currentPassingGrade.toFixed(0)} Poin)
                     </text>
 
@@ -215,37 +221,37 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
 
                     {/* Class Avg */}
                     {points.length > 1 ? (
-                      <polyline fill="none" stroke="#6366f1" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.8" points={classAvgStr} />
+                      <polyline fill="none" stroke="#6366f1" strokeWidth="3" strokeDasharray="6 5" opacity="0.85" points={classAvgStr} />
                     ) : points.length === 1 ? (
-                      <line x1="60" y1={points[0].classAvgY} x2="940" y2={points[0].classAvgY} stroke="#6366f1" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.8" />
+                      <line x1="60" y1={points[0].classAvgY} x2="940" y2={points[0].classAvgY} stroke="#6366f1" strokeWidth="3" strokeDasharray="6 5" opacity="0.85" />
                     ) : null}
 
                     {/* Student Score Line */}
                     {points.length > 1 ? (
-                      <polyline fill="none" stroke="#0d9488" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={polyStr} />
+                      <polyline fill="none" stroke="#0d9488" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" points={polyStr} />
                     ) : points.length === 1 ? (
-                      <line x1="60" y1={points[0].y} x2="940" y2={points[0].y} stroke="#0d9488" strokeWidth="3.5" strokeLinecap="round" opacity="0.85" />
+                      <line x1="60" y1={points[0].y} x2="940" y2={points[0].y} stroke="#0d9488" strokeWidth="4" strokeLinecap="round" opacity="0.9" />
                     ) : null}
 
                     {/* Nodes */}
                     {points.map((c, i) => (
                       <g key={i}>
                         <line x1={c.x} y1="40" x2={c.x} y2="260" stroke="currentColor" className="text-slate-100 dark:text-slate-800/60" strokeDasharray="3 3" />
-                        <circle cx={c.x} cy={c.classAvgY} r="4" fill="#6366f1" stroke="#ffffff" strokeWidth="1.5" />
-                        <circle cx={c.x} cy={c.y} r="9" fill="#0d9488" opacity="0.2" />
-                        <circle cx={c.x} cy={c.y} r="5.5" fill="#0d9488" stroke="#ffffff" strokeWidth="2.5" />
+                        <circle cx={c.x} cy={c.classAvgY} r="5" fill="#6366f1" stroke="#ffffff" strokeWidth="2" />
+                        <circle cx={c.x} cy={c.y} r="11" fill="#0d9488" opacity="0.22" />
+                        <circle cx={c.x} cy={c.y} r="6.5" fill="#0d9488" stroke="#ffffff" strokeWidth="2.5" />
 
-                        <g transform={`translate(${c.x - 38}, ${c.y - 32})`}>
-                          <rect width="76" height="22" rx="7" className="fill-slate-900 dark:fill-slate-100 shadow-sm" />
-                          <text x="38" y="15" textAnchor="middle" className="text-[11px] font-mono font-bold fill-teal-300 dark:fill-teal-700">
+                        <g transform={`translate(${c.x - 44}, ${c.y - 36})`}>
+                          <rect width="88" height="26" rx="8" className="fill-slate-900 dark:fill-slate-100 shadow-sm" />
+                          <text x="44" y="17" textAnchor="middle" className="text-[12.5px] font-mono font-extrabold fill-teal-300 dark:fill-teal-700">
                             {c.score.toFixed(1)} Poin
                           </text>
                         </g>
 
-                        <text x={c.x} y="280" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-800 dark:fill-slate-200">
+                        <text x={c.x} y="284" textAnchor="middle" className="text-[14px] font-mono font-extrabold fill-slate-800 dark:fill-slate-200">
                           {c.code}
                         </text>
-                        <text x={c.x} y="295" textAnchor="middle" className="text-[10px] font-sans fill-slate-400">
+                        <text x={c.x} y="302" textAnchor="middle" className="text-[11.5px] font-sans fill-slate-400">
                           {c.date}
                         </text>
                       </g>
@@ -278,17 +284,17 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                         />
                         <text
                           x={axisItem.x}
-                          y="280"
+                          y="284"
                           textAnchor="middle"
-                          className="text-[12px] font-mono font-bold fill-slate-800 dark:fill-slate-200"
+                          className="text-[14px] font-mono font-extrabold fill-slate-800 dark:fill-slate-200"
                         >
                           {axisItem.code}
                         </text>
                         <text
                           x={axisItem.x}
-                          y="295"
+                          y="302"
                           textAnchor="middle"
-                          className="text-[10px] font-sans fill-slate-400"
+                          className="text-[11.5px] font-sans fill-slate-400"
                         >
                           {axisItem.date}
                         </text>
@@ -319,7 +325,7 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                             <polyline
                               fill="none"
                               stroke={strokeColor}
-                              strokeWidth="3.5"
+                              strokeWidth="4"
                               strokeLinecap="round"
                               strokeLinejoin="round"
                               points={polyStr}
@@ -331,20 +337,20 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                               x2="940"
                               y2={validPoints[0].y}
                               stroke={strokeColor}
-                              strokeWidth="3"
+                              strokeWidth="3.5"
                               strokeLinecap="round"
-                              opacity="0.85"
+                              opacity="0.9"
                             />
                           ) : null}
                           {validPoints.map((c, i) => {
-                            const labelOffsetY = sIdx % 2 === 0 ? -28 : 14;
+                            const labelOffsetY = sIdx % 2 === 0 ? -32 : 14;
                             return (
                               <g key={i}>
-                                <circle cx={c.x} cy={c.y} r="8" fill={strokeColor} opacity="0.18" />
-                                <circle cx={c.x} cy={c.y} r="5.5" fill={strokeColor} stroke="#ffffff" strokeWidth="2" />
-                                <g transform={`translate(${c.x - 36}, ${c.y + labelOffsetY})`}>
-                                  <rect width="72" height="19" rx="6" fill={strokeColor} opacity="0.92" />
-                                  <text x="36" y="13" textAnchor="middle" className="text-[10px] font-mono font-bold fill-white">
+                                <circle cx={c.x} cy={c.y} r="10" fill={strokeColor} opacity="0.2" />
+                                <circle cx={c.x} cy={c.y} r="6" fill={strokeColor} stroke="#ffffff" strokeWidth="2" />
+                                <g transform={`translate(${c.x - 42}, ${c.y + labelOffsetY})`}>
+                                  <rect width="84" height="22" rx="6" fill={strokeColor} opacity="0.94" />
+                                  <text x="42" y="15" textAnchor="middle" className="text-[11.5px] font-mono font-extrabold fill-white">
                                     {row.subject.code}: {c.score.toFixed(1)}
                                   </text>
                                 </g>

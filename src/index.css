@@ -29,3 +29,27 @@
                     radial-gradient(at 85% 90%, rgba(245, 158, 11, 0.08) 0px, transparent 50%),
                     radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.6) 0px, transparent 100%) !important;
 }
+
+/* Mobile-friendly horizontal chart & table scroll containers */
+.mobile-chart-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.mobile-chart-scroll::-webkit-scrollbar {
+  height: 5px;
+}
+
+.mobile-chart-scroll::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: 9999px;
+}
+
+.mobile-chart-scroll::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.45);
+  border-radius: 9999px;
+}
+

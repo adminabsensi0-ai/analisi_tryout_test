@@ -1645,7 +1645,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   }, [simScoringType, simMaxScore, simCorrectScore, simWrongScore, simUnansweredScore, simAllowNegativeMarking, simGFormScore, simAnswers, simWeights]);
 
   return (
-    <div className="min-h-screen bg-slate-100/70 dark:bg-[#081116] dark-canvas-guru flex flex-col md:flex-row text-slate-800 dark:text-slate-100 font-sans transition-colors">
+    <div className="h-full overflow-hidden bg-slate-100/70 dark:bg-[#081116] dark-canvas-guru flex flex-col md:flex-row text-slate-800 dark:text-slate-100 font-sans transition-colors">
       {/* Toast Notification */}
       {successToast && (
         <div className="fixed top-5 right-5 z-50 bg-slate-900 dark:bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-lg shadow-xl text-xs flex items-center space-x-2 animate-fade-in">
@@ -1669,24 +1669,33 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       )}
 
       {/* Mobile Top Header */}
-      <div className="md:hidden bg-white dark:bg-slate-950 text-slate-900 dark:text-white p-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 shadow-xs">
+      <div className="md:hidden bg-white dark:bg-slate-950 text-slate-900 dark:text-white px-4 py-3 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 shadow-xs shrink-0 z-30">
         <div className="flex items-center space-x-2">
           <BookOpen className="w-5 h-5 text-teal-600 dark:text-teal-400" />
           <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">APLIKASI GURU</span>
         </div>
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 cursor-pointer"
+          className="p-2 rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
         >
-          {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          <span>{sidebarOpen ? 'Tutup' : 'Menu'}</span>
         </button>
       </div>
+
+      {/* Mobile Sidebar Backdrop Overlay */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="md:hidden fixed inset-0 bg-slate-950/50 backdrop-blur-[1px] z-20"
+        />
+      )}
 
       {/* Sidebar Navigation - Professional Teal Teacher Theme */}
       <aside
         className={`${
-          sidebarOpen ? 'block fixed inset-x-0 top-16 z-30 bg-slate-50 dark:bg-[#071116] max-h-[calc(100vh-4rem)] overflow-y-auto' : 'hidden'
-        } md:block md:sticky md:top-16 md:h-[calc(100vh-4rem)] md:overflow-y-auto w-full md:w-64 bg-slate-50/95 dark:bg-[#071116] text-slate-700 dark:text-slate-300 border-r border-slate-200/90 dark:border-slate-800/80 flex-shrink-0 z-20 transition-colors shadow-xs dark:shadow-none`}
+          sidebarOpen ? 'block fixed inset-x-0 top-[7rem] z-30 bg-slate-50 dark:bg-[#071116] max-h-[calc(100vh-7rem)] overflow-y-auto shadow-2xl border-b border-slate-200 dark:border-slate-800' : 'hidden'
+        } md:block md:sticky md:top-0 md:h-full md:overflow-y-auto w-full md:w-64 bg-slate-50/95 dark:bg-[#071116] text-slate-700 dark:text-slate-300 border-r border-slate-200/90 dark:border-slate-800/80 flex-shrink-0 z-20 transition-colors shadow-xs dark:shadow-none`}
       >
         <div className="p-4 border-b border-slate-200 dark:border-slate-800/80 flex items-center space-x-3 bg-white dark:bg-slate-950/60">
           <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-teal-600/20">
@@ -5057,7 +5066,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           const lastX = studentCoords[studentCoords.length - 1].x;
 
                           return (
-                            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
+                            <div className="p-3.5 sm:p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border-b border-slate-100 dark:border-slate-800 pb-3">
                                 <div>
                                   <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -5081,9 +5090,15 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </div>
                               </div>
 
-                              <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+                              {/* Mobile Swipe Hint */}
+                              <div className="flex sm:hidden items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-200/70 dark:border-slate-800/70">
+                                <span>💡 Geser grafik ke samping untuk melihat detail tiap TO</span>
+                                <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">↔ Geser</span>
+                              </div>
+
+                              <div className="relative w-full mobile-chart-scroll bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 shadow-2xs">
                                 <svg
-                                  className="w-full h-auto overflow-visible"
+                                  className="min-w-[600px] sm:min-w-0 w-full h-auto min-h-[215px] sm:min-h-[250px] overflow-visible"
                                   viewBox="0 0 1000 300"
                                   preserveAspectRatio="xMidYMid meet"
                                 >
@@ -5096,16 +5111,16 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                                   {/* Horizontal Grid Lines */}
                                   <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
+                                  <text x="38" y="45" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">100</text>
 
                                   <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
+                                  <text x="38" y="155" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">50</text>
 
                                   <line x1="50" y1="205" x2="950" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="35" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
+                                  <text x="38" y="210" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">25</text>
 
                                   <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
-                                  <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+                                  <text x="38" y="265" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">0</text>
 
                                   {/* Class Average Line */}
                                   {pts.length > 1 ? (
@@ -5151,7 +5166,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     <polyline
                                       fill="none"
                                       stroke="#4f46e5"
-                                      strokeWidth="4"
+                                      strokeWidth="4.5"
                                       strokeLinecap="round"
                                       strokeLinejoin="round"
                                       points={studentPoly}
@@ -5161,18 +5176,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   {/* Student Nodes with Score Badges */}
                                   {studentCoords.map((pt, i) => (
                                     <g key={i}>
-                                      <rect x={pt.x - 30} y={pt.y - 34} width="60" height="22" rx="8" className="fill-slate-900 dark:fill-slate-100" />
-                                      <text x={pt.x} y={pt.y - 19} textAnchor="middle" className="text-[11px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700">
+                                      <rect x={pt.x - 37} y={pt.y - 38} width="74" height="25" rx="8" className="fill-slate-900 dark:fill-slate-100" />
+                                      <text x={pt.x} y={pt.y - 21} textAnchor="middle" className="text-[13px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700">
                                         {pt.score.toFixed(1)}
                                       </text>
-                                      <circle cx={pt.x} cy={pt.y} r="10" fill="#4f46e5" opacity="0.25" />
-                                      <circle cx={pt.x} cy={pt.y} r="5.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
+                                      <circle cx={pt.x} cy={pt.y} r="12" fill="#4f46e5" opacity="0.25" />
+                                      <circle cx={pt.x} cy={pt.y} r="6.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
                                     </g>
                                   ))}
 
                                   {/* X-Axis Labels */}
                                   {studentCoords.map((pt, i) => (
-                                    <text key={i} x={pt.x} y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">
+                                    <text key={i} x={pt.x} y="295" textAnchor="middle" className="text-[14px] font-mono font-bold fill-slate-600 dark:fill-slate-300">
                                       {pt.tryoutCode}
                                     </text>
                                   ))}
@@ -5476,7 +5491,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           const kkmY = getY(75).toFixed(1);
 
                           return (
-                            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
+                            <div className="p-3.5 sm:p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border-b border-slate-100 dark:border-slate-800 pb-3">
                                 <div>
                                   <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -5487,7 +5502,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     Pergerakan nilai rerata rombel lintas tahapan Try Out terhadap ambang KKM (75.0).
                                   </p>
                                 </div>
-                                <div className="flex items-center gap-3 text-[11px] font-mono shrink-0">
+                                <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono shrink-0">
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block"></span>
                                     <span className="text-slate-700 dark:text-slate-300 font-medium">Rerata Rombel</span>
@@ -5499,9 +5514,15 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </div>
                               </div>
 
-                              <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+                              {/* Mobile Swipe Hint */}
+                              <div className="flex sm:hidden items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-200/70 dark:border-slate-800/70">
+                                <span>💡 Geser grafik ke samping untuk melihat detail tiap TO</span>
+                                <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">↔ Geser</span>
+                              </div>
+
+                              <div className="relative w-full mobile-chart-scroll bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 shadow-2xs">
                                 <svg
-                                  className="w-full h-auto overflow-visible"
+                                  className="min-w-[600px] sm:min-w-0 w-full h-auto min-h-[215px] sm:min-h-[250px] overflow-visible"
                                   viewBox="0 0 1000 300"
                                   preserveAspectRatio="xMidYMid meet"
                                 >
@@ -5514,22 +5535,22 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                                   {/* Horizontal Grid Lines */}
                                   <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
+                                  <text x="38" y="45" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">100</text>
 
                                   {/* KKM Line */}
                                   <line x1="50" y1={kkmY} x2="950" y2={kkmY} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
-                                  <text x="35" y={Number(kkmY) + 4} textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">75</text>
-                                  <rect x="810" y={Number(kkmY) - 12} width="130" height="22" rx="6" fill="#f59e0b" />
-                                  <text x="875" y={Number(kkmY) + 3} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">Garis KKM (75.0 Poin)</text>
+                                  <text x="38" y={Number(kkmY) + 4} textAnchor="end" className="text-[13px] fill-amber-500 font-mono font-bold">75</text>
+                                  <rect x="795" y={Number(kkmY) - 13} width="145" height="24" rx="6" fill="#f59e0b" />
+                                  <text x="867" y={Number(kkmY) + 3} textAnchor="middle" className="text-[11px] font-mono font-bold fill-slate-950">Garis KKM (75.0 Poin)</text>
 
                                   <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
+                                  <text x="38" y="155" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">50</text>
 
                                   <line x1="50" y1="205" x2="950" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="35" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
+                                  <text x="38" y="210" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">25</text>
 
                                   <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
-                                  <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+                                  <text x="38" y="265" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">0</text>
 
                                   {/* Gradient Fill */}
                                   {pts.length > 1 ? (
@@ -5552,7 +5573,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     <polyline
                                       fill="none"
                                       stroke="#4f46e5"
-                                      strokeWidth="4"
+                                      strokeWidth="4.5"
                                       strokeLinecap="round"
                                       strokeLinejoin="round"
                                       points={svgPolyPoints}
@@ -5562,13 +5583,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   {/* Nodes with Score Badges */}
                                   {viewCoords.map((pt, i) => (
                                     <g key={i}>
-                                      <rect x={pt.x - 30} y={pt.y - 34} width="60" height="22" rx="8" className="fill-slate-900 dark:fill-slate-100" />
-                                      <text x={pt.x} y={pt.y - 19} textAnchor="middle" className="text-[11px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700">
+                                      <rect x={pt.x - 37} y={pt.y - 38} width="74" height="25" rx="8" className="fill-slate-900 dark:fill-slate-100" />
+                                      <text x={pt.x} y={pt.y - 21} textAnchor="middle" className="text-[13px] font-mono font-bold fill-indigo-400 dark:fill-indigo-700">
                                         {pt.averageScore.toFixed(1)}
                                       </text>
-                                      <circle cx={pt.x} cy={pt.y} r="10" fill="#4f46e5" opacity="0.25" />
-                                      <circle cx={pt.x} cy={pt.y} r="5.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
-                                      <text x={pt.x} y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">
+                                      <circle cx={pt.x} cy={pt.y} r="12" fill="#4f46e5" opacity="0.25" />
+                                      <circle cx={pt.x} cy={pt.y} r="6.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2.5" />
+                                      <text x={pt.x} y="295" textAnchor="middle" className="text-[14px] font-mono font-bold fill-slate-600 dark:fill-slate-300">
                                         {pt.tryoutCode}
                                       </text>
                                     </g>
@@ -5670,7 +5691,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           const kkmY = getY(75).toFixed(1);
 
                           return (
-                            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
+                            <div className="p-3.5 sm:p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs transition-colors">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs border-b border-slate-100 dark:border-slate-800 pb-3">
                                 <div>
                                   <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -5681,7 +5702,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     Fluktuasi nilai rata-rata mata pelajaran per sesi Try Out terhadap standar kelulusan KKM (75.0).
                                   </p>
                                 </div>
-                                <div className="flex items-center gap-3 text-[11px] font-mono shrink-0">
+                                <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono shrink-0">
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-2.5 h-2.5 rounded-full bg-teal-600 inline-block"></span>
                                     <span className="text-slate-700 dark:text-slate-300 font-medium">Rata-Rata Mapel</span>
@@ -5693,9 +5714,15 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </div>
                               </div>
 
-                              <div className="relative w-full overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs">
+                              {/* Mobile Swipe Hint */}
+                              <div className="flex sm:hidden items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-200/70 dark:border-slate-800/70">
+                                <span>💡 Geser grafik ke samping untuk melihat detail tiap TO</span>
+                                <span className="font-mono font-bold text-teal-600 dark:text-teal-400">↔ Geser</span>
+                              </div>
+
+                              <div className="relative w-full mobile-chart-scroll bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 shadow-2xs">
                                 <svg
-                                  className="w-full h-auto overflow-visible"
+                                  className="min-w-[600px] sm:min-w-0 w-full h-auto min-h-[215px] sm:min-h-[250px] overflow-visible"
                                   viewBox="0 0 1000 300"
                                   preserveAspectRatio="xMidYMid meet"
                                 >
@@ -5708,46 +5735,61 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                                   {/* Horizontal Grid Lines */}
                                   <line x1="50" y1="40" x2="950" y2="40" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="35" y="44" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">100</text>
+                                  <text x="38" y="45" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">100</text>
 
                                   {/* KKM Line */}
                                   <line x1="50" y1={kkmY} x2="950" y2={kkmY} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 4" />
-                                  <text x="35" y={Number(kkmY) + 4} textAnchor="end" className="text-[11px] fill-amber-500 font-mono font-bold">75</text>
-                                  <rect x="810" y={Number(kkmY) - 12} width="130" height="22" rx="6" fill="#f59e0b" />
-                                  <text x="875" y={Number(kkmY) + 3} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-950">Garis KKM (75.0 Poin)</text>
+                                  <text x="38" y={Number(kkmY) + 4} textAnchor="end" className="text-[13px] fill-amber-500 font-mono font-bold">75</text>
+                                  <rect x="795" y={Number(kkmY) - 13} width="145" height="24" rx="6" fill="#f59e0b" />
+                                  <text x="867" y={Number(kkmY) + 3} textAnchor="middle" className="text-[11px] font-mono font-bold fill-slate-950">Garis KKM (75.0 Poin)</text>
 
                                   <line x1="50" y1="150" x2="950" y2="150" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="35" y="154" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">50</text>
+                                  <text x="38" y="155" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">50</text>
 
                                   <line x1="50" y1="205" x2="950" y2="205" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="1" />
-                                  <text x="35" y="209" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">25</text>
+                                  <text x="38" y="210" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">25</text>
 
                                   <line x1="50" y1="260" x2="950" y2="260" stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="1.5" />
-                                  <text x="35" y="264" textAnchor="end" className="text-[11px] fill-slate-400 font-mono">0</text>
+                                  <text x="38" y="265" textAnchor="end" className="text-[13px] fill-slate-400 font-mono font-semibold">0</text>
 
                                   {/* Gradient Fill */}
-                                  <polygon points={`${firstX},260 ${svgPolyPoints} ${lastX},260`} fill="url(#subjectAreaGrad)" />
+                                  {points.length > 1 ? (
+                                    <polygon points={`${firstX},260 ${svgPolyPoints} ${lastX},260`} fill="url(#subjectAreaGrad)" />
+                                  ) : (
+                                    <line
+                                      x1="50"
+                                      y1={viewCoords[0]?.y || 150}
+                                      x2="950"
+                                      y2={viewCoords[0]?.y || 150}
+                                      stroke="#0d9488"
+                                      strokeWidth="3"
+                                      strokeOpacity="0.8"
+                                      strokeDasharray="4 4"
+                                    />
+                                  )}
 
                                   {/* Connecting Line */}
-                                  <polyline
-                                    fill="none"
-                                    stroke="#0d9488"
-                                    strokeWidth="4"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    points={svgPolyPoints}
-                                  />
+                                  {points.length > 1 && (
+                                    <polyline
+                                      fill="none"
+                                      stroke="#0d9488"
+                                      strokeWidth="4.5"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      points={svgPolyPoints}
+                                    />
+                                  )}
 
                                   {/* Nodes with Score Badges */}
                                   {viewCoords.map((pt, i) => (
                                     <g key={i}>
-                                      <rect x={pt.x - 30} y={pt.y - 34} width="60" height="22" rx="8" className="fill-slate-900 dark:fill-slate-100" />
-                                      <text x={pt.x} y={pt.y - 19} textAnchor="middle" className="text-[11px] font-mono font-bold fill-teal-400 dark:fill-teal-700">
+                                      <rect x={pt.x - 37} y={pt.y - 38} width="74" height="25" rx="8" className="fill-slate-900 dark:fill-slate-100" />
+                                      <text x={pt.x} y={pt.y - 21} textAnchor="middle" className="text-[13px] font-mono font-bold fill-teal-400 dark:fill-teal-700">
                                         {pt.averageScore.toFixed(1)}
                                       </text>
-                                      <circle cx={pt.x} cy={pt.y} r="10" fill="#0d9488" opacity="0.25" />
-                                      <circle cx={pt.x} cy={pt.y} r="5.5" fill="#0d9488" stroke="#ffffff" strokeWidth="2.5" />
-                                      <text x={pt.x} y="295" textAnchor="middle" className="text-[12px] font-mono font-bold fill-slate-500">
+                                      <circle cx={pt.x} cy={pt.y} r="12" fill="#0d9488" opacity="0.25" />
+                                      <circle cx={pt.x} cy={pt.y} r="6.5" fill="#0d9488" stroke="#ffffff" strokeWidth="2.5" />
+                                      <text x={pt.x} y="295" textAnchor="middle" className="text-[14px] font-mono font-bold fill-slate-600 dark:fill-slate-300">
                                         {pt.tryoutCode}
                                       </text>
                                     </g>
@@ -6031,11 +6073,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </div>
 
                                 {/* Histogram Distribution */}
-                                <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                                <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
                                   <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
                                     Distribusi Predikat Skor Siswa ({activeSubjectObj?.name})
                                   </h3>
-                                  <div className="grid grid-cols-4 gap-2 text-center pt-2 text-xs font-mono">
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center pt-2 text-xs font-mono">
                                     <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl space-y-1">
                                       <div className="text-[10px] text-rose-700 dark:text-rose-300 font-bold">&lt; 60 (Kurang)</div>
                                       <div className="text-xl font-black text-rose-700 dark:text-rose-300">{countKurang}</div>
