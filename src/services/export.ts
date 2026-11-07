@@ -1162,8 +1162,6 @@ export class ExportService {
     const qaItems = questionAnalysisList || AnalyticsService.calculateQuestionItemAnalysis(questions, answers, scores, materials || [], competencies || []);
     const qaRows = qaItems.map(item => ({
       'Kode Unik Soal': (item as any).questionCode || item.uniqueCode || item.questionId,
-      'Pokok Bahasan / Materi': item.materialTitle,
-      'Kompetensi Dasar': item.competencyCode,
       'Total Responden': item.totalRespondents,
       'Jumlah Benar': item.correctCount,
       'Jumlah Salah': item.incorrectCount,
@@ -1183,28 +1181,7 @@ export class ExportService {
     const sheet4 = XLSX.utils.json_to_sheet(qaRows);
     XLSX.utils.book_append_sheet(workbook, sheet4, 'Question Analysis');
 
-    // SHEET 5: COMPETENCY ANALYSIS
-    const compRows = (materials || []).map((m, idx) => {
-      const relatedQuestions = questions.filter(q => q.materialId === m.id);
-      const qIds = new Set(relatedQuestions.map(q => q.id));
-      const matAnswers = answers.filter(a => qIds.has(a.questionId));
-      const correctMat = matAnswers.filter(a => a.isCorrect).length;
-      const totalMat = matAnswers.length || 1;
-      const mastery = Math.round((correctMat / totalMat) * 100);
-
-      return {
-        'No': idx + 1,
-        'Kode Materi': m.code,
-        'Judul Pokok Bahasan': m.title,
-        'Tingkat Penguasaan Kelas (%)': mastery,
-        'Status Ketuntasan KKM': mastery >= 75 ? 'TUNTAS' : 'PERLU_REMEDIAL',
-        'Jumlah Butir Soal Terkait': relatedQuestions.length,
-      };
-    });
-    const sheet5 = XLSX.utils.json_to_sheet(compRows);
-    XLSX.utils.book_append_sheet(workbook, sheet5, 'Competency Analysis');
-
-    // SHEET 6: CLASS ANALYSIS
+    // SHEET 5: CLASS ANALYSIS
     const classRows = classes.map(cls => {
       const classStudents = students.filter(s => s.classId === cls.id);
       const classStudentIds = new Set(classStudents.map(s => s.id));

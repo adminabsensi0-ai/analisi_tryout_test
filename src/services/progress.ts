@@ -2,6 +2,11 @@ import {
   Student, ClassRoom, Tryout, Score, Question, Answer, Subject,
   Material, Competency, AcademicYear, User
 } from '../types/database';
+import {
+  getFriendlyTryoutStageLabel,
+  getStageOrderNumber,
+  resolveTryoutGroup,
+} from '../utils/tryoutGroupUtils';
 
 export interface ProgressPoint {
   tryoutId: string;
@@ -114,8 +119,18 @@ export interface ProgressTestSuiteResult {
 }
 
 export class ProgressService {
-  private static sortTryoutsChronologically(tryouts: Tryout[]): Tryout[] {
+  private static sortTryoutsChronologically(
+    tryouts: Tryout[],
+    allTryouts?: Tryout[],
+    examPackages?: any[]
+  ): Tryout[] {
     return [...(tryouts || [])].filter(t => t && t.id).sort((a, b) => {
+      const grpA = resolveTryoutGroup(a, allTryouts || tryouts, examPackages);
+      const grpB = resolveTryoutGroup(b, allTryouts || tryouts, examPackages);
+      const ordA = getStageOrderNumber(grpA);
+      const ordB = getStageOrderNumber(grpB);
+      if (ordA !== ordB) return ordA - ordB;
+
       const dateA = a.startDate || a.id || '';
       const dateB = b.startDate || b.id || '';
       return dateA.localeCompare(dateB);
@@ -178,7 +193,7 @@ export class ProgressService {
     if (relevantTryouts.length === 0) {
       relevantTryouts = baselineTryouts;
     }
-    const tryouts = this.sortTryoutsChronologically(relevantTryouts);
+    const tryouts = this.sortTryoutsChronologically(relevantTryouts, dbState.tryouts, dbState.examPackages);
 
     const targetScore = student.targetScore || 80;
 
@@ -205,7 +220,7 @@ export class ProgressService {
 
       return {
         tryoutId: to.id,
-        tryoutCode: to.code,
+        tryoutCode: getFriendlyTryoutStageLabel(to, dbState.tryouts, dbState.examPackages),
         tryoutTitle: to.title,
         date: to.startDate ? new Date(to.startDate).toLocaleDateString('id-ID') : '2026',
         score,
@@ -335,7 +350,7 @@ export class ProgressService {
     if (relevantTryouts.length === 0) {
       relevantTryouts = baselineTryouts;
     }
-    const tryouts = this.sortTryoutsChronologically(relevantTryouts);
+    const tryouts = this.sortTryoutsChronologically(relevantTryouts, dbState.tryouts, dbState.examPackages);
 
     const points = tryouts.map((to: Tryout) => {
       const scores = dbState.scores.filter((s: Score) => s.tryoutId === to.id && classStudentIds.has(s.studentId));
@@ -364,7 +379,7 @@ export class ProgressService {
 
       return {
         tryoutId: to.id,
-        tryoutCode: to.code,
+        tryoutCode: getFriendlyTryoutStageLabel(to, dbState.tryouts, dbState.examPackages),
         tryoutTitle: to.title,
         averageScore: Math.round(avg * 10) / 10,
         medianScore: Math.round(median * 10) / 10,
@@ -494,7 +509,7 @@ export class ProgressService {
     if (candidateTryouts.length === 0) {
       candidateTryouts = subjectTryouts;
     }
-    const tryouts = this.sortTryoutsChronologically(candidateTryouts);
+    const tryouts = this.sortTryoutsChronologically(candidateTryouts, dbState.tryouts, dbState.examPackages);
 
     const points = tryouts.map((to: Tryout) => {
       // 1. Ambil dari tabel scores (Google Form import & Admin entry)
@@ -552,7 +567,7 @@ export class ProgressService {
 
       return {
         tryoutId: to.id,
-        tryoutCode: to.code || to.title,
+        tryoutCode: getFriendlyTryoutStageLabel(to, dbState.tryouts, dbState.examPackages),
         averageScore: avg,
         passingRatePct: passing,
       };

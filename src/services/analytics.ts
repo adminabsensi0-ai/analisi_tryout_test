@@ -3,6 +3,11 @@ import {
   ClassRoom, Tryout, AcademicYear, Answer, Response, Subject,
   ScoringStatus, QuestionInformativeStatus, QuestionDiscriminationStatus
 } from '../types/database';
+import {
+  getFriendlyTryoutStageLabel,
+  getStageOrderNumber,
+  resolveTryoutGroup,
+} from '../utils/tryoutGroupUtils';
 
 export interface DistractorOptionStat {
   count: number;
@@ -678,7 +683,12 @@ export class AnalyticsService {
     const tryoutIdsWithScore = new Set(studentAllScores.map(s => s.tryoutId));
     const progress: ProgressTrendPoint[] = tryouts
       .filter(t => tryoutIdsWithScore.has(t.id) || t.id === tryout.id || t.status === 'COMPLETED')
-      .sort((a, b) => (a.startDate || a.code || '').localeCompare(b.startDate || b.code || ''))
+      .sort((a, b) => {
+        const ordA = getStageOrderNumber(resolveTryoutGroup(a, tryouts));
+        const ordB = getStageOrderNumber(resolveTryoutGroup(b, tryouts));
+        if (ordA !== ordB) return ordA - ordB;
+        return (a.startDate || a.code || '').localeCompare(b.startDate || b.code || '');
+      })
       .map(t => {
         const sc = studentAllScores.find(s => s.tryoutId === t.id);
         const classScores = scores.filter(s => s.tryoutId === t.id);
@@ -688,7 +698,7 @@ export class AnalyticsService {
 
         return {
           tryoutId: t.id,
-          tryoutCode: t.code,
+          tryoutCode: getFriendlyTryoutStageLabel(t, tryouts),
           tryoutTitle: t.title,
           score: sc ? sc.calculatedScore : (t.id === tryout.id ? calculatedScore : 0),
           targetScore,
@@ -707,7 +717,7 @@ export class AnalyticsService {
       gradeLevel: classRoom?.gradeLevel || 'XII',
       tryoutId: tryout.id,
       tryoutTitle: tryout.title,
-      tryoutCode: tryout.code,
+      tryoutCode: getFriendlyTryoutStageLabel(tryout, tryouts),
       score: {
         calculatedScore: effectiveScore,
         rawScoreGForm,

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { QuestionAnalysisResult } from '../services/analytics';
 import { Tryout, Subject, ClassRoom } from '../types/database';
+import { getFriendlyTryoutStageLabel } from '../utils/tryoutGroupUtils';
 
 interface ItemAnalysisVisualizerProps {
   items: QuestionAnalysisResult[];
@@ -153,8 +154,7 @@ export const ItemAnalysisVisualizer: React.FC<ItemAnalysisVisualizerProps> = ({
         const query = searchQuery.toLowerCase();
         const matchCode = item.uniqueCode?.toLowerCase().includes(query);
         const matchText = item.questionText?.toLowerCase().includes(query);
-        const matchMat = item.materialTitle?.toLowerCase().includes(query);
-        if (!matchCode && !matchText && !matchMat) return false;
+        if (!matchCode && !matchText) return false;
       }
 
       // Tab filter
@@ -283,7 +283,7 @@ export const ItemAnalysisVisualizer: React.FC<ItemAnalysisVisualizerProps> = ({
               >
                 {tryouts.map(t => (
                   <option key={t.id} value={t.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
-                    {t.code ? `${t.code} - ${t.title}` : t.title}
+                    [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                   </option>
                 ))}
               </select>
@@ -1002,12 +1002,6 @@ export const ItemAnalysisVisualizer: React.FC<ItemAnalysisVisualizerProps> = ({
                           <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                             Kunci: <strong className="text-emerald-600 dark:text-emerald-400 font-mono text-xs">{item.correctAnswer}</strong>
                           </span>
-
-                          {item.materialTitle && (
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-xs">
-                              • {item.materialTitle}
-                            </span>
-                          )}
 
                           {isProblematic && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 flex items-center gap-1">

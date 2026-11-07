@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Question, Subject, Explanation, Tryout } from '../../types/database';
 import { QuestionPerformanceDetail } from '../../services/analytics';
+import { getFriendlyTryoutStageLabel } from '../../utils/tryoutGroupUtils';
 
 interface StudentQuestionSheetProps {
   questions: Question[];
@@ -66,8 +67,7 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
         const query = searchQuery.toLowerCase();
         const matchCode = qp.uniqueCode.toLowerCase().includes(query);
         const matchText = qp.questionText.toLowerCase().includes(query);
-        const matchMat = qp.materialTitle.toLowerCase().includes(query);
-        if (!matchCode && !matchText && !matchMat) return false;
+        if (!matchCode && !matchText) return false;
       }
 
       return true;
@@ -135,7 +135,7 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
                 >
                   {tryouts.map(t => (
                     <option key={t.id} value={t.id} className="text-slate-900 dark:text-slate-100">
-                      {t.code} — {t.title}
+                      [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                     </option>
                   ))}
                 </select>
@@ -427,7 +427,6 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
                         {subjectObj.name} ({subjectObj.code})
                       </span>
                     )}
-                    <span className="text-xs text-slate-400">• {qp.materialTitle}</span>
                   </div>
 
                   {/* Status Outcome Badge */}

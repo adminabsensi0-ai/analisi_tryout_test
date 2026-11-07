@@ -35,8 +35,13 @@ import { ExternalTryoutUploadModal } from '../components/guru/ExternalTryoutUplo
 import {
   TRYOUT_STAGE_OPTIONS,
   TRYOUT_GROUP_NONE,
+  ADD_NEW_TO_STAGE_VALUE,
   resolveTryoutGroup,
   getStageSubjectCoverage,
+  getDynamicTryoutStageOptions,
+  addNextTryoutStageOption,
+  getMaxTryoutStage,
+  getFriendlyTryoutStageLabel,
 } from '../utils/tryoutGroupUtils';
 
 interface GuruAppPageProps {
@@ -211,6 +216,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     return `TO-${currentYear}-${String(nextNum).padStart(2, '0')}`;
   };
 
+  const [customMaxToStage, setCustomMaxToStage] = useState<number>(() => getMaxTryoutStage());
+
   const handleOpenAddTryout = () => {
     setEditingTryoutId(null);
     setNewToCode(getNextAvailableTryoutCode());
@@ -220,10 +227,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setNewToPackageId('');
     const defaultSubjId = permittedSubjects[0]?.id || subjects[0]?.id || '';
     setNewToSubjectId(defaultSubjId);
-    // Rekomendasikan siklus TO berikutnya untuk mapel ini
+    // Rekomendasikan siklus TO berikutnya untuk mapel ini (maksimal sesuai siklus aktif saat ini, default TO 1 - TO 3)
     const allGlobalTo = dbService.getTryouts();
+    const allPkgs = dbService.getExamPackages();
+    const maxStage = getMaxTryoutStage(allGlobalTo, allPkgs, customMaxToStage);
     const sameSubjectToCount = allGlobalTo.filter(t => t.subjectId === defaultSubjId).length;
-    setNewToGroup(`TO ${Math.min(12, sameSubjectToCount + 1)}`);
+    setNewToGroup(`TO ${Math.min(maxStage, sameSubjectToCount + 1)}`);
     setNewToEntryMode('INTERNAL');
     setNewToTargetClasses([]);
     // Default mapel eksternal disesuaikan persis dengan wewenang mapel guru
@@ -2378,6 +2387,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               Pastikan setiap siklus TO berisi pasangan mata pelajaran yang sesuai (misal <strong>MAT</strong> &amp; <strong>BIN</strong>) agar grafik progres siswa &amp; wali kelas akurat.
                             </p>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const { newMaxStage, newStageLabel } = addNextTryoutStageOption(allGlobalTo, allPkgs, customMaxToStage);
+                              setCustomMaxToStage(newMaxStage);
+                              triggerToast(`Siklus '${newStageLabel}' berhasil ditambahkan ke daftar pilihan Try Out!`);
+                            }}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Tambah Siklus (TO {getMaxTryoutStage(allGlobalTo, allPkgs, customMaxToStage) + 1})</span>
+                          </button>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
@@ -2519,19 +2540,28 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             <select
                               value={currentGroup}
                               onChange={e => {
-                                const selectedGroup = e.target.value;
-                                dbService.updateTryout(to.id, { tryoutGroup: selectedGroup }, currentUser);
+                                const selectedVal = e.target.value;
+                                if (selectedVal === ADD_NEW_TO_STAGE_VALUE) {
+                                  const { newMaxStage, newStageLabel } = addNextTryoutStageOption(allGlobalTo, allPkgs, customMaxToStage);
+                                  setCustomMaxToStage(newMaxStage);
+                                  dbService.updateTryout(to.id, { tryoutGroup: newStageLabel }, currentUser);
+                                  setTryouts(dbService.getTryoutsForTeacher(currentUser));
+                                  refreshData();
+                                  triggerToast(`Siklus baru '${newStageLabel}' berhasil ditambahkan dan ditetapkan pada paket '${to.title}'.`);
+                                  return;
+                                }
+                                dbService.updateTryout(to.id, { tryoutGroup: selectedVal }, currentUser);
                                 setTryouts(dbService.getTryoutsForTeacher(currentUser));
                                 refreshData();
                                 triggerToast(
                                   `Paket '${to.title}' berhasil ditetapkan ke kelompok grafik '${
-                                    selectedGroup === TRYOUT_GROUP_NONE ? 'Latihan Mandiri (Non-TO)' : selectedGroup
+                                    selectedVal === TRYOUT_GROUP_NONE ? 'Latihan Mandiri (Non-TO)' : selectedVal
                                   }'.`
                                 );
                               }}
                               className="bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-indigo-700 dark:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                             >
-                              {TRYOUT_STAGE_OPTIONS.map(opt => {
+                              {getDynamicTryoutStageOptions(allGlobalTo, allPkgs, customMaxToStage).map(opt => {
                                 const cov = getStageSubjectCoverage(opt, allGlobalTo, subjects, allPkgs);
                                 const filledCodes = cov.filledSubjects.map(f => f.subject.code).join('+');
                                 return (
@@ -2540,6 +2570,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   </option>
                                 );
                               })}
+                              <option value={ADD_NEW_TO_STAGE_VALUE}>
+                                ➕ Tambah Siklus TO Baru (TO {getMaxTryoutStage(allGlobalTo, allPkgs, customMaxToStage) + 1})...
+                              </option>
                               <option value={TRYOUT_GROUP_NONE}>Non-TO (Tidak Masuk Grafik)</option>
                             </select>
                           </div>
@@ -2980,7 +3013,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             <th className="py-2.5 px-3 w-12 text-center">No</th>
                             <th className="py-2.5 px-3 w-36">Kode Unik / ID</th>
                             <th className="py-2.5 px-3">Teks Butir Soal</th>
-                            <th className="py-2.5 px-3 w-32">Materi Pembelajaran</th>
                             <th className="py-2.5 px-3 w-36 text-center">Kunci Jawaban</th>
                             <th className="py-2.5 px-3 w-20 text-center">Status</th>
                             <th className="py-2.5 px-3 w-24 text-center">Aksi</th>
@@ -2989,13 +3021,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                           {filteredQuestions.length === 0 ? (
                             <tr>
-                              <td colSpan={8} className="py-12 text-center text-slate-400 dark:text-slate-500 italic">
+                              <td colSpan={7} className="py-12 text-center text-slate-400 dark:text-slate-500 italic">
                                 Belum ada butir soal pada kriteria filter ini. Klik &quot;Tambah Butir Soal&quot; untuk menambahkan.
                               </td>
                             </tr>
                           ) : (
                             filteredQuestions.map((q, idx) => {
-                              const mat = materials.find(m => m.id === q.materialId);
                               const isChecked = selectedQuestionIds.includes(q.id);
                               // Deteksi apakah soal dari Google Form (opsi dummy) atau manual
                               const isGFormQuestion = q.options?.every(opt => opt.text === `Pilihan ${opt.key}` || opt.text === '' || opt.text === '-');
@@ -3032,9 +3063,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                         {soalTipe} · Respon Form
                                       </span>
                                     )}
-                                  </td>
-                                  <td className="py-3 px-3 text-[11px] font-semibold text-slate-800 dark:text-slate-200">
-                                    {mat?.title || 'Umum'}
                                   </td>
                                   <td className="py-3 px-3 text-center">
                                     {keyAns ? (
@@ -3090,7 +3118,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         </div>
                       ) : (
                         filteredQuestions.map((q, idx) => {
-                          const mat = materials.find(m => m.id === q.materialId);
+                          const subjObj = subjects.find(s => s.id === q.subjectId);
                           const isGFormQuestion = q.options?.every(opt => opt.text === `Pilihan ${opt.key}` || opt.text === '' || opt.text === '-');
                           const keyAns = q.correctAnswer || '';
                           const soalTipe = keyAns.includes(',') ? 'PG Kompleks' : ['BENAR','SALAH','TRUE','FALSE'].includes(keyAns.toUpperCase()) ? 'Benar/Salah' : 'Pilihan Ganda';
@@ -3136,7 +3164,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               {/* Meta and touch-friendly actions */}
                               <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-500 dark:text-slate-400">
                                 <div className="text-[11px]">
-                                  <span>{mat?.title || 'Umum'}</span>
+                                  <span>{subjObj?.name || 'Mata Pelajaran'}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <button
@@ -3166,109 +3194,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 </div>
                 );
               })()}
-
-              {/* TAB 4: MATERIALS WITH GOOGLE FORM INTEGRATION */}
-              {activeTab === 'MATERIALS' && (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-                    <div>
-                      <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                        <span>Materi Pembelajaran &amp; Integrasi Google Form</span>
-                      </h2>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Kelola materi pengajaran dan tautkan soal/kuis Google Form langsung untuk diakses oleh siswa.
-                      </p>
-                    </div>
-                    <button
-                      onClick={handleOpenAddMaterial}
-                      className="bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center space-x-1.5 shadow-sm cursor-pointer shrink-0"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>+ Tambah Materi / Form Baru</span>
-                    </button>
-                  </div>
-
-                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider">
-                        <tr>
-                          <th className="py-3 px-3.5 w-20">Kode</th>
-                          <th className="py-3 px-3.5">Judul Materi</th>
-                          <th className="py-3 px-3.5">Deskripsi Ruang Lingkup</th>
-                          <th className="py-3 px-3.5 w-32">Mata Pelajaran</th>
-                          <th className="py-3 px-3.5 w-52 text-center">Integrasi Google Form</th>
-                          <th className="py-3 px-3.5 w-24 text-center">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {materials.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="py-10 text-center text-slate-400 dark:text-slate-500 italic">
-                              Belum ada materi pembelajaran untuk mata pelajaran ini.
-                            </td>
-                          </tr>
-                        ) : (
-                          materials.map(m => {
-                            const subj = subjects.find(s => s.id === m.subjectId);
-                            const hasForm = !!m.googleFormUrl && m.googleFormUrl.trim().length > 0;
-                            return (
-                              <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                <td className="py-3 px-3.5 font-mono font-bold text-teal-700 dark:text-teal-400">{m.code}</td>
-                                <td className="py-3 px-3.5 font-bold text-slate-900 dark:text-slate-100">{m.title}</td>
-                                <td className="py-3 px-3.5 text-slate-600 dark:text-slate-300 leading-relaxed">{m.description}</td>
-                                <td className="py-3 px-3.5 text-slate-700 dark:text-slate-300 font-medium">{subj?.name || m.subjectId}</td>
-                                <td className="py-3 px-3.5 text-center">
-                                  {hasForm ? (
-                                    <div className="flex flex-col items-center gap-1">
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800">
-                                        <CheckCircle className="w-3 h-3 text-teal-600" />
-                                        <span>Google Form Terhubung</span>
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setPreviewGoogleFormUrl(m.googleFormUrl!)}
-                                        className="text-[11px] text-teal-700 dark:text-teal-300 hover:underline font-bold flex items-center gap-1 cursor-pointer"
-                                      >
-                                        <ExternalLink className="w-3 h-3" />
-                                        <span>Buka Google Form</span>
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenEditMaterial(m)}
-                                      className="px-2.5 py-1 text-[10px] font-mono font-bold text-slate-500 hover:text-teal-700 bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 border border-slate-200 dark:border-slate-700 rounded-lg transition-colors cursor-pointer"
-                                    >
-                                      + Tautkan Google Form
-                                    </button>
-                                  )}
-                                </td>
-                                <td className="py-3 px-3.5 text-center space-x-1">
-                                  <button
-                                    onClick={() => handleOpenEditMaterial(m)}
-                                    className="p-1.5 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                                    title="Edit Materi & Form"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteMaterial(m.id, m.title, m.code)}
-                                    className="p-1.5 text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                                    title="Hapus Materi"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
 
               {/* TAB 6: STUDENTS */}
               {activeTab === 'STUDENTS' && (
@@ -3491,7 +3416,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               <option value="ALL">Semua Try Out</option>
                               {tryouts.map(t => (
                                 <option key={t.id} value={t.id}>
-                                  {t.code} — {t.title}
+                                  [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                                 </option>
                               ))}
                             </select>
@@ -3921,7 +3846,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               >
                                 {tryouts.map(t => (
                                   <option key={t.id} value={t.id}>
-                                    {t.code} — {t.title}
+                                    [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                                   </option>
                                 ))}
                               </select>
@@ -3959,7 +3884,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            Analisis komprehensif performa rombel: rata-rata, median, sebaran, penguasaan KD, dan butir soal.
+                            Analisis komprehensif performa rombel: rata-rata, median, sebaran skor, dan analisis butir soal.
                           </p>
                         </div>
 
@@ -3973,7 +3898,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             >
                               {tryouts.map(t => (
                                 <option key={t.id} value={t.id}>
-                                  {t.code} — {t.title}
+                                  [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                                 </option>
                               ))}
                             </select>
@@ -4274,65 +4199,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </table>
                         </div>
                       </div>
-
-                      {/* Pemetaan Penguasaan Kompetensi Dasar / Materi Kelas */}
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-colors">
-                        <div className="p-3 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center space-x-1.5">
-                            <BookOpen className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                            <span>Penguasaan Kompetensi Dasar (KD) Rombel ({classAnalyticsData.className})</span>
-                          </div>
-                          <span className="text-xs text-slate-500 dark:text-slate-400">
-                            {classAnalyticsData.competencyAnalysis?.length || 0} KD Terpetakan
-                          </span>
-                        </div>
-
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold">
-                              <tr>
-                                <th className="py-2.5 px-3 w-12 text-center">No</th>
-                                <th className="py-2.5 px-3 w-24">Kode KD</th>
-                                <th className="py-2.5 px-3">Pernyataan Kompetensi</th>
-                                <th className="py-2.5 px-3 w-40">Materi Pokok</th>
-                                <th className="py-2.5 px-3 w-32 text-center">Penguasaan Rata-Rata</th>
-                                <th className="py-2.5 px-3 w-28 text-center">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {(!classAnalyticsData.competencyAnalysis || classAnalyticsData.competencyAnalysis.length === 0) ? (
-                                <tr>
-                                  <td colSpan={6} className="py-6 text-center text-slate-400 italic">
-                                    Belum ada pemetaan kompetensi dasar untuk paket Try Out ini.
-                                  </td>
-                                </tr>
-                              ) : (
-                                classAnalyticsData.competencyAnalysis.map((comp, idx) => (
-                                  <tr key={comp.competencyId || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                                    <td className="py-2.5 px-3 text-center font-bold text-slate-500">{idx + 1}</td>
-                                    <td className="py-2.5 px-3 font-mono font-bold text-indigo-700 dark:text-indigo-400">{comp.code}</td>
-                                    <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">{comp.statement}</td>
-                                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400">{comp.materialTitle}</td>
-                                    <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700 dark:text-indigo-400">
-                                      {comp.classAverageMastery}%
-                                    </td>
-                                    <td className="py-2.5 px-3 text-center">
-                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                                        comp.status === 'SANGAT_BAIK' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' :
-                                        comp.status === 'BAIK' ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300' :
-                                        comp.status === 'CUKUP' ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300' :
-                                        'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
-                                      }`}>
-                                        {comp.status}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
                     </div>
                   )}
                     </>
@@ -4412,7 +4278,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             >
                               {tryouts.map(t => (
                                 <option key={t.id} value={t.id}>
-                                  {t.code} — {t.title}
+                                  [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                                 </option>
                               ))}
                             </select>
@@ -4513,50 +4379,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 </span>
                                 <span className="text-[10px] text-amber-300">Belum diisi siswa</span>
                               </div>
-                            </div>
-                          </div>
-
-                          {/* Pemetaan Materi Kuat & Lemah Siswa */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-xl space-y-2">
-                              <h4 className="text-xs font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5 uppercase tracking-wider font-mono">
-                                <CheckCircle className="w-4 h-4 text-emerald-600" />
-                                <span>Materi Yang Dikuasai (Kuat)</span>
-                              </h4>
-                              {studentAnalyticsData.strongMaterials.length > 0 ? (
-                                <div className="space-y-1.5 text-xs">
-                                  {studentAnalyticsData.strongMaterials.map(m => (
-                                    <div key={m.materialId} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
-                                      <span className="font-semibold text-slate-800 dark:text-slate-200">{m.title}</span>
-                                      <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{m.masteryPercentage}% ({m.correct}/{m.total} Soal)</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-xs text-slate-500 italic py-2">Belum ada materi mencapai ambang ketuntasan kuat (≥ 75%).</div>
-                              )}
-                            </div>
-
-                            <div className="p-4 bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/60 rounded-xl space-y-2">
-                              <h4 className="text-xs font-bold text-rose-900 dark:text-rose-300 flex items-center gap-1.5 uppercase tracking-wider font-mono">
-                                <AlertTriangle className="w-4 h-4 text-rose-600" />
-                                <span>Materi Perlu Remedial (Lemah)</span>
-                              </h4>
-                              {studentAnalyticsData.weakMaterials.length > 0 ? (
-                                <div className="space-y-1.5 text-xs">
-                                  {studentAnalyticsData.weakMaterials.map(m => (
-                                    <div key={m.materialId} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 shadow-2xs">
-                                      <span className="font-semibold text-slate-800 dark:text-slate-200">{m.title}</span>
-                                      <span className="font-mono font-bold text-rose-600 dark:text-rose-400">{m.masteryPercentage}% ({m.correct}/{m.total} Soal)</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium py-2 flex items-center gap-1.5">
-                                  <CheckCircle className="w-3.5 h-3.5" />
-                                  <span>Seluruh materi telah memenuhi standar penguasaan siswa.</span>
-                                </div>
-                              )}
                             </div>
                           </div>
 
@@ -4756,7 +4578,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           >
                             {tryouts.map(t => (
                               <option key={t.id} value={t.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
-                                {t.code} — {t.title}
+                                [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                               </option>
                             ))}
                           </select>
@@ -5008,7 +4830,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             Grafik &amp; Pelacakan Perkembangan Hasil Ujian
                           </h2>
                           <span className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full font-mono">
-                            Multi-Try Out (TO-1 s/d TO-4)
+                            Multi-Try Out (TO 1 s/d TO {getMaxTryoutStage(tryouts, dbService.getExamPackages(), customMaxToStage)})
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -5366,7 +5188,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                 <div>
                                   <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                                     <FileCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                                    <span>Analisis Butir Nomor Soal Siswa — {activeTO ? `${activeTO.code} (${activeTO.title})` : 'Try Out Terpilih'}</span>
+                                    <span>Analisis Butir Nomor Soal Siswa — {activeTO ? `${getFriendlyTryoutStageLabel(activeTO, tryouts)} (${activeTO.title})` : 'Try Out Terpilih'}</span>
                                   </h4>
                                   <p className="text-[11px] text-slate-500 mt-0.5">
                                     Pemetaan butir nomor soal yang berhasil dijawab benar versus nomor soal yang salah/perlu remedial.
@@ -5881,9 +5703,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             return scores.some(s => s.tryoutId === to.id && s.subjectScores && s.subjectScores[activeSubId] !== undefined);
                           });
 
-                          const stageList = ['ALL', ...relevantTos.map(t => t.code || t.title)];
+                          const stageList = ['ALL', ...Array.from(new Set(relevantTos.map(t => getFriendlyTryoutStageLabel(t, tryouts))))];
                           const currentStage = stageList.includes(selectedPassFailTO) ? selectedPassFailTO : 'ALL';
-                          const selectedToObj = currentStage === 'ALL' ? null : relevantTos.find(t => (t.code || t.title) === currentStage);
+                          const selectedToObj = currentStage === 'ALL' ? null : relevantTos.find(t => getFriendlyTryoutStageLabel(t, tryouts) === currentStage);
 
                           // Helper: Dapatkan nilai riil siswa untuk mata pelajaran ini
                           const getScoreForStudent = (studentId: string, tryoutId?: string): number | null => {
@@ -6246,7 +6068,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             className="bg-transparent font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer"
                           >
                             {tryouts.map(t => (
-                              <option key={t.id} value={t.id} className="dark:bg-slate-800 dark:text-white">{t.code} — {t.title}</option>
+                              <option key={t.id} value={t.id} className="dark:bg-slate-800 dark:text-white">[{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}</option>
                             ))}
                           </select>
                         </div>
@@ -6819,7 +6641,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           className="bg-transparent font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer"
                         >
                           {tryouts.map(t => (
-                            <option key={t.id} value={t.id} className="dark:bg-slate-800 dark:text-white">{t.code} — {t.title}</option>
+                            <option key={t.id} value={t.id} className="dark:bg-slate-800 dark:text-white">[{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}</option>
                           ))}
                         </select>
                       </div>
@@ -6893,7 +6715,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                   {/* REPORT EXPORT CARDS */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    {/* Card 1: Multi-Sheet Excel Workbook (7 Sheets) */}
+                    {/* Card 1: Multi-Sheet Excel Workbook (6 Sheets) */}
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-3 flex flex-col justify-between transition-colors">
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
@@ -6901,12 +6723,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             <FileSpreadsheet className="w-5 h-5" />
                           </div>
                           <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded font-mono">
-                            7 SHEETS XLSX
+                            6 SHEETS XLSX
                           </span>
                         </div>
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Workbook Laporan Lengkap Excel (7 Sheets)</h3>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">Workbook Laporan Lengkap Excel (6 Sheets)</h3>
                         <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                          Buku kerja XLSX berisi 7 lembar kerja terstruktur: Ringkasan Nilai, Nilai Siswa, Matriks Jawaban, Analisis Butir Soal, Analisis Kompetensi, Analisis Kelas, dan Perkembangan Siswa.
+                          Buku kerja XLSX berisi 6 lembar kerja terstruktur: Ringkasan Nilai, Nilai Siswa, Matriks Jawaban, Analisis Butir Soal, Analisis Kelas, dan Perkembangan Siswa.
                         </p>
                       </div>
 
@@ -6932,12 +6754,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             materials,
                             competencies
                           );
-                          triggerToast(`Workbook Excel 7-Sheet ('${fileName}') berhasil diunduh.`);
+                          triggerToast(`Workbook Excel 6-Sheet ('${fileName}') berhasil diunduh.`);
                         }}
                         className="w-full bg-emerald-700 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center space-x-1.5 shadow-sm"
                       >
                         <Download className="w-4 h-4" />
-                        <span>Unduh Workbook Excel (7 Sheets)</span>
+                        <span>Unduh Workbook Excel (6 Sheets)</span>
                       </button>
                     </div>
 
@@ -6954,7 +6776,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         </div>
                         <h3 className="text-sm font-bold text-slate-900 dark:text-white">Laporan Analitik PDF Kelas & Analisis Butir Soal</h3>
                         <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                          Dokumen PDF resmi berisi statistik ringkasan kelas, peringkat nilai siswa, analisis penguasaan materi, tingkat kesukaran & daya pembeda soal, serta pilihan pengecoh.
+                          Dokumen PDF resmi berisi statistik ringkasan kelas, peringkat nilai siswa, tingkat kesukaran & daya pembeda soal, serta distribusi pilihan pengecoh.
                         </p>
                       </div>
 
@@ -7002,7 +6824,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         </div>
                         <h3 className="text-sm font-bold text-slate-900 dark:text-white">Rapor Individual Hasil Try Out Siswa</h3>
                         <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                          Rapor PDF resmi siswa berisi skor akhir, verifikasi GForm, analisis penguasaan KD, rekomendasi materi lemah, dan tren perkembangan TO-1 &rarr; TO-3.
+                          Rapor PDF resmi siswa berisi skor akhir, verifikasi GForm, rincian capaian per butir soal, dan tren perkembangan TO 1 &rarr; TO 3.
                         </p>
                       </div>
 
@@ -7069,7 +6891,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           >
                             {tryouts.map(t => (
                               <option key={t.id} value={t.id} className="dark:bg-slate-800 dark:text-white">
-                                {t.code} — {t.title}
+                                [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                               </option>
                             ))}
                           </select>
@@ -8502,7 +8324,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
             <form onSubmit={handleSaveQuestion} className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="p-5 flex-1 min-h-0 overflow-y-auto space-y-4 text-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Mata Pelajaran</label>
                     <select
@@ -8515,24 +8337,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           {s.name} ({s.code})
                         </option>
                       ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Materi</label>
-                    <select
-                      value={qMaterialId}
-                      onChange={e => setQMaterialId(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 focus:ring-1 focus:ring-indigo-500"
-                    >
-                      <option value="">Pilih Materi...</option>
-                      {materials
-                        .filter(m => m.subjectId === qSubjectId)
-                        .map(m => (
-                          <option key={m.id} value={m.id}>
-                            {m.code} — {m.title}
-                          </option>
-                        ))}
                     </select>
                   </div>
                 </div>
@@ -8637,199 +8441,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow cursor-pointer transition-colors"
                 >
                   Simpan Butir Soal
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* MATERIAL MODAL (CREATE / EDIT) */}
-      {/* ------------------------------------------------------------- */}
-      {showMaterialModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                {editingMaterialId ? 'Edit Materi Pembelajaran' : 'Tambah Materi Pembelajaran'}
-              </h3>
-              <button onClick={() => setShowMaterialModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveMaterial} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="p-5 flex-1 min-h-0 overflow-y-auto space-y-3.5 text-xs">
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Mata Pelajaran</label>
-                  <select
-                    value={matSubjectId}
-                    onChange={e => setMatSubjectId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
-                  >
-                    {permittedSubjects.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Kode Materi</label>
-                  <input
-                    type="text"
-                    value={matCode}
-                    onChange={e => setMatCode(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Judul Materi</label>
-                  <input
-                    type="text"
-                    value={matTitle}
-                    onChange={e => setMatTitle(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Deskripsi Ruang Lingkup</label>
-                  <textarea
-                    rows={3}
-                    value={matDescription}
-                    onChange={e => setMatDescription(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
-                  />
-                </div>
-
-                {/* GOOGLE FORM INTEGRATION FIELD */}
-                <div className="p-3 bg-teal-50/80 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 rounded-xl space-y-2">
-                  <label className="block text-teal-900 dark:text-teal-200 font-bold text-xs flex items-center gap-1.5">
-                    <ExternalLink className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                    <span>Tautan / Link Google Form (Soal &amp; Kuis Materi)</span>
-                  </label>
-                  <input
-                    type="url"
-                    value={matGoogleFormUrl}
-                    onChange={e => setMatGoogleFormUrl(e.target.value)}
-                    placeholder="https://docs.google.com/forms/d/e/.../viewform"
-                    className="w-full bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 text-xs font-mono"
-                  />
-                  <p className="text-[11px] text-teal-700 dark:text-teal-300 leading-tight">
-                    Siswa akan mengerjakan soal/kuis materi ini secara terhubung melalui Google Form.
-                  </p>
-                </div>
-              </div>
-
-              {/* Sticky Footer */}
-              <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex justify-end space-x-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowMaterialModal(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold rounded-lg shadow-xs cursor-pointer transition-colors"
-                >
-                  Simpan Materi &amp; Form
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* COMPETENCY MODAL (CREATE / EDIT) */}
-      {/* ------------------------------------------------------------- */}
-      {showCompetencyModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between shrink-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                {editingCompetencyId ? 'Edit Kompetensi / Indikator' : 'Tambah Kompetensi Baru'}
-              </h3>
-              <button onClick={() => setShowCompetencyModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveCompetency} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="p-5 flex-1 min-h-0 overflow-y-auto space-y-3.5 text-xs">
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Mata Pelajaran</label>
-                  <select
-                    value={compSubjectId}
-                    onChange={e => setCompSubjectId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
-                  >
-                    {permittedSubjects.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Kode Kompetensi / KD</label>
-                  <input
-                    type="text"
-                    value={compCode}
-                    onChange={e => setCompCode(e.target.value)}
-                    placeholder="Contoh: KD-3.1"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2 font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Pernyataan Kompetensi / Indikator</label>
-                  <textarea
-                    rows={3}
-                    value={compStatement}
-                    onChange={e => setCompStatement(e.target.value)}
-                    placeholder="Tuliskan indikator pencapaian kompetensi atau materi uji..."
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Tingkat Kelas (Opsional)</label>
-                  <input
-                    type="text"
-                    value={compGrade}
-                    onChange={e => setCompGrade(e.target.value)}
-                    placeholder="Contoh: Kelas 10 / X"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded p-2"
-                  />
-                </div>
-              </div>
-
-              {/* Sticky Footer */}
-              <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex justify-end space-x-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowCompetencyModal(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold rounded-lg shadow-xs cursor-pointer transition-colors"
-                >
-                  Simpan Kompetensi
                 </button>
               </div>
             </form>
@@ -8982,7 +8593,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 font-medium"
                   >
                     {tryouts.map(t => (
-                      <option key={t.id} value={t.id}>{t.code} — {t.title}</option>
+                      <option key={t.id} value={t.id}>[{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}</option>
                     ))}
                   </select>
                 </div>
@@ -9328,16 +8939,49 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
               {/* ── Kelompok Siklus Try Out (Kontrol Grafik Progres TO 1, TO 2, TO 3) ── */}
               <div className="p-3.5 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/80 rounded-2xl space-y-2">
-                <label className="block text-indigo-950 dark:text-indigo-200 font-bold text-xs flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                  <span>Kelompok Siklus Try Out (Grafik TO 1, TO 2, TO 3, dst.) <span className="text-rose-500">*</span></span>
-                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="block text-indigo-950 dark:text-indigo-200 font-bold text-xs flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Kelompok Siklus Try Out (Grafik TO 1, TO 2, TO 3, dst.) <span className="text-rose-500">*</span></span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allGlobalTo = dbService.getTryouts();
+                      const allPkgs = dbService.getExamPackages();
+                      const { newMaxStage, newStageLabel } = addNextTryoutStageOption(allGlobalTo, allPkgs, customMaxToStage);
+                      setCustomMaxToStage(newMaxStage);
+                      setNewToGroup(newStageLabel);
+                      triggerToast(`Siklus '${newStageLabel}' berhasil ditambahkan dan dipilih!`);
+                    }}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-mono font-bold rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Tambah TO {getMaxTryoutStage(dbService.getTryouts(), dbService.getExamPackages(), Math.max(customMaxToStage, parseInt((newToGroup || '').replace(/\D/g, ''), 10) || 3)) + 1}</span>
+                  </button>
+                </div>
                 <select
                   value={newToGroup}
-                  onChange={e => setNewToGroup(e.target.value)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === ADD_NEW_TO_STAGE_VALUE) {
+                      const allGlobalTo = dbService.getTryouts();
+                      const allPkgs = dbService.getExamPackages();
+                      const { newMaxStage, newStageLabel } = addNextTryoutStageOption(allGlobalTo, allPkgs, customMaxToStage);
+                      setCustomMaxToStage(newMaxStage);
+                      setNewToGroup(newStageLabel);
+                      triggerToast(`Siklus '${newStageLabel}' berhasil ditambahkan dan dipilih!`);
+                      return;
+                    }
+                    setNewToGroup(val);
+                  }}
                   className="w-full bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-xl p-2.5 text-slate-900 dark:text-white font-mono font-bold text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition cursor-pointer"
                 >
-                  {TRYOUT_STAGE_OPTIONS.map(opt => {
+                  {getDynamicTryoutStageOptions(
+                    dbService.getTryouts(),
+                    dbService.getExamPackages(),
+                    Math.max(customMaxToStage, parseInt((newToGroup || '').replace(/\D/g, ''), 10) || 3)
+                  ).map(opt => {
                     const cov = getStageSubjectCoverage(
                       opt,
                       dbService.getTryouts().filter(t => t.id !== editingTryoutId),
@@ -9351,10 +8995,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       </option>
                     );
                   })}
-                  <option value={TRYOUT_GROUP_NONE}>Latihan Mandiri (Tidak Masuk Grafik Siklus TO)</option>
+                  <option value={ADD_NEW_TO_STAGE_VALUE}>
+                    ➕ Tambah Siklus TO Baru (TO {getMaxTryoutStage(dbService.getTryouts(), dbService.getExamPackages(), Math.max(customMaxToStage, parseInt((newToGroup || '').replace(/\D/g, ''), 10) || 3)) + 1})...
+                  </option>
+                  <option value={TRYOUT_GROUP_NONE}>Non-TO (Latihan Mandiri / Tidak Masuk Grafik Siklus TO)</option>
                 </select>
                 <p className="text-[10px] text-indigo-800/80 dark:text-indigo-300/80 leading-relaxed">
-                  Pilih siklus TO yang sama dengan guru mata pelajaran pasangan (misal <strong>MAT</strong> dan <strong>BIN</strong> sama-sama memilih <strong>TO 1</strong>) agar nilai digabungkan secara presisi pada grafik progres Siswa &amp; Wali Kelas.
+                  Daftar siklus ditampilkan hingga TO {getMaxTryoutStage(dbService.getTryouts(), dbService.getExamPackages(), Math.max(customMaxToStage, parseInt((newToGroup || '').replace(/\D/g, ''), 10) || 3))}. Klik <strong>+ Tambah TO</strong> atau pilih menu tambah di dalam dropdown jika ingin membuka siklus Try Out berikutnya.
                 </p>
               </div>
 

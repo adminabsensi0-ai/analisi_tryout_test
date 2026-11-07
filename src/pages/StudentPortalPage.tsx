@@ -18,6 +18,7 @@ import {
   getStudentStageCompositeScore,
   getStudentStageSubjectScore,
   TryoutStageGroup,
+  getFriendlyTryoutStageLabel,
 } from '../utils/tryoutGroupUtils';
 
 export const StudentPortalPage: React.FC = () => {
@@ -915,7 +916,7 @@ export const StudentPortalPage: React.FC = () => {
                     >
                       {tryouts.map(t => (
                         <option key={t.id} value={t.id}>
-                          {t.code} — {t.title}
+                          [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                         </option>
                       ))}
                     </select>
@@ -1110,7 +1111,7 @@ export const StudentPortalPage: React.FC = () => {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
                     <div>
                       <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">
-                        Capaian Nilai Per Mata Pelajaran ({activeTryout?.code})
+                        Capaian Nilai Per Mata Pelajaran ({activeTryout ? getFriendlyTryoutStageLabel(activeTryout, tryouts) : 'Try Out'})
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5">
                         Rincian skor perolehan dan ketuntasan KKM siswa untuk masing-masing bidang studi pada try out ini.
@@ -1180,7 +1181,7 @@ export const StudentPortalPage: React.FC = () => {
                         {academicPredicate.label}
                       </div>
                       <span className="text-[11px] text-slate-500 mt-1 block">
-                        Evaluasi paket {activeTryout?.code}
+                        Evaluasi paket {activeTryout ? getFriendlyTryoutStageLabel(activeTryout, tryouts) : 'Try Out'}
                       </span>
                     </div>
                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl font-mono border ${academicPredicate.badge}`}>
@@ -1404,7 +1405,7 @@ export const StudentPortalPage: React.FC = () => {
                     setSelectedVideoUrl(url);
                     setSelectedVideoTitle(title);
                   }}
-                  activeTryoutCode={activeTryout?.code || 'Try Out'}
+                  activeTryoutCode={activeTryout ? `${getFriendlyTryoutStageLabel(activeTryout, tryouts)} (${activeTryout.title})` : 'Try Out'}
                   tryouts={tryouts}
                   selectedTryoutId={selectedTryoutId}
                   onSelectTryout={id => setSelectedTryoutId(id)}
@@ -1500,7 +1501,7 @@ export const StudentPortalPage: React.FC = () => {
                           </h3>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                             Tautan dokumen PDF dan video pembahasan YouTube resmi untuk evaluasi mandiri paket{' '}
-                            <strong className="text-indigo-600 dark:text-indigo-400 font-mono font-bold">{activeTryout?.code || 'Try Out'}</strong>.
+                            <strong className="text-indigo-600 dark:text-indigo-400 font-mono font-bold">{activeTryout ? getFriendlyTryoutStageLabel(activeTryout, tryouts) : 'Try Out'}</strong>.
                           </p>
                         </div>
                       </div>
@@ -1516,7 +1517,7 @@ export const StudentPortalPage: React.FC = () => {
                           >
                             {tryouts.map(t => (
                               <option key={t.id} value={t.id} className="text-slate-900 dark:text-slate-100">
-                                {t.code} — {t.title}
+                                [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}
                               </option>
                             ))}
                           </select>

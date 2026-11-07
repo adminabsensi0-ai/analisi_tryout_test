@@ -1,21 +1,128 @@
 import { Tryout, Subject, Score, Answer, Question, ExamPackage } from '../types/database';
 
+export const DEFAULT_MAX_TRYOUT_STAGE = 3;
+export const CUSTOM_MAX_STAGE_STORAGE_KEY = 'sman2_custom_max_to_stage';
+export const ADD_NEW_TO_STAGE_VALUE = '__ADD_NEW_TO_STAGE__';
+
 export const TRYOUT_STAGE_OPTIONS: string[] = [
   'TO 1',
   'TO 2',
   'TO 3',
-  'TO 4',
-  'TO 5',
-  'TO 6',
-  'TO 7',
-  'TO 8',
-  'TO 9',
-  'TO 10',
-  'TO 11',
-  'TO 12',
 ];
 
 export const TRYOUT_GROUP_NONE = 'NONE';
+
+/**
+ * Menghitung batas nomor urut Siklus TO tertinggi yang aktif (minimal DEFAULT_MAX_TRYOUT_STAGE = 3).
+ * Memeriksa localStorage serta seluruh data Tryout dan ExamPackage yang sudah ada.
+ */
+export function getMaxTryoutStage(
+  allTryouts?: Tryout[],
+  examPackages?: ExamPackage[],
+  extraStage?: string | number | null
+): number {
+  let maxStage = DEFAULT_MAX_TRYOUT_STAGE;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem(CUSTOM_MAX_STAGE_STORAGE_KEY);
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed > maxStage && parsed <= 30) {
+          maxStage = parsed;
+        }
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  if (typeof extraStage === 'number' && extraStage > maxStage && extraStage <= 30) {
+    maxStage = extraStage;
+  } else if (typeof extraStage === 'string') {
+    const order = getStageOrderNumber(extraStage);
+    if (order < 999 && order > maxStage && order <= 30) {
+      maxStage = order;
+    }
+  }
+
+  if (allTryouts && allTryouts.length > 0) {
+    allTryouts.forEach(t => {
+      const grp = t.tryoutGroup || extractTryoutStageFromText(t.title) || extractTryoutStageFromText(t.code);
+      if (grp && grp !== TRYOUT_GROUP_NONE) {
+        const order = getStageOrderNumber(grp);
+        if (order < 999 && order > maxStage && order <= 30) {
+          maxStage = order;
+        }
+      }
+    });
+  }
+
+  if (examPackages && examPackages.length > 0) {
+    examPackages.forEach(pkg => {
+      const grp = extractTryoutStageFromText(pkg.title) || extractTryoutStageFromText(pkg.code);
+      if (grp) {
+        const order = getStageOrderNumber(grp);
+        if (order < 999 && order > maxStage && order <= 30) {
+          maxStage = order;
+        }
+      }
+    });
+  }
+
+  return maxStage;
+}
+
+/**
+ * Menghasilkan daftar opsi siklus Try Out dinamis: ['TO 1', 'TO 2', ..., 'TO N']
+ */
+export function getDynamicTryoutStageOptions(
+  allTryouts?: Tryout[],
+  examPackages?: ExamPackage[],
+  extraStage?: string | number | null
+): string[] {
+  const maxStage = getMaxTryoutStage(allTryouts, examPackages, extraStage);
+  const options: string[] = [];
+  for (let i = 1; i <= maxStage; i++) {
+    options.push(`TO ${i}`);
+  }
+  return options;
+}
+
+/**
+ * Menambahkan 1 siklus TO baru di atas batas saat ini dan menyimpannya ke localStorage.
+ */
+export function addNextTryoutStageOption(
+  allTryouts?: Tryout[],
+  examPackages?: ExamPackage[],
+  currentCustomMax?: number
+): { newMaxStage: number; newStageLabel: string } {
+  const currentMax = getMaxTryoutStage(allTryouts, examPackages, currentCustomMax);
+  const newMaxStage = Math.min(30, currentMax + 1);
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(CUSTOM_MAX_STAGE_STORAGE_KEY, String(newMaxStage));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+  return {
+    newMaxStage,
+    newStageLabel: `TO ${newMaxStage}`,
+  };
+}
+
+/**
+ * Mengembalikan label siklus yang ramah pengguna ("TO 1", "TO 2", "TO 3", atau "Non-TO") untuk sebuah Tryout.
+ */
+export function getFriendlyTryoutStageLabel(
+  tryout: Tryout,
+  allTryouts?: Tryout[],
+  examPackages?: ExamPackage[]
+): string {
+  const grp = resolveTryoutGroup(tryout, allTryouts, examPackages);
+  return grp === TRYOUT_GROUP_NONE ? 'Non-TO' : grp;
+}
 
 export interface TryoutStageGroup {
   /** Kunci kelompok standar, misal: "TO 1", "TO 2", "TO 3" */
