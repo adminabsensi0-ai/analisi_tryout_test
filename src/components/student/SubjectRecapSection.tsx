@@ -214,14 +214,18 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                     {points.length > 1 && <polygon points={polyGonStr} fill="url(#subjChartGrad2)" />}
 
                     {/* Class Avg */}
-                    {points.length > 1 && (
+                    {points.length > 1 ? (
                       <polyline fill="none" stroke="#6366f1" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.8" points={classAvgStr} />
-                    )}
+                    ) : points.length === 1 ? (
+                      <line x1="60" y1={points[0].classAvgY} x2="940" y2={points[0].classAvgY} stroke="#6366f1" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.8" />
+                    ) : null}
 
                     {/* Student Score Line */}
-                    {points.length > 1 && (
+                    {points.length > 1 ? (
                       <polyline fill="none" stroke="#0d9488" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={polyStr} />
-                    )}
+                    ) : points.length === 1 ? (
+                      <line x1="60" y1={points[0].y} x2="940" y2={points[0].y} stroke="#0d9488" strokeWidth="3.5" strokeLinecap="round" opacity="0.85" />
+                    ) : null}
 
                     {/* Nodes */}
                     {points.map((c, i) => (
@@ -311,7 +315,7 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
 
                       return (
                         <g key={row.subject.id}>
-                          {validPoints.length > 1 && (
+                          {validPoints.length > 1 ? (
                             <polyline
                               fill="none"
                               stroke={strokeColor}
@@ -320,7 +324,18 @@ export const SubjectRecapSection: React.FC<SubjectRecapSectionProps> = ({
                               strokeLinejoin="round"
                               points={polyStr}
                             />
-                          )}
+                          ) : validPoints.length === 1 ? (
+                            <line
+                              x1="60"
+                              y1={validPoints[0].y}
+                              x2="940"
+                              y2={validPoints[0].y}
+                              stroke={strokeColor}
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              opacity="0.85"
+                            />
+                          ) : null}
                           {validPoints.map((c, i) => {
                             const labelOffsetY = sIdx % 2 === 0 ? -28 : 14;
                             return (

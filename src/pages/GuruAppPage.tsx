@@ -231,7 +231,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     const allGlobalTo = dbService.getTryouts();
     const allPkgs = dbService.getExamPackages();
     const maxStage = getMaxTryoutStage(allGlobalTo, allPkgs, customMaxToStage);
-    const sameSubjectToCount = allGlobalTo.filter(t => t.subjectId === defaultSubjId).length;
+    const sameSubjectToCount = allGlobalTo.filter(
+      t =>
+        t.subjectId === defaultSubjId ||
+        (t.isExternal && Array.isArray(t.externalSubjectIds) && t.externalSubjectIds.includes(defaultSubjId))
+    ).length;
     setNewToGroup(`TO ${Math.min(maxStage, sameSubjectToCount + 1)}`);
     setNewToEntryMode('INTERNAL');
     setNewToTargetClasses([]);

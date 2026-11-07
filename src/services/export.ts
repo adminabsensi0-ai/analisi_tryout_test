@@ -252,67 +252,76 @@ export class ExportService {
         : 75.0);
 
     // Otomatis susun subjectRecapData & progressHistory lintas siklus TO jika belum dikirim
-    const stageGroups = buildTryoutStageGroups(dbState.tryouts, dbState.examPackages).filter(stage =>
-      stage.tryouts.some(t => allScores.some(s => s.studentId === student.id && s.tryoutId === t.id))
+    const allStageGroups = buildTryoutStageGroups(dbState.tryouts, dbState.examPackages);
+    const stageGroupsWithStudentData = allStageGroups.filter(stage =>
+      stage.tryouts.some(t =>
+        allScores.some(s => s.studentId === student.id && s.tryoutId === t.id) ||
+        allAnswers.some(a => a.studentId === student.id && a.tryoutId === t.id)
+      )
     );
+    const stageGroups = allStageGroups.length > 0 ? allStageGroups : stageGroupsWithStudentData;
+
+    const computedSubjectRecap = activeSubjects
+      .map(subj => {
+        const toScores: Record<string, number> = {};
+        const validVals: number[] = [];
+        stageGroups.forEach(stage => {
+          const scVal = getStudentStageSubjectScore(student.id, subj, stage, allScores, allAnswers, allQuestions);
+          if (scVal !== null) {
+            toScores[stage.groupKey] = scVal;
+            validVals.push(scVal);
+          } else {
+            toScores[stage.groupKey] = 0;
+          }
+        });
+        const avgScore =
+          validVals.length > 0
+            ? Math.round((validVals.reduce((a, b) => a + b, 0) / validVals.length) * 10) / 10
+            : 0;
+        const passingGrade = subj.passingGrade ?? 75;
+        const isPassing = avgScore >= passingGrade && validVals.length > 0;
+        const trend =
+          validVals.length > 1
+            ? Math.round((validVals[validVals.length - 1] - validVals[0]) * 10) / 10
+            : 0;
+        return { subject: subj, toScores, avgScore, isPassing, trend };
+      })
+      .filter(r => Object.values(r.toScores).some(v => v > 0) || activeSubjects.length <= 12);
 
     const resolvedSubjectRecap =
-      subjectRecapData && subjectRecapData.length > 0
+      subjectRecapData && subjectRecapData.length > 0 && Object.keys(subjectRecapData[0]?.toScores || {}).length >= stageGroups.length
         ? subjectRecapData
-        : activeSubjects
-            .map(subj => {
-              const toScores: Record<string, number> = {};
-              const validVals: number[] = [];
-              stageGroups.forEach(stage => {
-                const scVal = getStudentStageSubjectScore(student.id, subj, stage, allScores, allAnswers, allQuestions);
-                if (scVal !== null) {
-                  toScores[stage.groupKey] = scVal;
-                  validVals.push(scVal);
-                } else {
-                  toScores[stage.groupKey] = 0;
-                }
-              });
-              const avgScore =
-                validVals.length > 0
-                  ? Math.round((validVals.reduce((a, b) => a + b, 0) / validVals.length) * 10) / 10
-                  : 0;
-              const passingGrade = subj.passingGrade ?? 75;
-              const isPassing = avgScore >= passingGrade && validVals.length > 0;
-              const trend =
-                validVals.length > 1
-                  ? Math.round((validVals[validVals.length - 1] - validVals[0]) * 10) / 10
-                  : 0;
-              return { subject: subj, toScores, avgScore, isPassing, trend };
-            })
-            .filter(r => Object.values(r.toScores).some(v => v > 0) || activeSubjects.length <= 12);
+        : computedSubjectRecap;
 
     const classmates = allStudents.filter(s => s.classId === student.classId);
+    const computedProgressHistory = stageGroups.map(stage => {
+      const stComp = getStudentStageCompositeScore(student.id, stage, activeSubjects, allScores, allAnswers, allQuestions);
+      const clsComps: number[] = [];
+      classmates.forEach(cm => {
+        const cRes = getStudentStageCompositeScore(cm.id, stage, activeSubjects, allScores, allAnswers, allQuestions);
+        if (cRes.compositeScore !== null) clsComps.push(cRes.compositeScore);
+      });
+      const cAvg =
+        clsComps.length > 0
+          ? Math.round((clsComps.reduce((a, b) => a + b, 0) / clsComps.length) * 10) / 10
+          : 75.0;
+      const dObj = new Date(stage.startDate);
+      const dateStr = !isNaN(dObj.getTime())
+        ? dObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+        : '';
+      return {
+        code: stage.groupKey,
+        title: stage.title,
+        date: dateStr,
+        score: stComp.compositeScore ?? 0,
+        classAverage: cAvg,
+      };
+    });
+
     const resolvedProgressHistory =
-      extraMetrics?.progressHistory && extraMetrics.progressHistory.length > 0
+      extraMetrics?.progressHistory && extraMetrics.progressHistory.length >= computedProgressHistory.length && extraMetrics.progressHistory.length > 0
         ? extraMetrics.progressHistory
-        : stageGroups.map(stage => {
-            const stComp = getStudentStageCompositeScore(student.id, stage, activeSubjects, allScores, allAnswers, allQuestions);
-            const clsComps: number[] = [];
-            classmates.forEach(cm => {
-              const cRes = getStudentStageCompositeScore(cm.id, stage, activeSubjects, allScores, allAnswers, allQuestions);
-              if (cRes.compositeScore !== null) clsComps.push(cRes.compositeScore);
-            });
-            const cAvg =
-              clsComps.length > 0
-                ? Math.round((clsComps.reduce((a, b) => a + b, 0) / clsComps.length) * 10) / 10
-                : 75.0;
-            const dObj = new Date(stage.startDate);
-            const dateStr = !isNaN(dObj.getTime())
-              ? dObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-              : '';
-            return {
-              code: stage.groupKey,
-              title: stage.title,
-              date: dateStr,
-              score: stComp.compositeScore ?? 0,
-              classAverage: cAvg,
-            };
-          });
+        : computedProgressHistory;
 
     // Otomatis susun activeSubjectCards untuk Try Out aktif jika belum dikirim
     const resolvedActiveSubjectCards = (() => {
@@ -907,10 +916,21 @@ export class ExportService {
     }
 
     // SECTION 2: GRAFIK GARIS PERKEMBANGAN NILAI MAPEL SISWA LINTAS TRY OUT
+    const chartToLabels = (() => {
+      if (activeToKeys.length >= 3) return activeToKeys;
+      const base = [...activeToKeys];
+      ['TO 1', 'TO 2', 'TO 3'].forEach(lbl => {
+        if (!base.includes(lbl) && base.length < 3) {
+          base.push(lbl);
+        }
+      });
+      return base;
+    })();
+
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(`IV. GRAFIK PERKEMBANGAN NILAI TIAP-TIAP MATA PELAJARAN (LINTAS ${activeToKeys[0] || 'TO 1'} S/D ${activeToKeys[activeToKeys.length - 1] || 'TO 3'})`, leftMargin, p2Y);
+    doc.text(`IV. GRAFIK PERKEMBANGAN NILAI TIAP-TIAP MATA PELAJARAN (LINTAS ${chartToLabels[0] || 'TO 1'} S/D ${chartToLabels[chartToLabels.length - 1] || 'TO 3'})`, leftMargin, p2Y);
 
     p2Y += 3.8;
     const lineChartH = 44;
@@ -939,12 +959,16 @@ export class ExportService {
       doc.text(`${val}`, chartLeft - 3, yVal + 1.5, { align: 'right' });
     });
 
-    // TO X Positions - dynamic from activeToKeys
-    const chartToLabels = activeToKeys.length > 0 ? activeToKeys : ['TO 1', 'TO 2', 'TO 3'];
+    // TO X Positions - dynamic from chartToLabels (minimal TO 1, TO 2, TO 3)
     const xStep = chartWidth / Math.max(1, chartToLabels.length - 1);
     const xCoords = chartToLabels.map((_, i) => chartLeft + i * xStep);
 
     chartToLabels.forEach((label, i) => {
+      // Vertical guide line
+      doc.setDrawColor(235, 240, 246);
+      doc.setLineWidth(0.15);
+      doc.line(xCoords[i], chartTop, xCoords[i], chartBottom);
+
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.5);
       doc.setTextColor(15, 23, 42);
@@ -962,28 +986,45 @@ export class ExportService {
       [16, 185, 129],  // Emerald - BIO
     ];
 
-    // Gambar Garis Tren tiap Mapel - use dynamic keys
+    // Gambar Garis Tren tiap Mapel
     if (resolvedSubjectRecap && resolvedSubjectRecap.length > 0) {
       resolvedSubjectRecap.slice(0, 6).forEach((row, sIdx) => {
         const color = lineColors[sIdx % lineColors.length];
-        const scores = activeToKeys.map(key => row.toScores[key] ?? 0);
+        const allPoints = chartToLabels.map((key, idx) => {
+          const val = row.toScores[key] ?? 0;
+          return {
+            key,
+            val,
+            x: xCoords[idx],
+            y: chartBottom - (Math.min(100, Math.max(0, val)) / 100) * chartHeight,
+          };
+        });
 
-        const points = scores.map((val, idx) => ({
-          x: xCoords[idx],
-          y: chartBottom - (Math.min(100, Math.max(0, val)) / 100) * chartHeight,
-        }));
+        const validPoints = allPoints.filter(p => p.val > 0);
 
         // Draw Line Segments
         doc.setDrawColor(color[0], color[1], color[2]);
-        doc.setLineWidth(0.7);
-        for (let i = 0; i < points.length - 1; i++) {
-          doc.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+        doc.setLineWidth(0.8);
+        if (validPoints.length >= 2) {
+          for (let i = 0; i < validPoints.length - 1; i++) {
+            doc.line(validPoints[i].x, validPoints[i].y, validPoints[i + 1].x, validPoints[i + 1].y);
+          }
+        } else if (validPoints.length === 1) {
+          // Jika baru 1 TO yang memiliki nilai, gambar garis referensi horizontal agar grafik tetap tampil jelas
+          doc.line(chartLeft, validPoints[0].y, chartRight, validPoints[0].y);
         }
 
-        // Draw Node Circles
-        doc.setFillColor(color[0], color[1], color[2]);
-        points.forEach(p => {
-          doc.circle(p.x, p.y, 0.9, 'F');
+        // Draw Node Circles & Value Labels
+        validPoints.forEach(p => {
+          doc.setFillColor(255, 255, 255);
+          doc.circle(p.x, p.y, 1.3, 'F');
+          doc.setFillColor(color[0], color[1], color[2]);
+          doc.circle(p.x, p.y, 0.95, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(5);
+          doc.setTextColor(color[0], color[1], color[2]);
+          const labelY = p.y - 1.8 < chartTop + 2 ? p.y + 3.2 : p.y - 1.8;
+          doc.text(`${p.val.toFixed(0)}`, p.x, labelY, { align: 'center' });
         });
 
         // Legend item on the right
@@ -1004,21 +1045,28 @@ export class ExportService {
     // Gambar Garis Rata-Rata Try Out (Garis Putus-Putus Abu-Abu / Slate)
     const pHistory = resolvedProgressHistory;
     if (pHistory.length > 0) {
-      const avgPoints = activeToKeys.map((key, idx) => {
-        const matchedH = pHistory.find(h => h.code === key);
-        const avgVal = matchedH?.classAverage ?? resolvedClassAvg;
-        return {
-          x: xCoords[idx],
-          y: chartBottom - (Math.min(100, Math.max(0, avgVal)) / 100) * chartHeight,
-        };
-      });
+      const avgPoints = chartToLabels
+        .map((key, idx) => {
+          const matchedH = pHistory.find(h => h.code === key);
+          if (!matchedH && idx >= activeToKeys.length) return null;
+          const avgVal = matchedH?.classAverage ?? resolvedClassAvg;
+          return {
+            x: xCoords[idx],
+            y: chartBottom - (Math.min(100, Math.max(0, avgVal)) / 100) * chartHeight,
+          };
+        })
+        .filter((p): p is { x: number; y: number } => p !== null);
 
       // Draw dashed average line
       doc.setDrawColor(100, 116, 139); // Slate-500
       doc.setLineWidth(0.6);
       doc.setLineDashPattern([2, 1.5], 0);
-      for (let i = 0; i < avgPoints.length - 1; i++) {
-        doc.line(avgPoints[i].x, avgPoints[i].y, avgPoints[i + 1].x, avgPoints[i + 1].y);
+      if (avgPoints.length >= 2) {
+        for (let i = 0; i < avgPoints.length - 1; i++) {
+          doc.line(avgPoints[i].x, avgPoints[i].y, avgPoints[i + 1].x, avgPoints[i + 1].y);
+        }
+      } else if (avgPoints.length === 1) {
+        doc.line(chartLeft, avgPoints[0].y, chartRight, avgPoints[0].y);
       }
       doc.setLineDashPattern([], 0); // Reset dash
 
@@ -1372,7 +1420,7 @@ export class ExportService {
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.text(`:  ${cls.name} (Tingkat ${cls.gradeLevel || '-'})`, leftMargin + 32, yPos + 6);
-    doc.text(`:  ${waliInfo.name} (NIP. ${waliInfo.nip})`, leftMargin + 32, yPos + 12);
+    doc.text(`:  ${waliInfo.name}`, leftMargin + 32, yPos + 12);
     doc.text(`:  [${friendlyStageLabel}] ${tryout.title.slice(0, 32)}`, leftMargin + 32, yPos + 18);
     doc.text(`:  ${sortedScores.length} Siswa Mengerjakan (dari ${Math.max(sortedScores.length, classStudents.length)} Siswa)`, leftMargin + 32, yPos + 24);
 

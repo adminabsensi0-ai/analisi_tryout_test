@@ -538,13 +538,14 @@ export const StudentPortalPage: React.FC = () => {
   }, [allSubjects]);
 
   // Pengelompokan Siklus Try Out (TO 1, TO 2, TO 3, ...) — dihitung dari SELURUH tryout agar
-  // konsisten dengan pengelompokan yang dikontrol Guru Mapel, lalu disaring ke siklus yang diikuti siswa.
+  // konsisten dengan pengelompokan yang dikontrol Guru Mapel dan mencakup semua siklus aktif.
   const tryoutStageGroups = useMemo<TryoutStageGroup[]>(() => {
     const allGroups = buildTryoutStageGroups(allTryouts, dbService.getExamPackages());
     if (!verifiedStudent) return allGroups;
-    return allGroups.filter(stage =>
+    const studentGroups = allGroups.filter(stage =>
       stage.tryouts.some(t => allScores.some(s => s.studentId === verifiedStudent.id && s.tryoutId === t.id))
     );
+    return allGroups.length > 0 ? allGroups : studentGroups;
   }, [allTryouts, allScores, verifiedStudent, dbVersion]);
 
   const allAnswersCache = useMemo(() => dbService.getAnswers(), [dbVersion, allScores]);
@@ -1309,14 +1310,18 @@ export const StudentPortalPage: React.FC = () => {
                             {coords.length > 1 && <polygon points={polygonPoints} fill="url(#studentChartGradMain)" />}
 
                             {/* Class Average Polyline */}
-                            {coords.length > 1 && (
+                            {coords.length > 1 ? (
                               <polyline fill="none" stroke="#10b981" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.85" points={classAvgPolyPoints} />
-                            )}
+                            ) : coords.length === 1 ? (
+                              <line x1="60" y1={coords[0].classAvgY} x2="940" y2={coords[0].classAvgY} stroke="#10b981" strokeWidth="2.5" strokeDasharray="5 5" opacity="0.85" />
+                            ) : null}
 
                             {/* Student Score Polyline */}
-                            {coords.length > 1 && (
+                            {coords.length > 1 ? (
                               <polyline fill="none" stroke="#6366f1" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={svgPolyPoints} />
-                            )}
+                            ) : coords.length === 1 ? (
+                              <line x1="60" y1={coords[0].y} x2="940" y2={coords[0].y} stroke="#6366f1" strokeWidth="3.5" strokeLinecap="round" opacity="0.85" />
+                            ) : null}
 
                             {coords.length === 0 && (
                               <text x="500" y="150" textAnchor="middle" className="text-[13px] font-sans fill-slate-400">

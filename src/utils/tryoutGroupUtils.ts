@@ -200,61 +200,158 @@ export function getStageOrderNumber(groupKey: string): number {
  * 3. Ekstraksi dari judul Try Out (misal "TO 1 Matematika" -> "TO 1")
  * 4. Urutan kronologis per mata pelajaran (ujian ke-1 mapel MAT -> "TO 1", ujian ke-2 mapel MAT -> "TO 2")
  */
+/**
+ * Helper internal: mengambil kandidat siklus TO dari properti langsung Tryout (tanpa resolusi lintas-tryout).
+ */
+function getDirectTryoutStageCandidate(
+  tryout: Tryout,
+  examPackages: ExamPackage[] = []
+): { stage: string | null; isExplicitNonDefault: boolean } {
+  const explicitGroup =
+    tryout.tryoutGroup ||
+    ((tryout.scoringConfig as any)?._meta?.tryoutGroup as string | undefined);
+
+  let normalizedExplicit: string | null = null;
+  if (explicitGroup && explicitGroup.trim() !== '') {
+    const trimmed = explicitGroup.trim().toUpperCase();
+    if (trimmed === TRYOUT_GROUP_NONE) {
+      return { stage: TRYOUT_GROUP_NONE, isExplicitNonDefault: true };
+    }
+    normalizedExplicit = extractTryoutStageFromText(trimmed) || trimmed;
+  }
+
+  let fromPkg: string | null = null;
+  if (tryout.packageId && examPackages.length > 0) {
+    const pkg = examPackages.find(p => p.id === tryout.packageId);
+    if (pkg) {
+      fromPkg = extractTryoutStageFromText(pkg.title) || extractTryoutStageFromText(pkg.code);
+    }
+  }
+
+  const fromTitle = extractTryoutStageFromText(tryout.title);
+  const fromCode = extractTryoutStageFromText(tryout.code);
+
+  // Jika explicitGroup bernilai selain 'TO 1' (misal 'TO 2', 'TO 3'), gunakan langsung pilihan guru
+  if (normalizedExplicit && normalizedExplicit !== 'TO 1') {
+    return { stage: normalizedExplicit, isExplicitNonDefault: true };
+  }
+
+  // Jika explicitGroup masih 'TO 1' (nilai bawaan/default modal) namun judul/paket/kode menyebutkan 'TO 2', 'TO 3', dst.
+  if (fromPkg && fromPkg !== 'TO 1') {
+    return { stage: fromPkg, isExplicitNonDefault: true };
+  }
+  if (fromTitle && fromTitle !== 'TO 1') {
+    return { stage: fromTitle, isExplicitNonDefault: true };
+  }
+  if (fromCode && fromCode !== 'TO 1') {
+    return { stage: fromCode, isExplicitNonDefault: true };
+  }
+
+  if (fromPkg || fromTitle || fromCode) {
+    return { stage: fromPkg || fromTitle || fromCode, isExplicitNonDefault: true };
+  }
+
+  if (normalizedExplicit) {
+    return { stage: normalizedExplicit, isExplicitNonDefault: false };
+  }
+
+  return { stage: null, isExplicitNonDefault: false };
+}
+
+/**
+ * Mengecek apakah dua Tryout berada pada cakupan mata pelajaran yang sama
+ * (sehingga seharusnya berada di tahapan TO yang berbeda: TO 1, TO 2, TO 3, dst.).
+ */
+function doTryoutsShareSubjectScope(a: Tryout, b: Tryout): boolean {
+  if (a.id === b.id) return true;
+  if (!a.isExternal && !b.isExternal) {
+    if (a.subjectId && b.subjectId) {
+      return a.subjectId === b.subjectId;
+    }
+    if (!a.subjectId && !b.subjectId) {
+      return true;
+    }
+    return false;
+  }
+  if (a.isExternal && b.isExternal) {
+    const aIds = a.externalSubjectIds || [];
+    const bIds = b.externalSubjectIds || [];
+    if (aIds.length > 0 && bIds.length > 0) {
+      return aIds.some(id => bIds.includes(id));
+    }
+    const aNames = (a.externalSubjects || []).map(s => s.toLowerCase().trim());
+    const bNames = (b.externalSubjects || []).map(s => s.toLowerCase().trim());
+    if (aNames.length > 0 && bNames.length > 0) {
+      return aNames.some(n => bNames.includes(n));
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Menentukan kelompok siklus Try Out ("TO 1", "TO 2", dst., atau "NONE") untuk sebuah Tryout.
+ * Prioritas:
+ * 1. Pilihan eksplisit Guru Mapel (`tryout.tryoutGroup` atau `scoringConfig._meta.tryoutGroup`)
+ * 2. Wadah Paket Ujian (`packageId`) jika ada
+ * 3. Ekstraksi dari judul Try Out (misal "TO 1 Matematika" -> "TO 1")
+ * 4. Urutan kronologis per mata pelajaran (ujian ke-1 mapel MAT -> "TO 1", ujian ke-2 mapel MAT -> "TO 2")
+ *    termasuk resolusi otomatis jika beberapa TO pada mapel yang sama masih bertumpuk di default 'TO 1'.
+ */
 export function resolveTryoutGroup(
   tryout: Tryout,
   allTryouts: Tryout[] = [],
   examPackages: ExamPackage[] = []
 ): string {
-  // 1. Pilihan eksplisit dari Guru Mapel
-  const explicitGroup =
-    tryout.tryoutGroup ||
-    ((tryout.scoringConfig as any)?._meta?.tryoutGroup as string | undefined);
+  const direct = getDirectTryoutStageCandidate(tryout, examPackages);
+  if (direct.stage === TRYOUT_GROUP_NONE) return TRYOUT_GROUP_NONE;
 
-  if (explicitGroup && explicitGroup.trim() !== '') {
-    const trimmed = explicitGroup.trim().toUpperCase();
-    if (trimmed === TRYOUT_GROUP_NONE) return TRYOUT_GROUP_NONE;
-    const normalized = extractTryoutStageFromText(trimmed);
-    return normalized || trimmed;
-  }
-
-  // 2. Jika terhubung ke Wadah Paket Ujian (ExamPackage)
-  if (tryout.packageId && examPackages.length > 0) {
-    const pkg = examPackages.find(p => p.id === tryout.packageId);
-    if (pkg) {
-      const fromPkg = extractTryoutStageFromText(pkg.title) || extractTryoutStageFromText(pkg.code);
-      if (fromPkg) return fromPkg;
-    }
-  }
-
-  // 3. Ekstraksi dari Judul atau Kode Kustom
-  const fromTitle = extractTryoutStageFromText(tryout.title);
-  if (fromTitle) return fromTitle;
-
-  const fromCode = extractTryoutStageFromText(tryout.code);
-  if (fromCode) return fromCode;
-
-  // 4. Fallback cerdas: Urutan kronologis per Mata Pelajaran
-  if (tryout.subjectId && allTryouts.length > 0) {
-    const sameSubjectTryouts = allTryouts
+  // Kumpulkan semua tryout yang berada pada cakupan mata pelajaran yang sama (bukan Non-TO)
+  if (allTryouts.length > 1) {
+    const sameScopeTryouts = allTryouts
       .filter(t => {
-        const g = t.tryoutGroup || ((t.scoringConfig as any)?._meta?.tryoutGroup as string | undefined);
-        if (g && g.trim().toUpperCase() === TRYOUT_GROUP_NONE) return false;
-        return t.subjectId === tryout.subjectId;
+        const cand = getDirectTryoutStageCandidate(t, examPackages);
+        if (cand.stage === TRYOUT_GROUP_NONE) return false;
+        return doTryoutsShareSubjectScope(tryout, t);
       })
       .sort((a, b) => {
+        const candA = getDirectTryoutStageCandidate(a, examPackages);
+        const candB = getDirectTryoutStageCandidate(b, examPackages);
+        const ordA = candA.stage ? getStageOrderNumber(candA.stage) : 999;
+        const ordB = candB.stage ? getStageOrderNumber(candB.stage) : 999;
+        if (ordA !== ordB) return ordA - ordB;
         const da = new Date(a.startDate || 0).getTime();
         const db = new Date(b.startDate || 0).getTime();
         if (da !== db) return da - db;
         return (a.code || '').localeCompare(b.code || '');
       });
 
-    const idx = sameSubjectTryouts.findIndex(t => t.id === tryout.id);
-    if (idx !== -1) {
-      return `TO ${idx + 1}`;
+    if (sameScopeTryouts.length > 1) {
+      const usedStages = new Set<string>();
+      for (const item of sameScopeTryouts) {
+        const cand = getDirectTryoutStageCandidate(item, examPackages);
+        let assigned = cand.stage || 'TO 1';
+        if (usedStages.has(assigned)) {
+          let nextNum = getStageOrderNumber(assigned);
+          if (nextNum >= 999) nextNum = 1;
+          while (usedStages.has(`TO ${nextNum}`)) {
+            nextNum++;
+          }
+          assigned = `TO ${nextNum}`;
+        }
+        usedStages.add(assigned);
+        if (item.id === tryout.id) {
+          return assigned;
+        }
+      }
     }
   }
 
-  // 5. Fallback umum berdasarkan urutan di daftar semua tryout
+  if (direct.stage) {
+    return direct.stage;
+  }
+
+  // Fallback umum berdasarkan urutan di daftar semua tryout
   if (allTryouts.length > 0) {
     const sortedAll = [...allTryouts].sort((a, b) => {
       const da = new Date(a.startDate || 0).getTime();
@@ -450,13 +547,46 @@ export function extractSubjectScoreFromScoreRecord(
     return typeof scoreObj.calculatedScore === 'number' ? scoreObj.calculatedScore : null;
   }
 
-  // 3. Fallback dari jawaban butir soal jika tersedia dan tryout belum punya subjectId
-  if (!tryout.isExternal && !tryout.subjectId && studentAnswers && subjQuestions && subjQuestions.length > 0) {
-    const qIds = new Set(subjQuestions.map(q => q.id));
-    const rel = studentAnswers.filter(a => qIds.has(a.questionId));
-    if (rel.length > 0) {
-      const correctCount = rel.filter(a => a.isCorrect).length;
-      return Math.round((correctCount / rel.length) * 1000) / 10;
+  // 3. Jika Tryout Eksternal mencakup mapel ini tetapi subjectScores belum merinci per mapel, gunakan calculatedScore
+  if (tryout.isExternal) {
+    const hasSubjId = Array.isArray(tryout.externalSubjectIds) && tryout.externalSubjectIds.includes(subj.id);
+    const hasSubjName =
+      Array.isArray(tryout.externalSubjects) &&
+      tryout.externalSubjects.some(
+        es =>
+          es.toLowerCase().trim() === subj.name.toLowerCase().trim() ||
+          es.toLowerCase().trim() === subj.code.toLowerCase().trim()
+      );
+    const noSpecificSubjects =
+      (!tryout.externalSubjectIds || tryout.externalSubjectIds.length === 0) &&
+      (!tryout.externalSubjects || tryout.externalSubjects.length === 0);
+    if ((hasSubjId || hasSubjName || noSpecificSubjects) && typeof scoreObj.calculatedScore === 'number') {
+      return scoreObj.calculatedScore;
+    }
+  }
+
+  // 4. Fallback dari judul/kode tryout atau jawaban butir soal jika tryout belum punya subjectId
+  if (!tryout.isExternal && !tryout.subjectId) {
+    const titleLower = (tryout.title || '').toLowerCase();
+    const codeLower = (tryout.code || '').toLowerCase();
+    const subjNameLower = subj.name.toLowerCase().trim();
+    const subjCodeLower = subj.code.toLowerCase().trim();
+    if (
+      (subjNameLower && titleLower.includes(subjNameLower)) ||
+      (subjCodeLower && (titleLower.includes(subjCodeLower) || codeLower.includes(subjCodeLower)))
+    ) {
+      if (typeof scoreObj.calculatedScore === 'number') {
+        return scoreObj.calculatedScore;
+      }
+    }
+
+    if (studentAnswers && subjQuestions && subjQuestions.length > 0) {
+      const qIds = new Set(subjQuestions.map(q => q.id));
+      const rel = studentAnswers.filter(a => qIds.has(a.questionId));
+      if (rel.length > 0) {
+        const correctCount = rel.filter(a => a.isCorrect).length;
+        return Math.round((correctCount / rel.length) * 1000) / 10;
+      }
     }
   }
 
