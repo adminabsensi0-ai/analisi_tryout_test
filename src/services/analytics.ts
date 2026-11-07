@@ -270,9 +270,23 @@ export class AnalyticsService {
   ): QuestionAnalysisResult[] {
     if (questions.length === 0) return [];
 
-    // Group answers by questionId
+    // Group answers by questionId (deduplicating per studentId so each student is counted once per question)
     const answersByQuestion = new Map<string, Answer[]>();
+    const seenStudentQuestion = new Set<string>();
     answers.forEach(a => {
+      const dedupKey = `${a.questionId}___${a.studentId}`;
+      if (seenStudentQuestion.has(dedupKey)) {
+        const list = answersByQuestion.get(a.questionId) || [];
+        const idx = list.findIndex(x => x.studentId === a.studentId);
+        if (idx !== -1) {
+          // Prefer non-empty studentAnswer over empty duplicate
+          if (!list[idx].studentAnswer && a.studentAnswer) {
+            list[idx] = a;
+          }
+        }
+        return;
+      }
+      seenStudentQuestion.add(dedupKey);
       const list = answersByQuestion.get(a.questionId) || [];
       list.push(a);
       answersByQuestion.set(a.questionId, list);
@@ -293,6 +307,8 @@ export class AnalyticsService {
     const upperStudentSet = new Set(sortedStudentScores.slice(0, groupSize).map(s => s.studentId));
     const lowerStudentSet = new Set(sortedStudentScores.slice(-groupSize).map(s => s.studentId));
 
+    const optionKeys: Array<'A' | 'B' | 'C' | 'D' | 'E'> = ['A', 'B', 'C', 'D', 'E'];
+
     return questions.map(q => {
       const qAnswers = answersByQuestion.get(q.id) || [];
       const totalRespondents = qAnswers.length;
@@ -305,26 +321,76 @@ export class AnalyticsService {
       let upperCorrect = 0;
       let lowerCorrect = 0;
 
+      // Build smart option mapper for this question (handles A..E, explicit prefixes, q.options text, and legacy unmapped full-text answers)
+      const textToOptionKey = new Map<string, 'A' | 'B' | 'C' | 'D' | 'E'>();
+      const usedOptionKeys = new Set<'A' | 'B' | 'C' | 'D' | 'E'>();
+
+      if (Array.isArray(q.options)) {
+        q.options.forEach(opt => {
+          const k = (opt.key || '').trim().toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E';
+          const t = (opt.text || '').trim().toUpperCase();
+          if (optionKeys.includes(k) && t && t !== `PILIHAN ${k}` && t !== `OPSI ${k}` && t !== k) {
+            textToOptionKey.set(t, k);
+            usedOptionKeys.add(k);
+          }
+        });
+      }
+
+      const resolveToOptionKey = (rawVal: string | undefined | null): 'A' | 'B' | 'C' | 'D' | 'E' | '' => {
+        const trimmed = (rawVal || '').trim();
+        if (!trimmed) return '';
+        const upper = trimmed.toUpperCase();
+        if (optionKeys.includes(upper as any)) {
+          return upper as 'A' | 'B' | 'C' | 'D' | 'E';
+        }
+        const prefixMatch = trimmed.match(/^\s*(?:\[([A-Ea-e])\]|(?:opsi|pilihan)\s+([A-Ea-e])(?:[\.\)\:\-\s]|$)|([A-Ea-e])[\.\)\:])/i);
+        if (prefixMatch) {
+          return (prefixMatch[1] || prefixMatch[2] || prefixMatch[3]).toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E';
+        }
+        if (upper === 'BENAR' || upper === 'TRUE') return 'A';
+        if (upper === 'SALAH' || upper === 'FALSE') return 'B';
+
+        const mapped = textToOptionKey.get(upper);
+        if (mapped) return mapped;
+
+        // Dynamic fallback for legacy full-text Google Form answers not yet mapped in q.options
+        const nextAvailable = optionKeys.find(k => !usedOptionKeys.has(k)) || 'E';
+        usedOptionKeys.add(nextAvailable);
+        textToOptionKey.set(upper, nextAvailable);
+        return nextAvailable;
+      };
+
+      const resolvedCorrectKey = resolveToOptionKey(q.correctAnswer) || 'A';
+
       qAnswers.forEach(ans => {
-        const key = (ans.studentAnswer || '').trim().toUpperCase();
-        if (!key) {
+        const rawAns = (ans.studentAnswer || '').trim();
+        if (!rawAns) {
           unansweredCount++;
           rawCounts.KOSONG++;
-        } else {
-          if (rawCounts[key] !== undefined) {
-            rawCounts[key]++;
-          }
-          if (key === q.correctAnswer.toUpperCase()) {
-            correctCount++;
-          } else {
-            incorrectCount++;
-          }
+          return;
         }
 
-        if (upperStudentSet.has(ans.studentId) && ans.isCorrect) {
+        const resolvedKey = resolveToOptionKey(rawAns);
+        if (resolvedKey && rawCounts[resolvedKey] !== undefined) {
+          rawCounts[resolvedKey]++;
+        }
+
+        const isAnsCorrect = Boolean(
+          ans.isCorrect ||
+          (resolvedKey && resolvedKey === resolvedCorrectKey) ||
+          rawAns.toUpperCase() === (q.correctAnswer || '').trim().toUpperCase()
+        );
+
+        if (isAnsCorrect) {
+          correctCount++;
+        } else {
+          incorrectCount++;
+        }
+
+        if (upperStudentSet.has(ans.studentId) && isAnsCorrect) {
           upperCorrect++;
         }
-        if (lowerStudentSet.has(ans.studentId) && ans.isCorrect) {
+        if (lowerStudentSet.has(ans.studentId) && isAnsCorrect) {
           lowerCorrect++;
         }
       });
@@ -378,7 +444,7 @@ export class AnalyticsService {
       ['A', 'B', 'C', 'D', 'E', 'KOSONG'].forEach(opt => {
         const count = rawCounts[opt] || 0;
         const pct = Math.round((count / divisor) * 100 * 10) / 10;
-        const isCorrect = opt === q.correctAnswer.toUpperCase();
+        const isCorrect = opt === resolvedCorrectKey;
         // A distractor is misleading if it is wrong yet chosen more than the correct answer
         const isMisleading = !isCorrect && opt !== 'KOSONG' && count > correctCount && count > 0;
 
@@ -422,7 +488,7 @@ export class AnalyticsService {
         questionNumber: q.questionNumber,
         uniqueCode: q.uniqueCode,
         questionText: q.questionText,
-        correctAnswer: q.correctAnswer,
+        correctAnswer: resolvedCorrectKey,
         subjectId: q.subjectId,
         materialId: q.materialId,
         competencyId: q.competencyId,

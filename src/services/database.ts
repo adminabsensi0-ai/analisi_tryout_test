@@ -993,18 +993,50 @@ export class DatabaseService {
 
     if (cloud.questions && Array.isArray(cloud.questions) && cloud.questions.length > 0) {
       if (!this.state.questions) this.state.questions = [];
+      const isPlaceholderOptions = (opts?: { key: string; text: string }[]) =>
+        !Array.isArray(opts) ||
+        opts.length === 0 ||
+        opts.every(o => !o.text || o.text.trim().toLowerCase() === `pilihan ${(o.key || '').toLowerCase()}`);
+
       cloud.questions.forEach(cq => {
         const idx = this.state.questions.findIndex(q => q.id === cq.id || q.uniqueCode === cq.uniqueCode);
         if (idx === -1) {
           this.state.questions.push(cq);
           changed = true;
-        } else if (
-          this.state.questions[idx].correctAnswer !== cq.correctAnswer ||
-          this.state.questions[idx].questionText !== cq.questionText ||
-          this.state.questions[idx].id !== cq.id
-        ) {
-          this.state.questions[idx] = { ...this.state.questions[idx], ...cq };
-          changed = true;
+        } else {
+          const localQ = this.state.questions[idx];
+          const oldId = localQ.id;
+          const preservedOptions = (!isPlaceholderOptions(localQ.options) && isPlaceholderOptions(cq.options))
+            ? localQ.options
+            : (cq.options && cq.options.length > 0 ? cq.options : localQ.options);
+
+          if (
+            localQ.correctAnswer !== cq.correctAnswer ||
+            localQ.questionText !== cq.questionText ||
+            localQ.id !== cq.id ||
+            JSON.stringify(localQ.options) !== JSON.stringify(preservedOptions)
+          ) {
+            this.state.questions[idx] = { ...localQ, ...cq, options: preservedOptions };
+            // Jika ID soal di lokal berbeda dengan ID kanonik di Supabase, selaraskan seluruh referensi questionId pada jawaban siswa agar tidak yatim (orphaned)!
+            if (oldId && cq.id && oldId !== cq.id) {
+              if (Array.isArray(this.state.answers)) {
+                this.state.answers.forEach(a => {
+                  if (a.questionId === oldId) a.questionId = cq.id;
+                });
+              }
+              if (Array.isArray(this.state.tryoutQuestions)) {
+                this.state.tryoutQuestions.forEach(tq => {
+                  if (tq.questionId === oldId) tq.questionId = cq.id;
+                });
+              }
+              if (Array.isArray(this.state.explanations)) {
+                this.state.explanations.forEach(ex => {
+                  if (ex.questionId === oldId) ex.questionId = cq.id;
+                });
+              }
+            }
+            changed = true;
+          }
         }
       });
     }
@@ -1025,14 +1057,25 @@ export class DatabaseService {
         if (!existing) {
           ansByComposite.set(key, ca);
           changed = true;
-        } else if (
-          existing.studentAnswer !== ca.studentAnswer ||
-          existing.isCorrect !== ca.isCorrect ||
-          existing.score !== ca.score ||
-          existing.id !== ca.id
-        ) {
-          ansByComposite.set(key, { ...existing, ...ca });
-          changed = true;
+        } else {
+          // Jangan menimpa jawaban lokal yang sudah terisi dengan jawaban kosong dari baris cloud lama yang sempat gagal ternormalisasi
+          const effectiveStudentAnswer = (ca.studentAnswer && ca.studentAnswer.trim())
+            ? ca.studentAnswer
+            : (existing.studentAnswer || '');
+          const mergedAns: Answer = {
+            ...existing,
+            ...ca,
+            studentAnswer: effectiveStudentAnswer,
+          };
+          if (
+            existing.studentAnswer !== mergedAns.studentAnswer ||
+            existing.isCorrect !== mergedAns.isCorrect ||
+            existing.score !== mergedAns.score ||
+            existing.id !== mergedAns.id
+          ) {
+            ansByComposite.set(key, mergedAns);
+            changed = true;
+          }
         }
       });
       this.state.answers = Array.from(ansByComposite.values());
@@ -2266,10 +2309,11 @@ export class DatabaseService {
     if (!mat.title?.trim() || !mat.code?.trim()) {
       throw new Error('Validasi Gagal: Kode dan judul materi wajib diisi.');
     }
-    const newMat: Material = { ...mat, id: `m-${Date.now()}` };
+    const newMat: Material = { ...mat, id: isValidUuid((mat as any)?.id) ? (mat as any).id : generateUuid() };
     this.state.materials.push(newMat);
     this.logAudit(currentUser, 'CREATE_MATERIAL', 'MATERIAL', `Menambahkan materi: ${newMat.title} (${newMat.code})`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncMaterial(newMat).catch(() => {});
     return newMat;
   }
   public updateMaterial(id: string, updates: Partial<Material>, currentUser: any) {
@@ -2279,9 +2323,11 @@ export class DatabaseService {
     if (updates.subjectId && updates.subjectId !== m.subjectId) {
       this.assertTeacherSubject(currentUser, updates.subjectId, 'UPDATE_MATERIAL');
     }
-    this.state.materials = this.state.materials.map(item => item.id === id ? { ...item, ...updates } : item);
+    const updatedMat: Material = { ...m, ...updates };
+    this.state.materials = this.state.materials.map(item => item.id === id ? updatedMat : item);
     this.logAudit(currentUser, 'UPDATE_MATERIAL', 'MATERIAL', `Memperbarui materi ID: ${id}`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncMaterial(updatedMat).catch(() => {});
   }
   public deleteMaterial(id: string, currentUser: any) {
     const m = this.state.materials.find(x => x.id === id);
@@ -2305,10 +2351,11 @@ export class DatabaseService {
     if (!comp.code?.trim() || !comp.statement?.trim()) {
       throw new Error('Validasi Gagal: Kode KD dan pernyataan kompetensi wajib diisi.');
     }
-    const newComp: Competency = { ...comp, id: `comp-${Date.now()}` };
+    const newComp: Competency = { ...comp, id: isValidUuid((comp as any)?.id) ? (comp as any).id : generateUuid() };
     this.state.competencies.push(newComp);
     this.logAudit(currentUser, 'CREATE_COMPETENCY', 'COMPETENCY', `Menambahkan kompetensi dasar: ${newComp.code}`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncCompetency(newComp).catch(() => {});
     return newComp;
   }
   public updateCompetency(id: string, updates: Partial<Competency>, currentUser: any) {
@@ -2318,9 +2365,11 @@ export class DatabaseService {
     if (updates.subjectId && updates.subjectId !== c.subjectId) {
       this.assertTeacherSubject(currentUser, updates.subjectId, 'UPDATE_COMPETENCY');
     }
-    this.state.competencies = this.state.competencies.map(item => item.id === id ? { ...item, ...updates } : item);
+    const updatedComp: Competency = { ...c, ...updates };
+    this.state.competencies = this.state.competencies.map(item => item.id === id ? updatedComp : item);
     this.logAudit(currentUser, 'UPDATE_COMPETENCY', 'COMPETENCY', `Memperbarui kompetensi ID: ${id}`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncCompetency(updatedComp).catch(() => {});
   }
   public deleteCompetency(id: string, currentUser: any) {
     const c = this.state.competencies.find(x => x.id === id);
@@ -2728,6 +2777,7 @@ export class DatabaseService {
     this.state.questions.push(newQ);
     this.logAudit(currentUser, 'CREATE_QUESTION', 'QUESTION', `Menambahkan butir soal: ${newQ.uniqueCode}`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncQuestionsBatch([newQ]).catch(() => {});
     return newQ;
   }
   public updateQuestion(id: string, updates: Partial<Question>, currentUser: any) {
@@ -2744,9 +2794,11 @@ export class DatabaseService {
         throw new Error(`Validasi Gagal: Kode unik '${updates.uniqueCode}' sudah digunakan.`);
       }
     }
-    this.state.questions = this.state.questions.map(item => item.id === id ? { ...item, ...updates } : item);
+    const updatedQ: Question = { ...q, ...updates };
+    this.state.questions = this.state.questions.map(item => item.id === id ? updatedQ : item);
     this.logAudit(currentUser, 'UPDATE_QUESTION', 'QUESTION', `Memperbarui soal ID: ${id}`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncQuestionsBatch([updatedQ]).catch(() => {});
   }
   public deleteQuestion(id: string, currentUser: any) {
     const q = this.state.questions.find(x => x.id === id);
@@ -2755,6 +2807,7 @@ export class DatabaseService {
     this.state.questions = this.state.questions.filter(x => x.id !== id);
     this.logAudit(currentUser, 'DELETE_QUESTION', 'QUESTION', `Menghapus soal: ${q?.uniqueCode || id}`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.removeQuestionsBatch([id]).catch(() => {});
   }
 
   public deleteQuestionsBatch(ids: string[], currentUser: any) {
@@ -2762,6 +2815,7 @@ export class DatabaseService {
     this.state.questions = this.state.questions.filter(x => !ids.includes(x.id));
     this.logAudit(currentUser, 'BULK_DELETE_QUESTION', 'QUESTION', `Menghapus massal ${ids.length} butir soal.`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.removeQuestionsBatch(ids).catch(() => {});
   }
 
   // SCORES & RESPONSES
@@ -2914,6 +2968,7 @@ export class DatabaseService {
 
     const tryout = this.state.tryouts.find(t => t.id === tryoutId);
     const targetSubjectId = (subjectId && subjectId !== 'ALL') ? subjectId : tryout?.subjectId;
+    const configuredCount = tryout?.selectedQuestionColumns?.length || 0;
 
     const linkedQIds = new Set(
       (this.state.tryoutQuestions || [])
@@ -2932,6 +2987,18 @@ export class DatabaseService {
 
     if (result.length === 0 && targetSubjectId) {
       result = this.state.questions.filter(q => q.subjectId === targetSubjectId);
+      if (configuredCount > 0) {
+        const scoped = result.filter(q => (q.questionNumber || 0) > 0 && (q.questionNumber || 0) <= configuredCount);
+        if (scoped.length > 0) {
+          result = scoped;
+        }
+      }
+    } else if (configuredCount > 0 && linkedQIds.size === 0 && result.length > configuredCount) {
+      // Jika terdapat sisa jawaban lama pada nomor soal di luar jumlah kolom yang dikonfigurasi saat ini, batasi ke jumlah soal aktif
+      const scoped = result.filter(q => (q.questionNumber || 0) > 0 && (q.questionNumber || 0) <= configuredCount);
+      if (scoped.length > 0) {
+        result = scoped;
+      }
     }
 
     if (result.length === 0) {
@@ -3228,6 +3295,26 @@ export class DatabaseService {
         try {
           await sdb.syncResponsesAndScores(tryoutId, newResponses, newScores);
           if (newAnswers && newAnswers.length > 0) {
+            // Pastikan seluruh butir soal yang direferensikan sudah tersimpan di Supabase dan ID-nya selaras
+            const qIdSet = new Set(newAnswers.map(a => a.questionId));
+            const referencedQuestions = this.state.questions.filter(q => qIdSet.has(q.id));
+            if (referencedQuestions.length > 0) {
+              const oldIdByCode = new Map<string, string>();
+              referencedQuestions.forEach(q => oldIdByCode.set(q.uniqueCode, q.id));
+              await sdb.syncQuestionsBatch(referencedQuestions);
+              // Jika syncQuestionsBatch menyelaraskan q.id dengan ID kanonik Supabase, perbarui questionId pada jawaban
+              referencedQuestions.forEach(q => {
+                const prevId = oldIdByCode.get(q.uniqueCode);
+                if (prevId && q.id && prevId !== q.id) {
+                  newAnswers.forEach(a => {
+                    if (a.questionId === prevId) a.questionId = q.id;
+                  });
+                  this.state.answers.forEach(a => {
+                    if (a.questionId === prevId) a.questionId = q.id;
+                  });
+                }
+              });
+            }
             await sdb.syncAnswersBatch(newAnswers);
           }
           this.persistState();

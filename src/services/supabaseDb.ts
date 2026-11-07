@@ -493,9 +493,31 @@ function fromSupabaseCompetency(row: Record<string, unknown>): Competency {
   };
 }
 
+function resolveOptionLetter(raw: string | undefined | null, options?: { key: string; text: string }[]): 'A' | 'B' | 'C' | 'D' | 'E' | null {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return null;
+  const upper = trimmed.toUpperCase();
+  if (['A', 'B', 'C', 'D', 'E'].includes(upper)) {
+    return upper as 'A' | 'B' | 'C' | 'D' | 'E';
+  }
+  const prefixMatch = trimmed.match(/^\s*(?:\[([A-Ea-e])\]|(?:opsi|pilihan)\s+([A-Ea-e])(?:[\.\)\:\-\s]|$)|([A-Ea-e])[\.\)\:])/i);
+  if (prefixMatch) {
+    return (prefixMatch[1] || prefixMatch[2] || prefixMatch[3]).toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E';
+  }
+  if (upper === 'BENAR' || upper === 'TRUE') return 'A';
+  if (upper === 'SALAH' || upper === 'FALSE') return 'B';
+
+  if (Array.isArray(options)) {
+    const matched = options.find(o => (o.text || '').trim().toUpperCase() === upper);
+    if (matched && ['A', 'B', 'C', 'D', 'E'].includes(matched.key.toUpperCase())) {
+      return matched.key.toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E';
+    }
+  }
+  return null;
+}
+
 function toSupabaseQuestion(q: Question): Record<string, unknown> {
-  const corr = (q.correctAnswer || 'A').toUpperCase().trim().slice(0, 1);
-  const validCorr = ['A', 'B', 'C', 'D', 'E'].includes(corr) ? corr : 'A';
+  const validCorr = resolveOptionLetter(q.correctAnswer, q.options) || 'A';
   const payload: Record<string, unknown> = {
     unique_code: q.uniqueCode.trim(),
     question_number: q.questionNumber || null,
@@ -533,10 +555,28 @@ function fromSupabaseQuestion(row: Record<string, unknown>): Question {
 }
 
 function toSupabaseAnswer(a: Answer): Record<string, unknown> {
-  const ansLetter = a.studentAnswer ? a.studentAnswer.trim().toUpperCase().slice(0, 1) : null;
-  const validAns = (ansLetter && ['A', 'B', 'C', 'D', 'E'].includes(ansLetter)) ? ansLetter : null;
-  const corrLetter = a.correctAnswer ? a.correctAnswer.trim().toUpperCase().slice(0, 1) : 'A';
-  const validCorr = ['A', 'B', 'C', 'D', 'E'].includes(corrLetter) ? corrLetter : 'A';
+  const validCorr = resolveOptionLetter(a.correctAnswer) || 'A';
+  const rawAns = (a.studentAnswer || '').trim();
+  let validAns: 'A' | 'B' | 'C' | 'D' | 'E' | null = null;
+
+  if (rawAns) {
+    validAns = resolveOptionLetter(rawAns);
+    if (!validAns) {
+      // Jangan pernah mengubah jawaban teks non-kosong menjadi NULL (Kosong)!
+      // Jika benar, gunakan huruf kunci jawaban; jika salah, petakan secara deterministik ke salah satu opsi pengecoh (A..E selain kunci).
+      if (a.isCorrect) {
+        validAns = validCorr;
+      } else {
+        const distractors = (['A', 'B', 'C', 'D', 'E'] as const).filter(k => k !== validCorr);
+        let hash = 0;
+        const upper = rawAns.toUpperCase();
+        for (let i = 0; i < upper.length; i++) {
+          hash = (hash * 31 + upper.charCodeAt(i)) >>> 0;
+        }
+        validAns = distractors[hash % distractors.length];
+      }
+    }
+  }
 
   const payload: Record<string, unknown> = {
     response_id: a.responseId,
@@ -1550,9 +1590,97 @@ class SupabaseDbService {
   public async syncQuestionsBatch(questions: Question[]): Promise<void> {
     if (!this.isAvailable() || !supabase || questions.length === 0) return;
     try {
-      const payloads = questions
-        .filter(q => q.uniqueCode && q.subjectId && isValidUuid(q.subjectId))
-        .map(q => toSupabaseQuestion(q));
+      const validQuestions = questions.filter(q => q.uniqueCode && q.subjectId && isValidUuid(q.subjectId));
+      if (validQuestions.length === 0) return;
+
+      // Pastikan setiap subjectId memiliki material_id & competency_id UUID yang valid di Supabase (karena kolom NOT NULL)
+      const subjectIds = Array.from(new Set(validQuestions.map(q => q.subjectId)));
+      const fallbackMaterialBySubject = new Map<string, string>();
+      const fallbackCompetencyBySubject = new Map<string, string>();
+
+      for (const subjId of subjectIds) {
+        const { data: matRows } = await supabase
+          .from('materials')
+          .select('id')
+          .eq('subject_id', subjId)
+          .limit(1);
+        if (matRows && matRows.length > 0 && matRows[0].id) {
+          fallbackMaterialBySubject.set(subjId, String(matRows[0].id));
+        } else {
+          const { data: createdMat } = await supabase
+            .from('materials')
+            .upsert(
+              {
+                subject_id: subjId,
+                code: `MAT-${subjId.slice(0, 4).toUpperCase()}-01`,
+                title: 'Materi Pokok Umum',
+                description: 'Materi dasar mata pelajaran',
+              },
+              { onConflict: 'subject_id,code' }
+            )
+            .select('id')
+            .single();
+          if (createdMat?.id) {
+            fallbackMaterialBySubject.set(subjId, String(createdMat.id));
+          }
+        }
+
+        const { data: compRows } = await supabase
+          .from('competencies')
+          .select('id')
+          .eq('subject_id', subjId)
+          .limit(1);
+        if (compRows && compRows.length > 0 && compRows[0].id) {
+          fallbackCompetencyBySubject.set(subjId, String(compRows[0].id));
+        } else {
+          const { data: createdComp } = await supabase
+            .from('competencies')
+            .upsert(
+              {
+                subject_id: subjId,
+                code: 'KD-3.1',
+                statement: 'Memahami dan menguasai konsep dasar mata pelajaran',
+                grade_level: 'XII',
+              },
+              { onConflict: 'subject_id,code' }
+            )
+            .select('id')
+            .single();
+          if (createdComp?.id) {
+            fallbackCompetencyBySubject.set(subjId, String(createdComp.id));
+          }
+        }
+      }
+
+      // Selaraskan ID soal dengan yang sudah ada di Supabase berdasarkan unique_code agar foreign key answers.question_id selalu cocok
+      const uniqueCodes = validQuestions.map(q => q.uniqueCode.trim());
+      const existingIdByCode = new Map<string, string>();
+      for (let i = 0; i < uniqueCodes.length; i += 100) {
+        const codeChunk = uniqueCodes.slice(i, i + 100);
+        const { data: existingRows } = await supabase
+          .from('questions')
+          .select('id, unique_code')
+          .in('unique_code', codeChunk);
+        if (existingRows) {
+          for (const r of existingRows as Array<{ id: string; unique_code: string }>) {
+            existingIdByCode.set(String(r.unique_code).trim(), String(r.id));
+          }
+        }
+      }
+
+      const payloads = validQuestions
+        .map(q => {
+          const canonicalId = existingIdByCode.get(q.uniqueCode.trim());
+          if (canonicalId) {
+            q.id = canonicalId;
+          }
+          const matId = isValidUuid(q.materialId) ? q.materialId : (fallbackMaterialBySubject.get(q.subjectId) || '');
+          const compId = isValidUuid(q.competencyId) ? q.competencyId : (fallbackCompetencyBySubject.get(q.subjectId) || '');
+          if (matId) q.materialId = matId;
+          if (compId) q.competencyId = compId;
+          return toSupabaseQuestion(q);
+        })
+        .filter(p => Boolean(p.material_id && p.competency_id));
 
       if (payloads.length === 0) return;
 

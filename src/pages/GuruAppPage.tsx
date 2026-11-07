@@ -733,8 +733,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     }));
 
     try {
+      // Rekonsiliasi kolom pilihan guru terhadap header CSV terbaru (menangani header duplikat/bergambar/diedit)
+      const effectiveColumns = GoogleIntegrationService.reconcileSelectedColumns(selectedColumns, headers, rows);
+
       // Simpan konfigurasi kolom ke tryout agar sinkronisasi susulan tidak perlu pilih ulang
-      dbService.updateTryout(tryout.id, { selectedQuestionColumns: selectedColumns }, null);
+      dbService.updateTryout(tryout.id, { selectedQuestionColumns: effectiveColumns }, null);
 
       // Cari mata pelajaran
       const allSubjectsNow = dbService.getSubjects();
@@ -742,27 +745,24 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       const tryoutSubject = (tryout.subjectId ? allSubjectsNow.find(s => s.id === tryout.subjectId) : null) || permittedSubjectsNow[0] || allSubjectsNow[0];
       if (!tryoutSubject) throw new Error('Mata pelajaran tidak ditemukan untuk sinkronisasi.');
 
-      // Auto-bootstrap butir soal berdasarkan kolom yang dipilih guru
-      let tryoutQuestions = dbService.getQuestions().filter(q => q.subjectId === tryoutSubject.id);
-      const hasBogusQuestions = tryoutQuestions.some(q => GoogleIntegrationService.isMetadataHeader(q.questionText));
+      // Selalu jalankan ensureQuestionsExist dengan menyertakan rows agar teks soal, opsi A..E (teks penuh Google Form),
+      // dan kunci jawaban resmi tersinkronisasi 100% dengan jumlah kolom soal aktif.
+      const tryoutQuestions = GoogleIntegrationService.ensureQuestionsExist(
+        tryoutSubject,
+        headers,
+        keyRow,
+        currentUser,
+        effectiveColumns,
+        rows
+      );
+      setQuestions(dbService.getQuestions());
 
-      if (tryoutQuestions.length === 0 || tryoutQuestions.length < selectedColumns.length || hasBogusQuestions) {
-        tryoutQuestions = GoogleIntegrationService.ensureQuestionsExist(
-          tryoutSubject,
-          headers,
-          keyRow,
-          currentUser,
-          selectedColumns
-        );
-        setQuestions(dbService.getQuestions());
-      }
-
-      // Buat mapping config berdasarkan kolom pilihan guru
+      // Buat mapping config berdasarkan kolom pilihan guru yang telah direkonsiliasi
       const mappingConfig = GoogleIntegrationService.detectColumnMappings(
         headers,
         tryoutQuestions,
         { nisnColumn: nisnCol, scoreColumn: scoreCol || undefined, nameColumn: nameCol || undefined },
-        selectedColumns
+        effectiveColumns
       );
 
       const allStudentsNow = dbService.getStudents();
@@ -887,7 +887,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
       const preselect: Record<string, boolean> = {};
       if (tryout.selectedQuestionColumns && tryout.selectedQuestionColumns.length > 0) {
-        const setCols = new Set(tryout.selectedQuestionColumns);
+        const reconciledCols = GoogleIntegrationService.reconcileSelectedColumns(tryout.selectedQuestionColumns, headers, rows);
+        const setCols = new Set(reconciledCols);
         headers.forEach(h => {
           preselect[h] = setCols.has(h);
         });
@@ -932,20 +933,6 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const syncTryoutFromSheet = async (tryout: Tryout, isManual = false) => {
     if (!tryout.googleSheetUrl) return;
 
-    // Guard: Jika belum dikonfigurasi dan dipanggil otomatis (background polling), JANGAN buka modal!
-    if (!isManual && (!tryout.selectedQuestionColumns || tryout.selectedQuestionColumns.length === 0)) {
-      setSheetSyncStatus(prev => ({
-        ...prev,
-        [tryout.id]: {
-          lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null,
-          status: 'idle',
-          newCount: 0,
-          errorMsg: '',
-        },
-      }));
-      return;
-    }
-
     setSheetSyncStatus(prev => ({
       ...prev,
       [tryout.id]: { lastSyncAt: prev[tryout.id]?.lastSyncAt ?? null, status: 'syncing', newCount: 0, errorMsg: '' },
@@ -984,9 +971,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         return st?.isAnswerKeyAccount;
       }) || null;
 
-      // Jika sudah ada konfigurasi kolom tersimpan → langsung sync tanpa modal
-      if (tryout.selectedQuestionColumns && tryout.selectedQuestionColumns.length > 0) {
-        const savedCols = tryout.selectedQuestionColumns;
+      // Jika sudah ada konfigurasi kolom tersimpan ATAU dipanggil otomatis (background self-healing sync) → langsung sync tanpa modal
+      if ((tryout.selectedQuestionColumns && tryout.selectedQuestionColumns.length > 0) || !isManual) {
+        const savedCols = GoogleIntegrationService.reconcileSelectedColumns(tryout.selectedQuestionColumns, headers, rows);
         const nisnCol = GoogleIntegrationService.autoDetectNisnColumn(headers, rows, allDbStudents);
         const nameCol = GoogleIntegrationService.autoDetectNameColumn(headers);
         const scoreCol = GoogleIntegrationService.autoDetectScoreColumn(headers);
@@ -1041,14 +1028,13 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     tryoutsRef.current = tryouts;
   }, [tryouts]);
 
-  // ── Auto-poll setiap 5 menit (hanya untuk tryout yang SUDAH terkonfigurasi kolomnya) ──
+  // ── Auto-poll setiap 5 menit (untuk seluruh tryout internal yang memiliki URL Google Sheet valid) ──
   useEffect(() => {
     const SAMPLE_URL = 'https://docs.google.com/spreadsheets/d/sample/edit';
     const autoSync = () => {
       const currentList = tryoutsRef.current || [];
       currentList.forEach(to => {
-        // Hanya auto-sync jika URL valid DAN sudah pernah dikonfigurasi kolomnya
-        if (to.googleSheetUrl && to.googleSheetUrl !== SAMPLE_URL && to.selectedQuestionColumns && to.selectedQuestionColumns.length > 0) {
+        if (to.googleSheetUrl && to.googleSheetUrl !== SAMPLE_URL && !to.isExternal && to.status !== 'ARCHIVED') {
           syncTryoutFromSheet(to, false);
         }
       });
@@ -1473,17 +1459,30 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     setParsedRows(parseRes.rows);
 
     let relevantQuestions = questions.filter(q => q.subjectId === selectedSubjectId);
-    if (relevantQuestions.length === 0 && activeSubject) {
+    if (activeSubject) {
       const allDbStudents = dbService.getStudents();
       const detectedKeyRow = parseRes.rows.find(r => {
         const rowVals = Object.entries(r);
         const nisnEntry = rowVals.find(([k]) => {
           const lk = k.toLowerCase();
-          return lk === 'nisn' || lk.includes('nisn');
+          return lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk');
+        });
+        const nameEntry = rowVals.find(([k]) => {
+          const lk = k.toLowerCase();
+          return lk === 'nama' || lk.includes('nama');
         });
         const nisnVal = nisnEntry ? nisnEntry[1]?.trim() : '';
+        const nameVal = nameEntry ? nameEntry[1]?.trim() : '';
+        if (/kunci|answer\s*key|master\s*key/i.test(nameVal) || /kunci|answer\s*key|master\s*key/i.test(nisnVal) || nisnVal === '0000000000' || nisnVal === '9999999999') {
+          return true;
+        }
         if (!nisnVal) return false;
-        const st = allDbStudents.find(s => s.nisn === nisnVal);
+        const cleanVal = GoogleIntegrationService.normalizeNisn(nisnVal);
+        const st = allDbStudents.find(s =>
+          s.nisn === nisnVal ||
+          String(s.nisn).trim() === String(nisnVal).trim() ||
+          (cleanVal && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanVal)
+        );
         return st?.isAnswerKeyAccount;
       });
 
@@ -1491,7 +1490,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         activeSubject,
         parseRes.headers,
         detectedKeyRow,
-        currentUser
+        currentUser,
+        activeTryout?.selectedQuestionColumns,
+        parseRes.rows
       );
       setQuestions(dbService.getQuestions());
     }

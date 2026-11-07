@@ -359,20 +359,296 @@ export class GoogleIntegrationService {
   }
 
   /**
+   * Ekstraksi prefix huruf opsi eksplisit (A-E) dari teks jawaban Google Form.
+   * Hanya mengenali format eksplisit seperti "A", "A. ...", "B) ...", "[C] ...", "A: ...", "Opsi A ...",
+   * TIDAK mencocokkan kalimat biasa yang kebetulan diawali huruf A-E diikuti spasi (seperti "E = mc^2" atau "A dan B").
+   */
+  public static extractExplicitOptionPrefix(rawVal: string): { letter: 'A' | 'B' | 'C' | 'D' | 'E'; text: string } | null {
+    const trimmed = (rawVal || '').trim();
+    if (!trimmed) return null;
+
+    if (/^[A-Ea-e]$/.test(trimmed)) {
+      const letter = trimmed.toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E';
+      return { letter, text: letter };
+    }
+
+    const match = trimmed.match(/^\s*(?:\[([A-Ea-e])\]|(?:opsi|pilihan)\s+([A-Ea-e])(?:[\.\)\:\-\s]|$)|([A-Ea-e])[\.\)\:])(?:\s*(.*))?$/i);
+    if (!match) return null;
+
+    const letter = (match[1] || match[2] || match[3]).toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E';
+    const remainder = (match[4] || '').trim();
+    return {
+      letter,
+      text: remainder || trimmed,
+    };
+  }
+
+  /**
+   * Mengecek apakah string dengan koma merupakan pilihan ganda kompleks (kotak centang) berhuruf eksplisit,
+   * misalnya "A, C" atau "A. Opsi 1, C. Opsi 2", BUKAN angka desimal ("2,5 m/s") atau daftar biasa ("1, 2, dan 3").
+   */
+  public static extractMultiSelectLetters(rawVal: string): string | null {
+    if (!rawVal || !rawVal.includes(',')) return null;
+    const parts = rawVal.split(',').map(p => p.trim()).filter(Boolean);
+    if (parts.length < 2) return null;
+
+    const letters: string[] = [];
+    for (const p of parts) {
+      const extracted = this.extractExplicitOptionPrefix(p);
+      if (!extracted) return null;
+      letters.push(extracted.letter);
+    }
+    return Array.from(new Set(letters)).sort().join(', ');
+  }
+
+  /**
+   * Menyelaraskan kolom pilihan guru yang tersimpan (selectedQuestionColumns) dengan header CSV terbaru.
+   * Menangani kasus di mana header soal Google Form diedit, ada duplikasi judul soal yang diberi sufiks (#2),
+   * atau ada kolom tersimpan yang seluruh isinya kosong di sheet.
+   */
+  public static reconcileSelectedColumns(
+    savedColumns: string[] | undefined | null,
+    headers: string[],
+    rows?: Record<string, string>[] | null
+  ): string[] {
+    const pureQuestionHeaders = this.getQuestionHeaders(headers);
+    if (!savedColumns || savedColumns.length === 0) {
+      return pureQuestionHeaders;
+    }
+
+    const used = new Set<string>();
+    const reconciled: string[] = [];
+
+    for (let i = 0; i < savedColumns.length; i++) {
+      const saved = savedColumns[i];
+      const savedTrim = (saved || '').trim();
+
+      // 1. Exact match pada header yang belum terpakai
+      let match = headers.find(h => !used.has(h) && h === saved);
+
+      // 2. Match terhadap header duplikat yang telah didisambiguasi, mis. "Perhatikan gambar (#2)"
+      if (!match && savedTrim) {
+        match = headers.find(h => {
+          if (used.has(h)) return false;
+          const base = h.replace(/\s*\(#\d+\)$/, '').trim();
+          return base === savedTrim;
+        });
+      }
+
+      // 3. Fallback posisional ke pureQuestionHeaders[i] jika tidak ditemukan di sheet terbaru
+      if (!match && pureQuestionHeaders[i] && !used.has(pureQuestionHeaders[i])) {
+        match = pureQuestionHeaders[i];
+      }
+
+      if (match) {
+        used.add(match);
+        reconciled.push(match);
+      }
+    }
+
+    if (reconciled.length === 0) {
+      return pureQuestionHeaders;
+    }
+
+    // Jika ada baris data siswa dan seluruh kolom hasil rekonsiliasi ternyata kosong (sedangkan pureQuestionHeaders memiliki isi),
+    // gunakan pureQuestionHeaders agar jawaban siswa tidak hilang.
+    if (rows && rows.length > 0) {
+      const hasAnyValueInReconciled = rows.some(r =>
+        reconciled.some(col => r[col] !== undefined && String(r[col]).trim().length > 0)
+      );
+      if (!hasAnyValueInReconciled && pureQuestionHeaders.length > 0) {
+        return pureQuestionHeaders;
+      }
+    }
+
+    return reconciled;
+  }
+
+  /**
+   * Memperkaya opsi jawaban A..E dan kunci jawaban (correctAnswer) untuk sebuah butir soal
+   * berdasarkan variasi jawaban di Google Sheet & baris kunci jawaban resmi.
+   * Menjamin jawaban teks penuh dari Google Form (misal "Fotosintesis", "25 m/s") dipetakan ke opsi A..E secara deterministik.
+   */
+  public static enrichQuestionOptionsFromRows(
+    existingOptions: { key: string; text: string }[] | undefined,
+    existingCorrectAnswer: string | undefined,
+    header: string,
+    rows?: Record<string, string>[] | null,
+    answerKeyRow?: Record<string, string> | null
+  ): { options: { key: string; text: string }[]; correctAnswer: string } {
+    const optionKeys: Array<'A' | 'B' | 'C' | 'D' | 'E'> = ['A', 'B', 'C', 'D', 'E'];
+    const isPlaceholderText = (txt: string, k: string) => {
+      const t = (txt || '').trim();
+      return !t || t.toLowerCase() === `pilihan ${k.toLowerCase()}` || t.toLowerCase() === `opsi ${k.toLowerCase()}` || t.toUpperCase() === k;
+    };
+
+    // Peta opsi A..E saat ini
+    const keyToText = new Map<'A' | 'B' | 'C' | 'D' | 'E', string>();
+    if (Array.isArray(existingOptions)) {
+      existingOptions.forEach(opt => {
+        const k = (opt.key || '').trim().toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E';
+        if (optionKeys.includes(k) && !isPlaceholderText(opt.text, k)) {
+          keyToText.set(k, opt.text.trim());
+        }
+      });
+    }
+
+    const rawValues: string[] = [];
+    const rawKeyCell = (answerKeyRow && header && answerKeyRow[header] !== undefined)
+      ? String(answerKeyRow[header]).trim()
+      : '';
+    if (rawKeyCell && !/^INVALID_/i.test(rawKeyCell)) {
+      rawValues.push(rawKeyCell);
+    }
+
+    if (rows && rows.length > 0 && header) {
+      rows.forEach(r => {
+        const cell = r[header] !== undefined ? String(r[header]).trim() : '';
+        if (cell && !/^INVALID_/i.test(cell)) {
+          rawValues.push(cell);
+        }
+      });
+    }
+
+    // 1. Tangkap opsi yang memiliki prefix huruf eksplisit (misal "A. Fotosintesis")
+    const unprefixedTexts: string[] = [];
+    const seenNormTexts = new Set<string>();
+
+    // Daftarkan teks yang sudah ada di keyToText agar tidak terduplikasi
+    keyToText.forEach(txt => {
+      seenNormTexts.add(txt.toUpperCase());
+    });
+
+    rawValues.forEach(val => {
+      const multi = this.extractMultiSelectLetters(val);
+      if (multi) return;
+
+      const explicit = this.extractExplicitOptionPrefix(val);
+      if (explicit) {
+        if (explicit.text && explicit.text.toUpperCase() !== explicit.letter) {
+          keyToText.set(explicit.letter, explicit.text);
+          seenNormTexts.add(explicit.text.toUpperCase());
+        }
+        return;
+      }
+
+      const upper = val.toUpperCase();
+      if (['BENAR', 'TRUE'].includes(upper)) {
+        if (!keyToText.has('A')) keyToText.set('A', val);
+        seenNormTexts.add(upper);
+        return;
+      }
+      if (['SALAH', 'FALSE'].includes(upper)) {
+        if (!keyToText.has('B')) keyToText.set('B', val);
+        seenNormTexts.add(upper);
+        return;
+      }
+
+      if (!seenNormTexts.has(upper)) {
+        seenNormTexts.add(upper);
+        unprefixedTexts.push(val);
+      }
+    });
+
+    // 2. Alokasikan teks jawaban Google Form tanpa prefix huruf ke slot A..E yang masih kosong/placeholder
+    unprefixedTexts.forEach(txt => {
+      const emptyKey = optionKeys.find(k => !keyToText.has(k));
+      if (emptyKey) {
+        keyToText.set(emptyKey, txt);
+      }
+    });
+
+    const finalOptions = optionKeys.map(k => ({
+      key: k,
+      text: keyToText.get(k) || `Pilihan ${k}`,
+    }));
+
+    // 3. Tentukan kunci jawaban (correctAnswer) dalam bentuk huruf 'A'..'E'
+    const candidateRawCorrect = rawKeyCell || (existingCorrectAnswer || '').trim();
+    let finalCorrect = 'A';
+
+    if (candidateRawCorrect) {
+      const multi = this.extractMultiSelectLetters(candidateRawCorrect);
+      if (multi) {
+        finalCorrect = multi.slice(0, 1);
+      } else {
+        const explicit = this.extractExplicitOptionPrefix(candidateRawCorrect);
+        if (explicit) {
+          finalCorrect = explicit.letter;
+        } else {
+          const upperCorr = candidateRawCorrect.toUpperCase();
+          if (['BENAR', 'TRUE'].includes(upperCorr)) {
+            finalCorrect = 'A';
+          } else if (['SALAH', 'FALSE'].includes(upperCorr)) {
+            finalCorrect = 'B';
+          } else {
+            const matchedOpt = finalOptions.find(o => o.text.trim().toUpperCase() === upperCorr);
+            if (matchedOpt) {
+              finalCorrect = matchedOpt.key;
+            } else if (optionKeys.includes(upperCorr as any)) {
+              finalCorrect = upperCorr;
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      options: finalOptions,
+      correctAnswer: finalCorrect,
+    };
+  }
+
+  /**
+   * Menormalisasi jawaban mentah siswa pada satu butir soal menjadi huruf opsi 'A'..'E' (atau '' jika kosong).
+   */
+  public static normalizeAnswerToOptionKey(rawVal: string, q: Question): string {
+    const trimmed = (rawVal || '').trim();
+    if (!trimmed) return '';
+
+    const multi = this.extractMultiSelectLetters(trimmed);
+    if (multi) return multi;
+
+    const explicit = this.extractExplicitOptionPrefix(trimmed);
+    if (explicit) return explicit.letter;
+
+    const rawUpper = trimmed.toUpperCase();
+    if (['BENAR', 'TRUE'].includes(rawUpper)) return 'A';
+    if (['SALAH', 'FALSE'].includes(rawUpper)) return 'B';
+
+    // Cocokkan dengan teks opsi A..E pada butir soal
+    if (Array.isArray(q.options)) {
+      const exactOpt = q.options.find(opt => opt.text.trim().toUpperCase() === rawUpper);
+      if (exactOpt) return exactOpt.key.toUpperCase();
+
+      // Cocokkan jika opsi memiliki prefix huruf di dalam teksnya atau sebaliknya
+      const looseOpt = q.options.find(opt => {
+        const optTextUpper = opt.text.trim().toUpperCase();
+        if (!optTextUpper || optTextUpper === `PILIHAN ${opt.key.toUpperCase()}`) return false;
+        const strippedOpt = optTextUpper.replace(/^[A-E][\.\)\:\-\s]+\s*/, '').trim();
+        const strippedRaw = rawUpper.replace(/^[A-E][\.\)\:\-\s]+\s*/, '').trim();
+        return strippedOpt.length > 0 && strippedOpt === strippedRaw;
+      });
+      if (looseOpt) return looseOpt.key.toUpperCase();
+    }
+
+    return trimmed;
+  }
+
+  /**
    * Auto-Bootstrap Butir Soal:
    * Jika bank soal di database untuk mapel ini masih kosong atau kurang lengkap,
-   * otomatis buat/perbarui butir soal dari kolom Bagian 2 Google Form.
+   * otomatis buat/perbarui butir soal dari kolom Bagian 2 Google Form beserta opsi A..E dan kunci jawabannya.
    */
   public static ensureQuestionsExist(
     subject: Subject,
     headers: string[],
     answerKeyRow?: Record<string, string> | null,
     currentUser?: User | null,
-    selectedColumns?: string[] | null
+    selectedColumns?: string[] | null,
+    rows?: Record<string, string>[] | null
   ): Question[] {
-    const questionHeaders = selectedColumns && selectedColumns.length > 0
-      ? selectedColumns
-      : this.getQuestionHeaders(headers);
+    const questionHeaders = this.reconcileSelectedColumns(selectedColumns, headers, rows);
     if (questionHeaders.length === 0) {
       return dbService.getQuestions().filter(q => q.subjectId === subject.id);
     }
@@ -429,36 +705,28 @@ export class GoogleIntegrationService {
     questionHeaders.forEach((headerText, idx) => {
       const qNum = idx + 1;
       const cleanText = headerText.trim() || `Butir Soal Nomor ${qNum}`;
-
-      let defaultCorrect = 'A';
-      if (answerKeyRow && answerKeyRow[headerText] !== undefined) {
-        const rawAns = answerKeyRow[headerText].trim();
-        const prefixMatch = rawAns.match(/^([A-Ea-e])[\.\)\s]/);
-        if (prefixMatch) {
-          defaultCorrect = prefixMatch[1].toUpperCase();
-        } else if (['A', 'B', 'C', 'D', 'E'].includes(rawAns.toUpperCase())) {
-          defaultCorrect = rawAns.toUpperCase();
-        } else if (rawAns.includes(',')) {
-          // PG Kompleks / Kotak centang
-          const parts = rawAns.split(',').map(p => p.trim()).filter(Boolean);
-          const normalized = parts.map(p => {
-            const m = p.match(/^([A-Ea-e])[\.\)\s]/);
-            return m ? m[1].toUpperCase() : p;
-          });
-          defaultCorrect = normalized.sort().join(', ');
-        } else if (rawAns) {
-          defaultCorrect = rawAns;
-        }
-      }
-
       const existing = remainingQuestions.find(q => q.questionNumber === qNum);
+
+      const enriched = this.enrichQuestionOptionsFromRows(
+        existing?.options,
+        existing?.correctAnswer,
+        headerText,
+        rows,
+        answerKeyRow
+      );
+
       if (existing) {
         const updates: Partial<Question> = {};
         if (!existing.questionText || existing.questionText.startsWith('Butir Soal Nomor') || existing.questionText !== cleanText) {
           updates.questionText = cleanText;
         }
-        if (answerKeyRow && defaultCorrect && existing.correctAnswer !== defaultCorrect) {
-          updates.correctAnswer = defaultCorrect;
+        if (enriched.correctAnswer && existing.correctAnswer !== enriched.correctAnswer) {
+          updates.correctAnswer = enriched.correctAnswer;
+        }
+        const prevOptsJson = JSON.stringify(existing.options || []);
+        const nextOptsJson = JSON.stringify(enriched.options);
+        if (prevOptsJson !== nextOptsJson) {
+          updates.options = enriched.options;
         }
         if (Object.keys(updates).length > 0) {
           dbService.updateQuestion(existing.id, updates, null);
@@ -474,14 +742,8 @@ export class GoogleIntegrationService {
             subjectId: subject.id,
             materialId,
             competencyId,
-            correctAnswer: defaultCorrect,
-            options: [
-              { key: 'A', text: 'Pilihan A' },
-              { key: 'B', text: 'Pilihan B' },
-              { key: 'C', text: 'Pilihan C' },
-              { key: 'D', text: 'Pilihan D' },
-              { key: 'E', text: 'Pilihan E' },
-            ],
+            correctAnswer: enriched.correctAnswer || 'A',
+            options: enriched.options,
             weight: 1,
             status: 'ACTIVE',
           },
@@ -496,7 +758,8 @@ export class GoogleIntegrationService {
 
   /**
    * 1. PARSE: Parse raw CSV / Tab-separated text adhering strictly to RFC 4180
-   * (Handles commas inside quotes, multiline text inside quotes, quotes escaping)
+   * (Handles commas inside quotes, multiline text inside quotes, quotes escaping,
+   *  blank image-question headers, and duplicate question headers)
    */
   public static parseRawSheetText(rawText: string): ParseResult {
     if (!rawText || !rawText.trim()) return { headers: [], rows: [] };
@@ -549,24 +812,44 @@ export class GoogleIntegrationService {
 
     if (parsedMatrix.length === 0) return { headers: [], rows: [] };
 
-    const headers = parsedMatrix[0];
+    // Normalisasi & disambiguasi header kolom:
+    // 1. Jika ada kolom soal bergambar (header kosong "") namun baris datanya berisi jawaban, beri nama "Soal Kolom X"
+    // 2. Jika ada judul pertanyaan yang sama persis (misal "Perhatikan gambar berikut:"), beri sufiks "(#2)", "(#3)" agar tidak saling menimpa di objek row
+    const rawHeaders = parsedMatrix[0];
+    const headerCounts = new Map<string, number>();
+    const headers: string[] = rawHeaders.map((rawH, idx) => {
+      let baseHeader = (rawH || '').trim();
+      if (!baseHeader) {
+        const hasDataInColumn = parsedMatrix.slice(1).some(r => r[idx] !== undefined && r[idx].trim().length > 0);
+        if (hasDataInColumn) {
+          baseHeader = `Soal Kolom ${idx + 1}`;
+        } else {
+          return '';
+        }
+      }
+      const prevCount = headerCounts.get(baseHeader) || 0;
+      headerCounts.set(baseHeader, prevCount + 1);
+      return prevCount === 0 ? baseHeader : `${baseHeader} (#${prevCount + 1})`;
+    });
+
     const rows: Record<string, string>[] = [];
 
     for (let r = 1; r < parsedMatrix.length; r++) {
       const cols = parsedMatrix[r];
       const rowObj: Record<string, string> = {};
       headers.forEach((h, idx) => {
+        if (!h) return;
         rowObj[h] = cols[idx] !== undefined ? cols[idx] : '';
       });
       rows.push(rowObj);
     }
 
-    return { headers, rows };
+    return { headers: headers.filter(Boolean), rows };
   }
 
   /**
    * 2. MAPPING: Detect & map column headers to domain fields and unique Question IDs.
-   * CRITICAL RULE: Uses Unique Question IDs (e.g. 'MAT-TO03-Q015'), NOT column index/positions!
+   * CRITICAL RULE: Uses Unique Question IDs (e.g. 'MAT-TO03-Q015') and prevents duplicate column collisions!
    */
   public static detectColumnMappings(
     headers: string[],
@@ -586,39 +869,66 @@ export class GoogleIntegrationService {
         return lower.includes('timestamp') || lower.includes('waktu') || lower.includes('tanggal');
       });
 
-    // Ambil kolom-kolom murni pertanyaan (Bagian 2 Google Form atau Kolom Pilihan Guru)
-    const questionHeaders = selectedColumns && selectedColumns.length > 0
-      ? selectedColumns
-      : this.getQuestionHeaders(headers);
+    // Ambil kolom-kolom murni pertanyaan (Bagian 2 Google Form atau Kolom Pilihan Guru yang telah direkonsiliasi)
+    const questionHeaders = this.reconcileSelectedColumns(selectedColumns, headers);
 
-    // Map each question by uniqueCode (with Positional Fallback for unnumbered headers)
+    // Map each question by uniqueCode without collisions
     const questionMappings: Record<string, string> = {
       ...(customOverrides?.questionMappings || {}),
     };
+    const usedHeaders = new Set<string>(Object.values(questionMappings).filter(Boolean));
+
+    // Apakah ada header di sheet yang secara eksplisit memuat kode unik soal?
+    const hasExplicitCodeHeaders = headers.some(h =>
+      questions.some(q => h.toLowerCase().includes(q.uniqueCode.toLowerCase()))
+    );
 
     questions.forEach((q, idx) => {
       if (questionMappings[q.uniqueCode]) return;
 
-      // 1. Prioritas Utama: Cari column header yang cocok dengan uniqueCode atau pola penomoran
-      const matchingHeader = headers.find(h => {
-        const lowerH = h.toLowerCase();
-        const lowerCode = q.uniqueCode.toLowerCase();
-        // Exact unique code match or substring match
-        if (lowerH.includes(lowerCode)) return true;
+      // 1. Prioritas 1: Exact match pada kode unik di header
+      const codeMatch = headers.find(h => !usedHeaders.has(h) && h.toLowerCase().includes(q.uniqueCode.toLowerCase()));
+      if (codeMatch) {
+        questionMappings[q.uniqueCode] = codeMatch;
+        usedHeaders.add(codeMatch);
+        return;
+      }
 
-        // Fallback: check if header matches question number tag (e.g. "[No. 1]", "Soal 1", "1. Pertanyaan...", "1) Pertanyaan...")
-        if (q.questionNumber) {
-          const numPattern = new RegExp(`(^|\\b|\\s)(?:soal|no|q)?\\.?\\s*${q.questionNumber}[\\.\\)\\:\\s\\]]`, 'i');
-          if (numPattern.test(lowerH)) return true;
+      // Jika sheet menggunakan format kode unik eksplisit (seperti pada test suite), jangan lakukan fallback posisional ke kolom kode asing
+      if (hasExplicitCodeHeaders) {
+        return;
+      }
+
+      // 2. Prioritas 2: Exact match dengan questionText pada kolom soal
+      const qTextTrim = (q.questionText || '').trim();
+      if (qTextTrim) {
+        const exactTextMatch = questionHeaders.find(h => !usedHeaders.has(h) && h.trim() === qTextTrim);
+        if (exactTextMatch) {
+          questionMappings[q.uniqueCode] = exactTextMatch;
+          usedHeaders.add(exactTextMatch);
+          return;
         }
-        return false;
-      });
+      }
 
-      if (matchingHeader) {
-        questionMappings[q.uniqueCode] = matchingHeader;
-      } else if (questionHeaders[idx]) {
-        // 2. Positional Fallback: Jika judul pertanyaan bebas tanpa nomor, petakan berurutan dari Bagian 2
-        questionMappings[q.uniqueCode] = questionHeaders[idx];
+      // 3. Prioritas 3: Pemetaan posisional berdasarkan urutan kolom soal yang dipilih (paling akurat untuk Google Form)
+      const positionalHeader = questionHeaders[idx];
+      if (positionalHeader && !usedHeaders.has(positionalHeader)) {
+        questionMappings[q.uniqueCode] = positionalHeader;
+        usedHeaders.add(positionalHeader);
+        return;
+      }
+
+      // 4. Prioritas 4: Pola nomor soal ketat di awal judul header (misal "1. ...", "[No. 1] ...", "Soal 1:")
+      if (q.questionNumber) {
+        const strictNumPattern = new RegExp(
+          `^(?:\\[?\\s*(?:soal|no|nomor|q|butir)\\s*\\.?\\s*${q.questionNumber}\\s*[\\]\\.\\)\\:\\-\\s]|${q.questionNumber}\\s*[\\.\\)\\:])`,
+          'i'
+        );
+        const numMatch = questionHeaders.find(h => !usedHeaders.has(h) && strictNumPattern.test(h.trim()));
+        if (numMatch) {
+          questionMappings[q.uniqueCode] = numMatch;
+          usedHeaders.add(numMatch);
+        }
       }
     });
 
@@ -709,6 +1019,33 @@ export class GoogleIntegrationService {
       };
     }
 
+    // Helper untuk mengekstrak NISN & Nama dari baris (mendukung Google Form bercabang per kelas yang memiliki lebih dari 1 kolom NISN/Nama)
+    const extractRowNisn = (row: Record<string, string>): string => {
+      const primary = (row[mappingConfig.nisnColumn] || '').trim();
+      if (primary) return primary;
+      for (const [k, v] of Object.entries(row)) {
+        if (!v || !v.trim()) continue;
+        const lk = k.toLowerCase();
+        if (lk === 'nisn' || lk.includes('nisn') || lk.includes('nomor induk') || lk.includes('no induk') || lk.includes('no. peserta')) {
+          return v.trim();
+        }
+      }
+      return '';
+    };
+
+    const extractRowName = (row: Record<string, string>): string => {
+      const primary = (mappingConfig.nameColumn ? row[mappingConfig.nameColumn] : '')?.trim() || '';
+      if (primary) return primary;
+      for (const [k, v] of Object.entries(row)) {
+        if (!v || !v.trim()) continue;
+        const lk = k.toLowerCase();
+        if ((lk === 'nama' || lk.includes('nama lengkap') || lk.includes('nama siswa') || lk.includes('nama peserta')) && !lk.includes('sekolah')) {
+          return v.trim();
+        }
+      }
+      return '';
+    };
+
     // 0. Pre-scan for Official Answer Key row (identified by isAnswerKeyAccount === true, or name/NISN indicators)
     const allDbStudents = dbService.getStudents();
     let detectedKeyRow: Record<string, string> | null = null;
@@ -716,8 +1053,8 @@ export class GoogleIntegrationService {
     let answerKeyExtractedCount = 0;
 
     for (const row of parsedRows) {
-      const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
-      const rawName = (mappingConfig.nameColumn ? row[mappingConfig.nameColumn] : '')?.trim() || '';
+      const rawNisn = extractRowNisn(row);
+      const rawName = extractRowName(row);
       if (!rawNisn && !rawName) continue;
 
       // 1. Cek kecocokan NISN terhadap akun siswa di database yang bertanda isAnswerKeyAccount
@@ -747,42 +1084,62 @@ export class GoogleIntegrationService {
       }
     }
 
-    // If Official Answer Key row is detected, extract answers and update tryout/questions
-    if (detectedKeyRow && detectedKeyStudent) {
-      const updatedKeyMap: Record<string, string> = { ...((tryout.answerKey as unknown as Record<string, string>) || {}) };
+    // Filter out the answer key account row from student preview / score calculation
+    const studentRows = parsedRows.filter(row => {
+      if (detectedKeyRow && row === detectedKeyRow) return false;
+      const rawNisn = extractRowNisn(row);
+      const rawName = extractRowName(row);
+      if (/kunci|answer\s*key|master\s*key/i.test(rawName) || /kunci|answer\s*key|master\s*key/i.test(rawNisn) || rawNisn === '0000000000' || rawNisn === '9999999999') {
+        return false;
+      }
+      if (!rawNisn) return true;
+      const cleanRowNisn = GoogleIntegrationService.normalizeNisn(rawNisn);
+      const matched = students.find(s => s.nisn === rawNisn || String(s.nisn).trim() === rawNisn || (cleanRowNisn && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanRowNisn) || (cleanRowNisn && s.nisn.replace(/\D/g, '') === cleanRowNisn))
+                   || allDbStudents.find(s => s.nisn === rawNisn || String(s.nisn).trim() === rawNisn || (cleanRowNisn && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanRowNisn) || (cleanRowNisn && s.nisn.replace(/\D/g, '') === cleanRowNisn));
+      return !matched?.isAnswerKeyAccount;
+    });
 
-      questions.forEach(q => {
-        const header = mappingConfig.questionMappings[q.uniqueCode];
-        if (header && detectedKeyRow![header] !== undefined) {
-          const rawKeyVal = detectedKeyRow![header].trim();
-          if (rawKeyVal) {
-            let extractedKey = rawKeyVal;
-            // Normalize multi-select checkboxes e.g. "A, C"
-            if (rawKeyVal.includes(',')) {
-              const parts = rawKeyVal.split(',').map(p => p.trim()).filter(Boolean);
-              const normalized = parts.map(p => {
-                const m = p.match(/^([A-Ea-e])[\.\)\s]/);
-                return m ? m[1].toUpperCase() : p.toUpperCase();
-              });
-              extractedKey = normalized.sort().join(', ');
-            } else {
-              const prefixMatch = rawKeyVal.match(/^([A-Ea-e])[\.\)\s]/);
-              if (prefixMatch) {
-                extractedKey = prefixMatch[1].toUpperCase();
-              } else if (['A', 'B', 'C', 'D', 'E'].includes(rawKeyVal.toUpperCase())) {
-                extractedKey = rawKeyVal.toUpperCase();
-              }
-            }
+    // Perkaya opsi A..E dan kunci jawaban setiap soal berdasarkan seluruh baris sheet & baris kunci jawaban
+    questions.forEach(q => {
+      const header = mappingConfig.questionMappings[q.uniqueCode];
+      if (!header) return;
 
-            q.correctAnswer = extractedKey;
-            updatedKeyMap[q.id] = extractedKey;
-            answerKeyExtractedCount++;
-            dbService.updateQuestion(q.id, { correctAnswer: extractedKey }, null);
-          }
+      const enriched = this.enrichQuestionOptionsFromRows(
+        q.options,
+        q.correctAnswer,
+        header,
+        studentRows,
+        detectedKeyRow
+      );
+
+      const updates: Partial<Question> = {};
+      if (JSON.stringify(q.options || []) !== JSON.stringify(enriched.options)) {
+        q.options = enriched.options;
+        updates.options = enriched.options;
+      }
+
+      if (detectedKeyRow && detectedKeyRow[header] !== undefined && detectedKeyRow[header].trim()) {
+        answerKeyExtractedCount++;
+        if (q.correctAnswer !== enriched.correctAnswer) {
+          q.correctAnswer = enriched.correctAnswer;
+          updates.correctAnswer = enriched.correctAnswer;
         }
-      });
+      } else if (!['A', 'B', 'C', 'D', 'E'].includes((q.correctAnswer || '').trim().toUpperCase())) {
+        q.correctAnswer = enriched.correctAnswer;
+        updates.correctAnswer = enriched.correctAnswer;
+      }
 
-      // Simpan kunci jawaban dalam format array per nomor soal (Index 0 = Soal 1)
+      if (Object.keys(updates).length > 0) {
+        try {
+          dbService.updateQuestion(q.id, updates, null);
+        } catch {
+          // Abaikan jika soal berasal dari objek simulasi/test yang belum tersimpan di DB
+        }
+      }
+    });
+
+    // If Official Answer Key row is detected, simpan array kunci jawaban pada tryout
+    if (detectedKeyRow && detectedKeyStudent) {
       const maxQNum = Math.max(...questions.map(q => q.questionNumber || 1), questions.length, 1);
       const answerKeyArr: string[] = new Array(maxQNum).fill('');
       questions.forEach(q => {
@@ -795,25 +1152,10 @@ export class GoogleIntegrationService {
       dbService.updateTryout(tryout.id, { answerKey: answerKeyArr }, null);
     }
 
-    // Filter out the answer key account row from student preview / score calculation
-    const studentRows = parsedRows.filter(row => {
-      if (detectedKeyRow && row === detectedKeyRow) return false;
-      const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
-      const rawName = (mappingConfig.nameColumn ? row[mappingConfig.nameColumn] : '')?.trim() || '';
-      if (/kunci|answer\s*key|master\s*key/i.test(rawName) || /kunci|answer\s*key|master\s*key/i.test(rawNisn) || rawNisn === '0000000000' || rawNisn === '9999999999') {
-        return false;
-      }
-      if (!rawNisn) return true;
-      const cleanRowNisn = GoogleIntegrationService.normalizeNisn(rawNisn);
-      const matched = students.find(s => s.nisn === rawNisn || String(s.nisn).trim() === rawNisn || (cleanRowNisn && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanRowNisn) || (cleanRowNisn && s.nisn.replace(/\D/g, '') === cleanRowNisn))
-                   || allDbStudents.find(s => s.nisn === rawNisn || String(s.nisn).trim() === rawNisn || (cleanRowNisn && GoogleIntegrationService.normalizeNisn(s.nisn) === cleanRowNisn) || (cleanRowNisn && s.nisn.replace(/\D/g, '') === cleanRowNisn));
-      return !matched?.isAnswerKeyAccount;
-    });
-
     // Track duplicate NISNs in the current sheet batch among real students
     const nisnOccurrences: Record<string, number> = {};
     studentRows.forEach(row => {
-      const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
+      const rawNisn = extractRowNisn(row);
       if (rawNisn) {
         nisnOccurrences[rawNisn] = (nisnOccurrences[rawNisn] || 0) + 1;
       }
@@ -827,10 +1169,8 @@ export class GoogleIntegrationService {
 
     const previewItems: SheetImportPreviewItem[] = studentRows.map((row, index) => {
       const rowNumber = index + 1;
-      const rawNisn = (row[mappingConfig.nisnColumn] || '').trim();
-      const rawName = (mappingConfig.nameColumn && row[mappingConfig.nameColumn])
-        ? String(row[mappingConfig.nameColumn]).trim()
-        : '';
+      const rawNisn = extractRowNisn(row);
+      const rawName = extractRowName(row);
       const cleanNisn = GoogleIntegrationService.normalizeNisn(rawNisn);
 
       // Extract raw GForm score with smart auto-normalization (supporting X/Y format, Indonesian comma decimal, etc.)
@@ -918,33 +1258,13 @@ export class GoogleIntegrationService {
             return;
           }
 
-          const rawUpper = rawVal.toUpperCase();
-
-          // 1. Check if it's a valid option letter: e.g. "A", "A. ...", "B)", etc.
-          const optionPrefixMatch = rawVal.match(/^([A-Ea-e])[\.\)\s]/);
-          if (optionPrefixMatch) {
-            studentAnswers[q.uniqueCode] = optionPrefixMatch[1].toUpperCase();
-          } else if (['A', 'B', 'C', 'D', 'E'].includes(rawUpper)) {
-            studentAnswers[q.uniqueCode] = rawUpper;
-          } else if (rawVal.includes(',')) {
-            // Checkbox multi-select (e.g. "A, C" or "A. Opsi 1, C. Opsi 2" or direct text "Opsi 1, Opsi 2")
-            const parts = rawVal.split(',').map(p => p.trim()).filter(Boolean);
-            const normalizedParts = parts.map(p => {
-              const m = p.match(/^([A-Ea-e])[\.\)\s]/);
-              return m ? m[1].toUpperCase() : p;
-            });
-            studentAnswers[q.uniqueCode] = normalizedParts.sort().join(', ');
-          } else if (['BENAR', 'SALAH', 'TRUE', 'FALSE'].includes(rawUpper)) {
-            // True / False type
-            studentAnswers[q.uniqueCode] = rawUpper;
-          } else if (q.options?.some(opt => opt.text.trim().toUpperCase() === rawUpper)) {
-            // Matched option text directly
-            const matchedOpt = q.options.find(opt => opt.text.trim().toUpperCase() === rawUpper);
-            studentAnswers[q.uniqueCode] = matchedOpt ? matchedOpt.key : rawVal;
-          } else {
-            // Jawaban teks langsung (mendukung soal Google Form tanpa opsi huruf A/B/C/D)
+          if (/^INVALID_/i.test(rawVal)) {
+            malformedAnswers[q.uniqueCode] = rawVal;
             studentAnswers[q.uniqueCode] = rawVal;
+            return;
           }
+
+          studentAnswers[q.uniqueCode] = this.normalizeAnswerToOptionKey(rawVal, q);
         } else {
           studentAnswers[q.uniqueCode] = '';
         }
