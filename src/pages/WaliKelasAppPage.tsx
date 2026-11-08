@@ -758,7 +758,198 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Rekapitulasi Per Mapel */}
+                                        {/* Grafik Batang Perbandingan Ketuntasan KKM per Masing-Masing TO */}
+                    {(() => {
+                      // Hitung data perbandingan kelulusan KKM pada masing-masing tahapan TO
+                      const tryoutStagePassFail = allTryouts.map((to) => {
+                        const stage = stageGroupMap[to.id];
+                        let passCount = 0;
+                        let failCount = 0;
+                        let evaluatedCount = 0;
+                        const targetKKM = selectedSubjectFilter === 'ALL'
+                          ? rombelKKM
+                          : (allSubjects.find(s => s.id === selectedSubjectFilter)?.passingGrade ?? 75);
+
+                        activeStudentList.forEach(st => {
+                          let score: number | null = null;
+                          if (selectedSubjectFilter === 'ALL') {
+                            if (stage) {
+                              const res = getStudentStageCompositeScore(st.id, stage, allSubjects, allScores);
+                              score = res.compositeScore;
+                            }
+                          } else {
+                            score = getStudentSubjectScore(st.id, to.id, selectedSubjectFilter);
+                          }
+
+                          if (score !== null) {
+                            evaluatedCount++;
+                            if (score >= targetKKM) {
+                              passCount++;
+                            } else {
+                              failCount++;
+                            }
+                          }
+                        });
+
+                        const passPct = evaluatedCount > 0 ? Math.round((passCount / evaluatedCount) * 100) : 0;
+                        const failPct = evaluatedCount > 0 ? (100 - passPct) : 0;
+
+                        return {
+                          toId: to.id,
+                          label: stage?.stageLabel || to.code || to.title,
+                          evaluatedCount,
+                          passCount,
+                          failCount,
+                          passPct,
+                          failPct,
+                        };
+                      }).filter(item => item.evaluatedCount > 0);
+
+                      if (tryoutStagePassFail.length === 0) return null;
+
+                      const activeTargetKKM = selectedSubjectFilter === 'ALL'
+                        ? rombelKKM
+                        : (allSubjects.find(s => s.id === selectedSubjectFilter)?.passingGrade ?? 75);
+
+                      return (
+                        <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-5 shadow-xs">
+                          {/* Header & Legenda */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+                            <div>
+                              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase tracking-wider font-mono">
+                                <BarChart3 className="w-4 h-4" />
+                                <span>Perbandingan Ketuntasan KKM per Tahap Ujian</span>
+                              </div>
+                              <h3 className="text-base font-black text-slate-900 dark:text-slate-100 mt-1">
+                                Rasio Siswa Lulus KKM vs Remedial Lintas Try Out
+                              </h3>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                Menampilkan perbandingan jumlah dan persentase siswa tuntas (&ge; KKM {activeTargetKKM.toFixed(1)}) vs belum tuntas (&lt; KKM {activeTargetKKM.toFixed(1)}) pada rombel {assignedClass.name}.
+                              </p>
+                            </div>
+
+                            {/* Legend */}
+                            <div className="flex items-center gap-3 text-xs font-mono shrink-0">
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 rounded-md bg-emerald-500 inline-block shadow-2xs"></span>
+                                <span className="text-slate-700 dark:text-slate-300 font-bold">Tuntas KKM</span>
+                              </span>
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 rounded-md bg-rose-500 inline-block shadow-2xs"></span>
+                                <span className="text-slate-700 dark:text-slate-300 font-bold">Remedial</span>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Petunjuk Geser Layar HP */}
+                          <div className="flex sm:hidden items-center justify-between text-[11px] font-medium text-slate-500 bg-slate-50 dark:bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-800/80">
+                            <span>💡 Geser grafik ke samping jika ada banyak tahapan TO</span>
+                            <span className="font-mono font-bold text-emerald-600">↔ Geser</span>
+                          </div>
+
+                          {/* Visual Stacked Bar Chart per TO */}
+                          <div className="overflow-x-auto pb-2 scrollbar-thin">
+                            <div className="min-w-[480px] sm:min-w-0 grid gap-4 items-end" style={{ gridTemplateColumns: `repeat(${tryoutStagePassFail.length}, minmax(110px, 1fr))` }}>
+                              {tryoutStagePassFail.map((stageItem, sIdx) => {
+                                const prevItem = sIdx > 0 ? tryoutStagePassFail[sIdx - 1] : null;
+                                const diffPassPct = prevItem ? stageItem.passPct - prevItem.passPct : null;
+
+                                return (
+                                  <div key={stageItem.toId} className="flex flex-col items-center gap-2 group">
+                                    {/* Delta vs Previous TO */}
+                                    <div className="text-[10px] font-mono font-bold h-5 flex items-center justify-center">
+                                      {diffPassPct !== null && (
+                                        <span className={`px-2 py-0.5 rounded-full flex items-center gap-0.5 ${
+                                          diffPassPct > 0 
+                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                            : diffPassPct < 0
+                                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
+                                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                        }`}>
+                                          {diffPassPct > 0 ? `▲ +${diffPassPct}%` : diffPassPct < 0 ? `▼ ${diffPassPct}%` : '● 0%'}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Vertical Stacked Bar */}
+                                    <div className="w-full max-w-[85px] sm:max-w-[100px] h-52 sm:h-60 bg-slate-100 dark:bg-slate-800/60 rounded-2xl p-1.5 flex flex-col justify-end border border-slate-200/80 dark:border-slate-800/80 shadow-2xs relative">
+                                      {/* Segmen Remedial (Atas) */}
+                                      {stageItem.failCount > 0 && (
+                                        <div
+                                          className="w-full bg-rose-500 hover:bg-rose-600 transition-all rounded-t-xl flex flex-col items-center justify-center text-white overflow-hidden relative cursor-default"
+                                          style={{ height: `${stageItem.failPct}%` }}
+                                          title={`Remedial: ${stageItem.failCount} Siswa (${stageItem.failPct}%)`}
+                                        >
+                                          {stageItem.failPct >= 16 && (
+                                            <span className="text-[10px] sm:text-[11px] font-mono font-black drop-shadow-xs">
+                                              {stageItem.failPct}%
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Segmen Tuntas (Bawah) */}
+                                      {stageItem.passCount > 0 && (
+                                        <div
+                                          className={`w-full bg-emerald-500 hover:bg-emerald-600 transition-all flex flex-col items-center justify-center text-white overflow-hidden relative cursor-default ${
+                                            stageItem.failCount === 0 ? 'rounded-xl' : 'rounded-b-xl border-t border-white/20'
+                                          }`}
+                                          style={{ height: `${stageItem.passPct}%` }}
+                                          title={`Tuntas KKM: ${stageItem.passCount} Siswa (${stageItem.passPct}%)`}
+                                        >
+                                          {stageItem.passPct >= 16 && (
+                                            <span className="text-[10px] sm:text-[11px] font-mono font-black drop-shadow-xs">
+                                              {stageItem.passPct}%
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Label TO & Detail Nilai */}
+                                    <div className="text-center space-y-0.5 mt-1">
+                                      <span className="text-xs font-mono font-extrabold text-slate-800 dark:text-slate-200 block truncate max-w-[100px]">
+                                        {stageItem.label}
+                                      </span>
+                                      <div className="text-[10px] font-mono text-slate-500 flex flex-col">
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">{stageItem.passCount} Tuntas</span>
+                                        <span className="text-rose-600 dark:text-rose-400 font-bold">{stageItem.failCount} Remedial</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Quick Summary Grid Cards */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs font-mono">
+                            <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                              <span className="text-[10px] text-slate-400 block">Total Siswa Rombel</span>
+                              <strong className="text-sm font-black text-slate-900 dark:text-slate-100">{activeStudentList.length} Siswa</strong>
+                            </div>
+                            <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/30 rounded-xl border border-emerald-200/50 dark:border-emerald-900/40">
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block">Ketuntasan Tertinggi</span>
+                              <strong className="text-sm font-black text-emerald-700 dark:text-emerald-300">
+                                {Math.max(...tryoutStagePassFail.map(t => t.passPct))}%
+                              </strong>
+                            </div>
+                            <div className="p-3 bg-rose-50/70 dark:bg-rose-950/30 rounded-xl border border-rose-200/50 dark:border-rose-900/40">
+                              <span className="text-[10px] text-rose-600 dark:text-rose-400 block">Remedial Tertinggi</span>
+                              <strong className="text-sm font-black text-rose-700 dark:text-rose-300">
+                                {Math.max(...tryoutStagePassFail.map(t => t.failPct))}%
+                              </strong>
+                            </div>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                              <span className="text-[10px] text-slate-400 block">Tahapan Terdata</span>
+                              <strong className="text-sm font-black text-slate-800 dark:text-slate-200">{tryoutStagePassFail.length} Siklus TO</strong>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+{/* Rekapitulasi Per Mapel */}
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xs">
                       <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                         <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">

@@ -5666,6 +5666,124 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           );
                         })()}
 
+                        
+                        {/* Grafik Batang Perbandingan Kelulusan KKM Kelas Terpilih per Masing-Masing TO */}
+                        {classProg && classProg.points.length > 0 && (() => {
+                          const classStudents = students.filter(s => s.classId === selectedClassId);
+                          const totalClassStudents = classStudents.length;
+
+                          const classStageBars = classProg.points.map((pt, idx) => {
+                            const passRate = Math.round(pt.passingRatePct || 0);
+                            const failRate = 100 - passRate;
+                            const passCount = Math.round((passRate / 100) * totalClassStudents);
+                            const failCount = totalClassStudents - passCount;
+
+                            return {
+                              label: pt.tryoutCode,
+                              passRate,
+                              failRate,
+                              passCount,
+                              failCount,
+                              avgScore: pt.averageScore,
+                            };
+                          });
+
+                          return (
+                            <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-5 shadow-2xs">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                                <div>
+                                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                    <BarChart3 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                    <span>Rasio Ketuntasan KKM Rombel — {selectedClassObj?.name || 'Kelas'}</span>
+                                  </h3>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    Perbandingan proporsi siswa tuntas KKM vs remedial pada kelas {selectedClassObj?.name} untuk masing-masing tahapan Try Out.
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs font-mono shrink-0">
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 rounded-md bg-emerald-500 inline-block shadow-2xs"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-bold">Tuntas KKM</span>
+                                  </span>
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 rounded-md bg-rose-500 inline-block shadow-2xs"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-bold">Remedial</span>
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="overflow-x-auto pb-2 scrollbar-thin">
+                                <div className="min-w-[460px] sm:min-w-0 grid gap-4 items-end" style={{ gridTemplateColumns: `repeat(${classStageBars.length}, minmax(110px, 1fr))` }}>
+                                  {classStageBars.map((bar, idx) => {
+                                    const prev = idx > 0 ? classStageBars[idx - 1] : null;
+                                    const delta = prev ? bar.passRate - prev.passRate : null;
+
+                                    return (
+                                      <div key={bar.label} className="flex flex-col items-center gap-2 group">
+                                        <div className="text-[10px] font-mono font-bold h-5 flex items-center justify-center">
+                                          {delta !== null && (
+                                            <span className={`px-2 py-0.5 rounded-full flex items-center gap-0.5 ${
+                                              delta > 0
+                                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                                : delta < 0
+                                                ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
+                                                : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                            }`}>
+                                              {delta > 0 ? `▲ +${delta}%` : delta < 0 ? `▼ ${delta}%` : '● 0%'}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="w-full max-w-[85px] sm:max-w-[100px] h-52 sm:h-56 bg-slate-100 dark:bg-slate-800/60 rounded-2xl p-1.5 flex flex-col justify-end border border-slate-200/80 dark:border-slate-800/80 shadow-2xs relative">
+                                          {bar.failRate > 0 && (
+                                            <div
+                                              className="w-full bg-rose-500 hover:bg-rose-600 transition-all rounded-t-xl flex flex-col items-center justify-center text-white overflow-hidden relative cursor-default"
+                                              style={{ height: `${bar.failRate}%` }}
+                                              title={`Remedial: ${bar.failCount} Siswa (${bar.failRate}%)`}
+                                            >
+                                              {bar.failRate >= 16 && (
+                                                <span className="text-[10px] sm:text-[11px] font-mono font-black drop-shadow-xs">
+                                                  {bar.failRate}%
+                                                </span>
+                                              )}
+                                            </div>
+                                          )}
+
+                                          {bar.passRate > 0 && (
+                                            <div
+                                              className={`w-full bg-emerald-500 hover:bg-emerald-600 transition-all flex flex-col items-center justify-center text-white overflow-hidden relative cursor-default ${
+                                                bar.failRate === 0 ? 'rounded-xl' : 'rounded-b-xl border-t border-white/20'
+                                              }`}
+                                              style={{ height: `${bar.passRate}%` }}
+                                              title={`Tuntas: ${bar.passCount} Siswa (${bar.passRate}%)`}
+                                            >
+                                              {bar.passRate >= 16 && (
+                                                <span className="text-[10px] sm:text-[11px] font-mono font-black drop-shadow-xs">
+                                                  {bar.passRate}%
+                                                </span>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        <div className="text-center space-y-0.5 mt-1">
+                                          <span className="text-xs font-mono font-extrabold text-slate-800 dark:text-slate-200 block truncate max-w-[100px]">
+                                            {bar.label}
+                                          </span>
+                                          <div className="text-[10px] font-mono text-slate-500 flex flex-col">
+                                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">{bar.passCount} Tuntas</span>
+                                            <span className="text-rose-600 dark:text-rose-400 font-bold">{bar.failCount} Remedial</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {(!classProg || classProg.points.length === 0) && (
                           <div className="flex flex-col items-center justify-center py-16 text-center space-y-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
                             <div className="w-14 h-14 rounded-full bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
@@ -5869,7 +5987,170 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           );
                         })()}
 
-                        {/* DIAGRAM KETUNTASAN SISWA MATAPELAJARAN (DATA RIIL DARI DATABASE & GOOGLE FORM) */}
+                                                {/* Grafik Batang Perbandingan Kelulusan KKM per Masing-Masing TO pada Mapel Ini */}
+                        {(() => {
+                          const activeSubId = activeSubjectObj?.id || selectedSubjectId;
+                          const kkmVal = activeSubjectObj?.passingGrade ?? 75.0;
+
+                          // Ambil seluruh TO yang relevan
+                          const relevantTos = tryouts.filter(to => {
+                            if (to.subjectId === activeSubId) return true;
+                            if (to.externalSubjectIds && to.externalSubjectIds.includes(activeSubId)) return true;
+                            return scores.some(s => s.tryoutId === to.id && s.subjectScores && s.subjectScores[activeSubId] !== undefined);
+                          });
+
+                          // Kelompokkan per stage agar tidak ada duplikasi
+                          const stageLabels = Array.from(new Set(relevantTos.map(t => getFriendlyTryoutStageLabel(t, tryouts))));
+                          
+                          const stagePassFailData = stageLabels.map(stLabel => {
+                            const stageTos = relevantTos.filter(t => getFriendlyTryoutStageLabel(t, tryouts) === stLabel);
+                            const stageToIds = stageTos.map(t => t.id);
+
+                            let pass = 0;
+                            let fail = 0;
+                            let tested = 0;
+
+                            students.forEach(st => {
+                              const studentScoreList = scores.filter(s => s.studentId === st.id && stageToIds.includes(s.tryoutId));
+                              let scoreVal: number | null = null;
+                              for (const sc of studentScoreList) {
+                                if (sc.subjectScores && sc.subjectScores[activeSubId] !== undefined) {
+                                  scoreVal = Number(sc.subjectScores[activeSubId]);
+                                  break;
+                                }
+                                const to = tryouts.find(t => t.id === sc.tryoutId);
+                                if (to?.subjectId === activeSubId && sc.calculatedScore !== undefined) {
+                                  scoreVal = Number(sc.calculatedScore);
+                                  break;
+                                }
+                              }
+
+                              if (scoreVal !== null) {
+                                tested++;
+                                if (scoreVal >= kkmVal) pass++;
+                                else fail++;
+                              }
+                            });
+
+                            const passPct = tested > 0 ? Math.round((pass / tested) * 100) : 0;
+                            const failPct = tested > 0 ? (100 - passPct) : 0;
+
+                            return {
+                              label: stLabel,
+                              tested,
+                              pass,
+                              fail,
+                              passPct,
+                              failPct,
+                            };
+                          }).filter(d => d.tested > 0);
+
+                          if (stagePassFailData.length === 0) return null;
+
+                          return (
+                            <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-5 shadow-2xs">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                                <div>
+                                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                    <BarChart3 className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                                    <span>Grafik Batang Perbandingan Kelulusan KKM per Try Out</span>
+                                  </h3>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    Perbandingan jumlah dan persentase siswa tuntas (&ge; KKM {kkmVal.toFixed(1)}) vs remedial (&lt; KKM {kkmVal.toFixed(1)}) khusus mata pelajaran {activeSubjectObj?.name} pada masing-masing tahapan ujian (Seluruh Kelas Diampu).
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs font-mono shrink-0">
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 rounded-md bg-emerald-500 inline-block shadow-2xs"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-bold">Tuntas KKM</span>
+                                  </span>
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 rounded-md bg-rose-500 inline-block shadow-2xs"></span>
+                                    <span className="text-slate-700 dark:text-slate-300 font-bold">Remedial</span>
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Mobile Hint */}
+                              <div className="flex sm:hidden items-center justify-between text-[11px] font-medium text-slate-500 bg-slate-50 dark:bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-800/80">
+                                <span>💡 Geser ke samping jika tahapan TO panjang</span>
+                                <span className="font-mono font-bold text-teal-600">↔ Geser</span>
+                              </div>
+
+                              {/* Stacked Bars per TO */}
+                              <div className="overflow-x-auto pb-2 scrollbar-thin">
+                                <div className="min-w-[460px] sm:min-w-0 grid gap-4 items-end" style={{ gridTemplateColumns: `repeat(${stagePassFailData.length}, minmax(110px, 1fr))` }}>
+                                  {stagePassFailData.map((item, idx) => {
+                                    const prev = idx > 0 ? stagePassFailData[idx - 1] : null;
+                                    const delta = prev ? item.passPct - prev.passPct : null;
+
+                                    return (
+                                      <div key={item.label} className="flex flex-col items-center gap-2 group">
+                                        <div className="text-[10px] font-mono font-bold h-5 flex items-center justify-center">
+                                          {delta !== null && (
+                                            <span className={`px-2 py-0.5 rounded-full flex items-center gap-0.5 ${
+                                              delta > 0
+                                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                                : delta < 0
+                                                ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300'
+                                                : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                            }`}>
+                                              {delta > 0 ? `▲ +${delta}%` : delta < 0 ? `▼ ${delta}%` : '● 0%'}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="w-full max-w-[85px] sm:max-w-[100px] h-52 sm:h-56 bg-slate-100 dark:bg-slate-800/60 rounded-2xl p-1.5 flex flex-col justify-end border border-slate-200/80 dark:border-slate-800/80 shadow-2xs relative">
+                                          {item.fail > 0 && (
+                                            <div
+                                              className="w-full bg-rose-500 hover:bg-rose-600 transition-all rounded-t-xl flex flex-col items-center justify-center text-white overflow-hidden relative cursor-default"
+                                              style={{ height: `${item.failPct}%` }}
+                                              title={`Remedial: ${item.fail} Siswa (${item.failPct}%)`}
+                                            >
+                                              {item.failPct >= 16 && (
+                                                <span className="text-[10px] sm:text-[11px] font-mono font-black drop-shadow-xs">
+                                                  {item.failPct}%
+                                                </span>
+                                              )}
+                                            </div>
+                                          )}
+
+                                          {item.pass > 0 && (
+                                            <div
+                                              className={`w-full bg-emerald-500 hover:bg-emerald-600 transition-all flex flex-col items-center justify-center text-white overflow-hidden relative cursor-default ${
+                                                item.fail === 0 ? 'rounded-xl' : 'rounded-b-xl border-t border-white/20'
+                                              }`}
+                                              style={{ height: `${item.passPct}%` }}
+                                              title={`Tuntas: ${item.pass} Siswa (${item.passPct}%)`}
+                                            >
+                                              {item.passPct >= 16 && (
+                                                <span className="text-[10px] sm:text-[11px] font-mono font-black drop-shadow-xs">
+                                                  {item.passPct}%
+                                                </span>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        <div className="text-center space-y-0.5 mt-1">
+                                          <span className="text-xs font-mono font-extrabold text-slate-800 dark:text-slate-200 block truncate max-w-[100px]">
+                                            {item.label}
+                                          </span>
+                                          <div className="text-[10px] font-mono text-slate-500 flex flex-col">
+                                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">{item.pass} Tuntas</span>
+                                            <span className="text-rose-600 dark:text-rose-400 font-bold">{item.fail} Remedial</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+{/* DIAGRAM KETUNTASAN SISWA MATAPELAJARAN (DATA RIIL DARI DATABASE & GOOGLE FORM) */}
                         {(() => {
                           const activeSubId = activeSubjectObj?.id || selectedSubjectId;
                           const kkmVal = activeSubjectObj?.passingGrade ?? 75.0;
