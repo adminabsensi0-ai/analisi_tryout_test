@@ -398,6 +398,7 @@ function toSupabaseSchoolProfile(sp: SchoolProfile): Record<string, unknown> {
     principal_name: sp.principalName || '',
     principal_nip: sp.principalNip || '',
     academic_year: sp.academicYear || '',
+    logo_url: sp.logoUrl || null,
     updated_at: new Date().toISOString(),
   };
 }
@@ -410,6 +411,7 @@ function fromSupabaseSchoolProfile(row: Record<string, unknown>): SchoolProfile 
     principalName: String(row.principal_name || ''),
     principalNip: String(row.principal_nip || ''),
     academicYear: String(row.academic_year || ''),
+    logoUrl: row.logo_url ? String(row.logo_url) : undefined,
   };
 }
 
@@ -1912,7 +1914,23 @@ class SupabaseDbService {
       const { error } = await supabase
         .from('school_profile')
         .upsert(payload, { onConflict: 'id' });
-      if (error) this.log('syncSchoolProfile error: ' + error.message, 'warn');
+
+      if (error) {
+        // Fallback jika kolom logo_url belum ditambahkan di SQL Supabase oleh admin
+        if (error.message && error.message.includes('logo_url')) {
+          this.log('Kolom logo_url belum ada di tabel school_profile Supabase. Mencoba upsert tanpa kolom logo_url...', 'warn');
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.logo_url;
+          const { error: fallbackError } = await supabase
+            .from('school_profile')
+            .upsert(fallbackPayload, { onConflict: 'id' });
+          if (fallbackError) {
+            this.log('syncSchoolProfile fallback error: ' + fallbackError.message, 'warn');
+          }
+        } else {
+          this.log('syncSchoolProfile error: ' + error.message, 'warn');
+        }
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.log('syncSchoolProfile exception: ' + msg, 'warn');
