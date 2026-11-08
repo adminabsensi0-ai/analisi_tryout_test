@@ -6,6 +6,8 @@ import {
   getFriendlyTryoutStageLabel,
   getStageOrderNumber,
   resolveTryoutGroup,
+  extractSubjectScoreFromScoreRecord,
+  TRYOUT_GROUP_NONE,
 } from '../utils/tryoutGroupUtils';
 
 export interface ProgressPoint {
@@ -462,16 +464,35 @@ export class ProgressService {
       }
     }
 
+    const allGlobalTryouts: Tryout[] = dbState.tryouts || [];
+    const allExamPackages: any[] = dbState.examPackages || [];
+
+    // Helper: Periksa apakah sebuah score memiliki nilai mapel ini
+    const getScoreValForSubject = (s: Score, to: Tryout): number | null => {
+      if (allowedStudentIds && !allowedStudentIds.has(s.studentId)) return null;
+      return extractSubjectScoreFromScoreRecord(s, to, subject, dbState.answers, questions);
+    };
+
     // 1. Tentukan apakah sebuah tryout relevan secara ketat untuk mata pelajaran ini
     const isTryoutForSubject = (t: Tryout): boolean => {
       if (t.subjectId === subjectId) return true;
       if (t.externalSubjectIds && t.externalSubjectIds.includes(subjectId)) return true;
+      if (
+        t.externalSubjects &&
+        t.externalSubjects.some(
+          es =>
+            es.toLowerCase().trim() === subject.name.toLowerCase().trim() ||
+            es.toLowerCase().trim() === subject.code.toLowerCase().trim()
+        )
+      ) {
+        return true;
+      }
       if (t.packageId) {
-        const pkg = (dbState.examPackages || []).find((p: any) => p.id === t.packageId);
+        const pkg = allExamPackages.find((p: any) => p.id === t.packageId);
         if (pkg?.subjects?.some((ps: any) => ps.subjectId === subjectId)) return true;
       }
       const hasSubjectScore = (dbState.scores || []).some(
-        (s: Score) => s.tryoutId === t.id && s.subjectScores && s.subjectScores[subjectId] !== undefined
+        (s: Score) => s.tryoutId === t.id && getScoreValForSubject(s, t) !== null
       );
       if (hasSubjectScore) return true;
 
@@ -480,7 +501,7 @@ export class ProgressService {
       );
       if (hasTryoutSubj) return true;
 
-      // Jika tryout memiliki subjectId spesifik dan BUKAN subjectId ini, maka abaikan (jangan campurkan mapel lain)
+      // Jika tryout memiliki subjectId spesifik dan BUKAN subjectId ini, maka abaikan
       if (t.subjectId && t.subjectId !== subjectId) return false;
 
       // Tryout tanpa subjectId (paket global / legacy) hanya relevan jika memiliki soal mapel ini
@@ -490,72 +511,71 @@ export class ProgressService {
       return hasQuestionsForSubject;
     };
 
-    const subjectTryouts = (dbState.tryouts || []).filter((t: Tryout) => isTryoutForSubject(t));
+    const subjectTryouts = allGlobalTryouts.filter((t: Tryout) => isTryoutForSubject(t));
 
-    // 2. Ambil tryout yang memiliki data nilai atau jawaban untuk subjek ini
-    const tryoutIdsWithData = new Set(
-      (dbState.scores || [])
-        .filter((s: Score) => {
-          if (allowedStudentIds && !allowedStudentIds.has(s.studentId)) return false;
-          if (s.subjectScores && s.subjectScores[subjectId] !== undefined) return true;
-          const to = subjectTryouts.find((t: any) => t.id === s.tryoutId);
-          return !!to && (s.calculatedScore !== undefined || s.googleFormScore !== undefined);
-        })
-        .map((s: Score) => s.tryoutId)
-    );
+    // 2. Kelompokkan tryout per siklus tahapan (TO 1, TO 2, TO 3, dst.) agar tidak ada tahapan duplikat
+    const stageMap = new Map<string, { stageLabel: string; order: number; tryouts: Tryout[] }>();
 
-    let candidateTryouts = subjectTryouts.filter((t: Tryout) => tryoutIdsWithData.has(t.id));
-    // Jika belum ada nilai terimpor, tampilkan tryout aktif mata pelajaran ini
-    if (candidateTryouts.length === 0) {
-      candidateTryouts = subjectTryouts;
-    }
-    const tryouts = this.sortTryoutsChronologically(candidateTryouts, dbState.tryouts, dbState.examPackages);
+    subjectTryouts.forEach((to: Tryout) => {
+      const stageKey = resolveTryoutGroup(to, allGlobalTryouts, allExamPackages);
+      if (stageKey === TRYOUT_GROUP_NONE) return;
 
-    const points = tryouts.map((to: Tryout) => {
-      // 1. Ambil dari tabel scores (Google Form import & Admin entry)
-      let toScores = (dbState.scores || []).filter((s: Score) => s.tryoutId === to.id);
-      if (allowedStudentIds) {
-        toScores = toScores.filter((s: Score) => allowedStudentIds!.has(s.studentId));
+      if (!stageMap.has(stageKey)) {
+        const ord = getStageOrderNumber(stageKey);
+        stageMap.set(stageKey, {
+          stageLabel: stageKey,
+          order: ord,
+          tryouts: [],
+        });
       }
+      stageMap.get(stageKey)!.tryouts.push(to);
+    });
 
-      const subjectScoresList: number[] = [];
+    // Urutkan tahapan secara kronologis/nomor urut (TO 1, TO 2, TO 3...)
+    const sortedStages = Array.from(stageMap.values()).sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      return a.stageLabel.localeCompare(b.stageLabel);
+    });
 
-      toScores.forEach((s: Score) => {
-        let val: number | undefined = undefined;
-        if (s.subjectScores && s.subjectScores[subjectId] !== undefined) {
-          val = Number(s.subjectScores[subjectId]);
-        } else if (to.subjectId === subjectId && s.calculatedScore !== undefined) {
-          val = Number(s.calculatedScore);
-        }
+    const points = sortedStages.map(stage => {
+      const studentScoreMap = new Map<string, number>();
 
-        if (val !== undefined && !isNaN(val)) {
-          subjectScoresList.push(val);
+      stage.tryouts.forEach(to => {
+        const toScores = (dbState.scores || []).filter((s: Score) => s.tryoutId === to.id);
+        toScores.forEach((s: Score) => {
+          const val = getScoreValForSubject(s, to);
+          if (val !== null && !isNaN(val)) {
+            // Jika ada beberapa nilai untuk siswa yang sama pada stage ini, ambil yang terbaru/tertinggi
+            if (!studentScoreMap.has(s.studentId) || (studentScoreMap.get(s.studentId)! < val)) {
+              studentScoreMap.set(s.studentId, val);
+            }
+          }
+        });
+
+        // Fallback dari butir jawaban jika belum ada di tabel scores
+        if (questionIds.size > 0) {
+          let toAnswers = (dbState.answers || []).filter((a: Answer) => a.tryoutId === to.id && questionIds.has(a.questionId));
+          if (allowedStudentIds) {
+            toAnswers = toAnswers.filter((a: Answer) => allowedStudentIds!.has(a.studentId));
+          }
+          if (toAnswers.length > 0) {
+            const byStudent = new Map<string, { correct: number; total: number }>();
+            toAnswers.forEach((a: Answer) => {
+              const cur = byStudent.get(a.studentId) || { correct: 0, total: 0 };
+              cur.total++;
+              if (a.isCorrect) cur.correct++;
+              byStudent.set(a.studentId, cur);
+            });
+            byStudent.forEach((cur, stId) => {
+              if (cur.total > 0 && !studentScoreMap.has(stId)) {
+                studentScoreMap.set(stId, Math.round((cur.correct / cur.total) * 100 * 10) / 10);
+              }
+            });
+          }
         }
       });
 
-      // 2. Fallback: hitung dari butir jawaban (answers) jika di tabel scores belum ada
-      if (subjectScoresList.length === 0 && questionIds.size > 0) {
-        let toAnswers = (dbState.answers || []).filter((a: Answer) => a.tryoutId === to.id && questionIds.has(a.questionId));
-        if (allowedStudentIds) {
-          toAnswers = toAnswers.filter((a: Answer) => allowedStudentIds!.has(a.studentId));
-        }
-        if (toAnswers.length > 0) {
-          const byStudent = new Map<string, { correct: number; total: number }>();
-          toAnswers.forEach((a: Answer) => {
-            const cur = byStudent.get(a.studentId) || { correct: 0, total: 0 };
-            cur.total++;
-            if (a.isCorrect) cur.correct++;
-            byStudent.set(a.studentId, cur);
-          });
-          byStudent.forEach(cur => {
-            if (cur.total > 0) {
-              subjectScoresList.push(Math.round((cur.correct / cur.total) * 100 * 10) / 10);
-            }
-          });
-        }
-      }
-
-      // Hitung metrik rata-rata & persentase ketuntasan riil
+      const subjectScoresList = Array.from(studentScoreMap.values());
       const totalStudents = subjectScoresList.length;
       const avg = totalStudents > 0
         ? Math.round((subjectScoresList.reduce((sum, v) => sum + v, 0) / totalStudents) * 10) / 10
@@ -565,9 +585,10 @@ export class ProgressService {
         ? Math.round((passingCount / totalStudents) * 100)
         : 0;
 
+      const representativeTryout = stage.tryouts[0];
       return {
-        tryoutId: to.id,
-        tryoutCode: getFriendlyTryoutStageLabel(to, dbState.tryouts, dbState.examPackages),
+        tryoutId: representativeTryout ? representativeTryout.id : stage.stageLabel,
+        tryoutCode: stage.stageLabel,
         averageScore: avg,
         passingRatePct: passing,
       };

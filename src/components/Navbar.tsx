@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   GraduationCap, Sun, Moon, ShieldCheck, BookOpen, School, Menu, X,
-  ChevronDown, Check, ArrowRightLeft, Sparkles, Lock
+  ChevronDown, Check, ArrowRightLeft, Sparkles, Lock, LogOut
 } from 'lucide-react';
 import { User } from '../types/database';
 import { useTheme } from '../context/ThemeContext';
@@ -280,6 +280,26 @@ export const Navbar: React.FC<NavbarProps> = ({
                   Keluar
                 </button>
               </div>
+            ) : isPageStudent ? (
+              <div className="flex items-center gap-2.5">
+                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 bg-slate-50 dark:bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="font-medium text-slate-700 dark:text-slate-300">Portal Siswa</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    sessionStorage.removeItem('verified_student_id');
+                    onNavigate('/login');
+                  }}
+                  className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                  title="Keluar dari portal siswa dan kembali ke halaman login"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Keluar ke Login</span>
+                </button>
+              </div>
             ) : (
               <div className="flex items-center gap-2.5">
                 <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 bg-slate-50 dark:bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800">
@@ -303,7 +323,22 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Mobile Right Bar (Theme Toggle & Menu Button) */}
           <div className="flex md:hidden items-center gap-2">
-            {!currentUser && onOpenStaffLogin && (
+            {!currentUser && isPageStudent && (
+              <button
+                type="button"
+                onClick={() => {
+                  sessionStorage.removeItem('verified_student_id');
+                  onNavigate('/login');
+                }}
+                className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs"
+                title="Keluar ke Login"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Keluar</span>
+              </button>
+            )}
+
+            {!currentUser && !isPageStudent && onOpenStaffLogin && (
               <button
                 type="button"
                 onClick={onOpenStaffLogin}

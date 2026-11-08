@@ -2217,6 +2217,189 @@ export class ExportService {
   }
 
   /**
+   * Ekspor Leger Nilai Multimapel Wali Kelas ke format Microsoft Excel (.xlsx) yang rapi
+   */
+  public static exportWaliKelasLegerExcel(params: {
+    className: string;
+    waliKelasName: string;
+    kkm: number;
+    subjects: { id: string; name: string }[];
+    students: Student[];
+    getStudentScore: (studentId: string, subjectId: string) => number | null;
+    waliNotes?: Record<string, string>;
+    schoolProfile?: SchoolProfile;
+  }): void {
+    const { className, waliKelasName, kkm, subjects, students, getStudentScore, waliNotes = {}, schoolProfile } = params;
+    const prof = this.resolveSchoolProfile(schoolProfile);
+
+    // Siapkan baris data
+    const rows: (string | number)[][] = [
+      [prof.name || 'SISTEM ANALISIS UJIAN SEKOLAH'],
+      [`LEGER NILAI TRY OUT / ASESMEN MULTIMAPEL - KELAS ${className.toUpperCase()}`],
+      [`Wali Kelas: ${waliKelasName} | KKM Rombel: ${kkm.toFixed(1)} | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')}`],
+      [], // baris kosong
+    ];
+
+    // Header tabel
+    const headerRow: (string | number)[] = [
+      'No',
+      'NISN',
+      'NIS',
+      'Nama Siswa',
+      'L/P',
+      ...subjects.map(s => s.name),
+      'Rata-Rata',
+      'Nilai Tertinggi',
+      'Nilai Terendah',
+      'Status Rapor',
+      'Catatan Wali Kelas',
+    ];
+    rows.push(headerRow);
+
+    // Data per siswa
+    students.forEach((std, idx) => {
+      const subScores = subjects.map(s => getStudentScore(std.id, s.id));
+      const validScores = subScores.filter((v): v is number => v !== null && !isNaN(v));
+
+      const avg = validScores.length > 0
+        ? Number((validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1))
+        : 0;
+      const max = validScores.length > 0 ? Math.max(...validScores) : 0;
+      const min = validScores.length > 0 ? Math.min(...validScores) : 0;
+      const status = validScores.length > 0
+        ? (avg >= kkm ? 'Tuntas' : 'Remedial')
+        : 'Belum Ada Data';
+
+      const row: (string | number)[] = [
+        idx + 1,
+        std.nisn || '-',
+        std.nis || '-',
+        std.name,
+        std.gender || '-',
+        ...subScores.map(v => (v !== null && !isNaN(v) ? Number(v.toFixed(1)) : '-')),
+        validScores.length > 0 ? avg : '-',
+        validScores.length > 0 ? max : '-',
+        validScores.length > 0 ? min : '-',
+        status,
+        waliNotes[std.id] || 'Siswa aktif mengikuti proses pembelajaran dan try out.',
+      ];
+      rows.push(row);
+    });
+
+    // Baris Statistik Kelas
+    rows.push([]);
+    const summaryHeader = ['Statistik Rombel', '', '', '', ''];
+    subjects.forEach(subj => {
+      const allSubScores = students
+        .map(std => getStudentScore(std.id, subj.id))
+        .filter((v): v is number => v !== null && !isNaN(v));
+      const subAvg = allSubScores.length > 0
+        ? Number((allSubScores.reduce((a, b) => a + b, 0) / allSubScores.length).toFixed(1))
+        : '-';
+      summaryHeader.push(subAvg as any);
+    });
+    summaryHeader.push('Rerata Rombel');
+    summaryHeader.push('', '', '', '');
+    rows.push(summaryHeader);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+
+    // Atur lebar kolom (column widths)
+    const colWidths: { wch: number }[] = [
+      { wch: 5 },   // No
+      { wch: 14 },  // NISN
+      { wch: 12 },  // NIS
+      { wch: 30 },  // Nama Siswa
+      { wch: 6 },   // L/P
+      ...subjects.map(s => ({ wch: Math.max(12, s.name.length + 3) })), // Mapel
+      { wch: 12 },  // Rata-Rata
+      { wch: 14 },  // Tertinggi
+      { wch: 14 },  // Terendah
+      { wch: 14 },  // Status
+      { wch: 45 },  // Catatan
+    ];
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Leger_${className.replace(/\s+/g, '_')}`);
+    const fileName = `Leger_Nilai_${className.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }
+
+  /**
+   * Ekspor Buku Nilai Wali Kelas ke format Microsoft Excel (.xlsx) yang rapi
+   */
+  public static exportWaliKelasGradebookExcel(params: {
+    className: string;
+    waliKelasName: string;
+    title: string;
+    kkm: number;
+    columns: { id: string; label: string }[];
+    students: {
+      student: Student;
+      scores: (number | null)[];
+      avg: number | null;
+      status: string;
+    }[];
+    schoolProfile?: SchoolProfile;
+  }): void {
+    const { className, waliKelasName, title, kkm, columns, students, schoolProfile } = params;
+    const prof = this.resolveSchoolProfile(schoolProfile);
+
+    const rows: (string | number)[][] = [
+      [prof.name || 'SISTEM ANALISIS UJIAN SEKOLAH'],
+      [`BUKU NILAI KELAS ${className.toUpperCase()} - ${title.toUpperCase()}`],
+      [`Wali Kelas: ${waliKelasName} | KKM Acuan: ${kkm.toFixed(1)} | Diunduh: ${new Date().toLocaleDateString('id-ID')}`],
+      [],
+    ];
+
+    const headerRow: (string | number)[] = [
+      'No',
+      'NISN',
+      'NIS',
+      'Nama Siswa',
+      'L/P',
+      ...columns.map(c => c.label),
+      'Rata-Rata',
+      'Status',
+    ];
+    rows.push(headerRow);
+
+    students.forEach((item, idx) => {
+      const row: (string | number)[] = [
+        idx + 1,
+        item.student.nisn || '-',
+        item.student.nis || '-',
+        item.student.name,
+        item.student.gender || '-',
+        ...item.scores.map(v => (v !== null && !isNaN(v) ? Number(v.toFixed(1)) : '-')),
+        item.avg !== null && !isNaN(item.avg) ? Number(item.avg.toFixed(1)) : '-',
+        item.status,
+      ];
+      rows.push(row);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+
+    const colWidths: { wch: number }[] = [
+      { wch: 5 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 30 },
+      { wch: 6 },
+      ...columns.map(c => ({ wch: Math.max(14, c.label.length + 3) })),
+      { wch: 12 },
+      { wch: 14 },
+    ];
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Buku_Nilai`);
+    const fileName = `Buku_Nilai_${className.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }
+
+  /**
    * AUTOMATED REPORTING TEST SUITE (PHASE 11 REQUIREMENT)
    * Validates: student report, teacher report, class report, tryout report,
    * excel workbook, large dataset, unauthorized report, formatting, data accuracy, download.

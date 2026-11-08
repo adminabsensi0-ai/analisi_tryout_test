@@ -264,21 +264,28 @@ function getDirectTryoutStageCandidate(
  */
 function doTryoutsShareSubjectScope(a: Tryout, b: Tryout): boolean {
   if (a.id === b.id) return true;
-  if (!a.isExternal && !b.isExternal) {
-    if (a.subjectId && b.subjectId) {
-      return a.subjectId === b.subjectId;
+  const getTryoutSubjectIds = (t: Tryout): string[] => {
+    const ids: string[] = [];
+    if (t.subjectId) ids.push(t.subjectId);
+    if (Array.isArray(t.externalSubjectIds)) {
+      t.externalSubjectIds.forEach(id => {
+        if (id && !ids.includes(id)) ids.push(id);
+      });
     }
+    return ids;
+  };
+  const aIds = getTryoutSubjectIds(a);
+  const bIds = getTryoutSubjectIds(b);
+  if (aIds.length > 0 && bIds.length > 0) {
+    return aIds.some(id => bIds.includes(id));
+  }
+  if (!a.isExternal && !b.isExternal) {
     if (!a.subjectId && !b.subjectId) {
       return true;
     }
     return false;
   }
   if (a.isExternal && b.isExternal) {
-    const aIds = a.externalSubjectIds || [];
-    const bIds = b.externalSubjectIds || [];
-    if (aIds.length > 0 && bIds.length > 0) {
-      return aIds.some(id => bIds.includes(id));
-    }
     const aNames = (a.externalSubjects || []).map(s => s.toLowerCase().trim());
     const bNames = (b.externalSubjects || []).map(s => s.toLowerCase().trim());
     if (aNames.length > 0 && bNames.length > 0) {

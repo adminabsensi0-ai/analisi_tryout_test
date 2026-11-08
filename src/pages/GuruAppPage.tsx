@@ -2239,93 +2239,155 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     </div>
                   </div>
 
-                  {/* 2. KLASTER PERKEMBANGAN SISWA (Hanya aktif jika sudah ada data nilai riil) */}
+                  {/* 2. ANALISIS AKSI NYATA GURU (Top Scorer, Remedial Priority & Rerata Rombel) */}
                   {scores.length > 0 && (() => {
-                    const passingStudents = filteredStudents.filter(s => {
-                      const studentScores = scores.filter(sc => sc.studentId === s.id);
-                      return studentScores.length > 0 && studentScores.every(sc => sc.calculatedScore >= currentSubjectKKM);
-                    });
-                    const needAttentionStudents = filteredStudents.filter(s => {
-                      const studentScores = scores.filter(sc => sc.studentId === s.id);
-                      return studentScores.length > 0 && studentScores.some(sc => sc.calculatedScore < currentSubjectKKM);
-                    });
+                    const studentScoreList = filteredStudents.map(s => {
+                      const sScores = scores.filter(sc => sc.studentId === s.id);
+                      if (sScores.length === 0) return null;
+                      const maxScore = Math.max(...sScores.map(sc => sc.calculatedScore));
+                      const cls = classes.find(c => c.id === s.classId);
+                      return {
+                        student: s,
+                        score: maxScore,
+                        className: cls?.name || 'Kelas',
+                      };
+                    }).filter((x): x is NonNullable<typeof x> => x !== null);
+
+                    const topScorers = [...studentScoreList].sort((a, b) => b.score - a.score).slice(0, 3);
+                    const remedialStudents = studentScoreList
+                      .filter(x => x.score < currentSubjectKKM)
+                      .sort((a, b) => a.score - b.score)
+                      .slice(0, 3);
+                    const totalAnalyzed = studentScoreList.length;
+                    const totalPassing = studentScoreList.filter(x => x.score >= currentSubjectKKM).length;
+                    const passPercent = totalAnalyzed > 0 ? Math.round((totalPassing / totalAnalyzed) * 100) : 0;
+                    const avgScore = totalAnalyzed > 0
+                      ? (studentScoreList.reduce((acc, cur) => acc + cur.score, 0) / totalAnalyzed).toFixed(1)
+                      : '0';
+
                     return (
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {/* Klaster Consistent Risers */}
-                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                        {/* Kartu 1: Top 3 Peraih Nilai Tertinggi */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3 shadow-xs">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                              <ArrowUp className="w-4 h-4 text-emerald-600" />
-                              <span>Tuntas Konsisten</span>
+                            <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                              <Award className="w-4 h-4 text-amber-500" />
+                              <span>Top 3 Nilai Tertinggi</span>
                             </span>
-                            <span className="text-xs font-mono font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded">
-                              {passingStudents.length} Siswa
+                            <span className="text-xs font-mono font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800/60">
+                              Prestasi
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Siswa tuntas konsisten mencapai batas KKM ({currentSubjectKKM} Poin).
+                            Siswa peraih capaian skor tertinggi pada mapel yang diampu.
                           </p>
-                          <div className="space-y-1.5 pt-1">
-                            {passingStudents.slice(0, 3).map(s => (
-                              <div key={s.id} className="p-2 bg-slate-50 dark:bg-slate-950 rounded-lg text-xs flex items-center justify-between">
-                                <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
-                                <span className="font-mono text-emerald-600 font-bold">&ge; {currentSubjectKKM}</span>
+                          <div className="space-y-2 pt-1">
+                            {topScorers.map((item, idx) => (
+                              <div key={item.student.id} className="p-2.5 bg-slate-50 dark:bg-slate-950 rounded-xl text-xs flex items-center justify-between border border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 ${
+                                    idx === 0
+                                      ? 'bg-amber-400 text-amber-950 shadow-xs'
+                                      : idx === 1
+                                      ? 'bg-slate-300 text-slate-800 dark:bg-slate-700 dark:text-slate-200'
+                                      : 'bg-amber-700 text-white'
+                                  }`}>
+                                    {idx + 1}
+                                  </span>
+                                  <div className="truncate">
+                                    <div className="font-bold text-slate-800 dark:text-slate-200 truncate">{item.student.name}</div>
+                                    <div className="text-[10px] text-slate-400 font-mono">{item.className}</div>
+                                  </div>
+                                </div>
+                                <span className="font-mono text-emerald-600 dark:text-emerald-400 font-black text-sm shrink-0 ml-2">
+                                  {item.score.toFixed(1)}
+                                </span>
                               </div>
                             ))}
-                            {passingStudents.length === 0 && (
-                              <div className="text-xs text-slate-400 italic py-1">Belum ada siswa di kategori ini.</div>
+                            {topScorers.length === 0 && (
+                              <div className="text-xs text-slate-400 italic py-2 text-center">Belum ada skor yang tercatat.</div>
                             )}
                           </div>
                         </div>
 
-                        {/* Klaster Peserta Aktif */}
-                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                              <CheckCircle2 className="w-4 h-4 text-indigo-600" />
-                              <span>Peserta Ujian</span>
-                            </span>
-                            <span className="text-xs font-mono font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 px-2 py-0.5 rounded">
-                              {filteredStudents.filter(s => scores.some(sc => sc.studentId === s.id)).length} Siswa
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Siswa yang telah memiliki catatan pengerjaan ujian.
-                          </p>
-                          <div className="space-y-1.5 pt-1">
-                            {filteredStudents.filter(s => scores.some(sc => sc.studentId === s.id)).slice(0, 3).map(s => (
-                              <div key={s.id} className="p-2 bg-slate-50 dark:bg-slate-950 rounded-lg text-xs flex items-center justify-between">
-                                <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
-                                <span className="font-mono text-indigo-600 font-bold">Aktif</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Klaster Need Attention / Alert Group */}
-                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-rose-200 dark:border-rose-900/60 space-y-3">
+                        {/* Kartu 2: Prioritas Siswa Remedial */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-rose-200 dark:border-rose-900/60 space-y-3 shadow-xs">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
                               <AlertTriangle className="w-4 h-4 text-rose-600" />
-                              <span>Perlu Pendampingan</span>
+                              <span>Prioritas Remedial</span>
                             </span>
                             <span className="text-xs font-mono font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded">
-                              {needAttentionStudents.length} Siswa
+                              {studentScoreList.filter(x => x.score < currentSubjectKKM).length} Siswa &lt; {currentSubjectKKM}
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Siswa dengan capaian di bawah batas KKM (&lt; {currentSubjectKKM} Poin).
+                            Siswa yang paling mendesak memerlukan pendampingan belajar.
                           </p>
-                          <div className="space-y-1.5 pt-1">
-                            {needAttentionStudents.slice(0, 3).map(s => (
-                              <div key={s.id} className="p-2 bg-rose-50/70 dark:bg-rose-950/30 rounded-lg text-xs flex items-center justify-between">
-                                <span className="font-bold text-slate-800 dark:text-slate-200">{s.name}</span>
-                                <span className="font-mono text-rose-600 font-bold">Remedial</span>
+                          <div className="space-y-2 pt-1">
+                            {remedialStudents.map(item => {
+                              const deficit = (currentSubjectKKM - item.score).toFixed(1);
+                              return (
+                                <div key={item.student.id} className="p-2.5 bg-rose-50/70 dark:bg-rose-950/30 rounded-xl text-xs flex items-center justify-between border border-rose-100 dark:border-rose-900/40">
+                                  <div className="min-w-0">
+                                    <span className="font-bold text-slate-800 dark:text-slate-200 block truncate">{item.student.name}</span>
+                                    <span className="text-[10px] text-rose-600 dark:text-rose-400 font-mono">Defisit -{deficit} dari KKM</span>
+                                  </div>
+                                  <span className="font-mono text-rose-600 dark:text-rose-400 font-bold shrink-0 ml-2">
+                                    {item.score.toFixed(1)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {remedialStudents.length === 0 && (
+                              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl text-center border border-emerald-100 dark:border-emerald-900/40">
+                                <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mx-auto mb-1" />
+                                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 block">Semua Siswa Tuntas!</span>
+                                <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">Seluruh siswa mencapai KKM &ge; {currentSubjectKKM}</span>
                               </div>
-                            ))}
-                            {needAttentionStudents.length === 0 && (
-                              <div className="text-xs text-slate-400 italic py-1">Seluruh siswa telah mencapai KKM.</div>
                             )}
+                          </div>
+                        </div>
+
+                        {/* Kartu 3: Rangkuman Performa & Rerata Rombel */}
+                        <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3 shadow-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                              <TrendingUp className="w-4 h-4 text-indigo-600" />
+                              <span>Performa Rombel</span>
+                            </span>
+                            <span className="text-xs font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/60">
+                              {totalAnalyzed} Siswa
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Distribusi ketuntasan dan rata-rata skor pada kelas yang diampu.
+                          </p>
+
+                          <div className="space-y-3 pt-1">
+                            <div>
+                              <div className="flex items-center justify-between text-xs mb-1">
+                                <span className="text-slate-600 dark:text-slate-400 font-medium">Tingkat Ketuntasan KKM:</span>
+                                <strong className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">{passPercent}%</strong>
+                              </div>
+                              <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-indigo-600 h-full rounded-full transition-all duration-500"
+                                  style={{ width: `${passPercent}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 text-xs">
+                              <div className="p-2 bg-slate-50 dark:bg-slate-950 rounded-xl">
+                                <span className="text-[10px] text-slate-400 block">Rata-Rata Kelas:</span>
+                                <strong className="font-mono text-slate-800 dark:text-slate-200 text-sm font-black">{avgScore}</strong>
+                              </div>
+                              <div className="p-2 bg-slate-50 dark:bg-slate-950 rounded-xl">
+                                <span className="text-[10px] text-slate-400 block">Siswa Tuntas:</span>
+                                <strong className="font-mono text-emerald-600 font-bold text-sm">{totalPassing} / {totalAnalyzed}</strong>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -5051,9 +5113,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         {/* Visual Trajectory Line Graph for Student */}
                         {studentProg && studentProg.points.length > 0 && (() => {
                           const pts = studentProg.points;
-                          const xPos = [80, 350, 620, 890];
+                          const chartWidth = 1000;
+                          const padX = 80;
+                          const stepX = pts.length > 1 ? (chartWidth - padX * 2) / (pts.length - 1) : 0;
                           const getY = (val: number) => 260 - ((Math.max(0, Math.min(100, val)) / 100) * 220);
-                          const getX = (idx: number) => xPos[idx] ?? (80 + idx * 270);
+                          const getX = (idx: number) => pts.length === 1 ? chartWidth / 2 : padX + idx * stepX;
 
                           const studentCoords = pts.map((pt, idx) => ({
                             ...pt,
@@ -5475,9 +5539,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         {/* Visual Trajectory Line Graph for Class */}
                         {classProg && classProg.points.length > 0 && (() => {
                           const pts = classProg.points;
-                          const xPos = [80, 350, 620, 890];
+                          const chartWidth = 1000;
+                          const padX = 80;
+                          const stepX = pts.length > 1 ? (chartWidth - padX * 2) / (pts.length - 1) : 0;
                           const getY = (val: number) => 260 - ((Math.max(0, Math.min(100, val)) / 100) * 220);
-                          const getX = (idx: number) => xPos[idx] ?? (80 + idx * 270);
+                          const getX = (idx: number) => pts.length === 1 ? chartWidth / 2 : padX + idx * stepX;
 
                           const viewCoords = pts.map((pt, idx) => ({
                             ...pt,
@@ -5675,9 +5741,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                         {/* Visual Trajectory Line Graph for Subject */}
                         {subjProg && points.length > 0 && (() => {
-                          const xPos = [80, 350, 620, 890];
+                          const pts = points;
+                          const chartWidth = 1000;
+                          const padX = 80;
+                          const stepX = pts.length > 1 ? (chartWidth - padX * 2) / (pts.length - 1) : 0;
                           const getY = (val: number) => 260 - ((Math.max(0, Math.min(100, val)) / 100) * 220);
-                          const getX = (idx: number) => xPos[idx] ?? (80 + idx * 270);
+                          const getX = (idx: number) => pts.length === 1 ? chartWidth / 2 : padX + idx * stepX;
 
                           const viewCoords = points.map((pt, idx) => ({
                             ...pt,
