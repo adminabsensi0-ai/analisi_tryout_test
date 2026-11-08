@@ -3035,6 +3035,9 @@ export class DatabaseService {
     }
 
     const tryout = this.state.tryouts.find(t => t.id === tryoutId);
+    if (tryout?.isExternal) {
+      return [];
+    }
     const targetSubjectId = (subjectId && subjectId !== 'ALL') ? subjectId : tryout?.subjectId;
     const configuredCount = tryout?.selectedQuestionColumns?.length || 0;
 
@@ -3236,8 +3239,19 @@ export class DatabaseService {
     currentUser?: any
   ): QuestionAnalysisResult[] {
     const isAllTryouts = !tryoutId || tryoutId === 'ALL';
+    const tryout = this.state.tryouts.find(t => t.id === tryoutId);
+    if (!isAllTryouts && tryout?.isExternal) {
+      return [];
+    }
+
     let questions = this.getQuestionsForTryout(tryoutId, subjectId);
-    if (questions.length === 0) {
+    if (!isAllTryouts) {
+      // Jika paket tryout spesifik dipilih tetapi tidak memiliki butir soal (misal TO Eksternal atau belum terhubung butir soal),
+      // JANGAN fallback ke seluruh bank soal agar tabel kosong sesuai filter yang dipilih.
+      if (questions.length === 0) {
+        return [];
+      }
+    } else if (questions.length === 0) {
       questions = this.state.questions;
       if (subjectId && subjectId !== 'ALL') {
         if (currentUser && (currentUser.role === 'GURU' || currentUser.role === 'WALI_KELAS')) {

@@ -4844,7 +4844,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </select>
 
                           <button
+                            disabled={questionAnalysisList.length === 0}
                             onClick={() => {
+                              if (questionAnalysisList.length === 0) {
+                                triggerToast('Tidak ada data butir soal untuk diunduh.', 'error');
+                                return;
+                              }
                               const activeTo = tryouts.find(t => t.id === activePsychometricsTryoutId) || tryouts[0];
                               const activeSub = subjects.find(s => s.id === selectedSubjectId);
                               const activeCls = classes.find(c => c.id === psychometricsClassFilter);
@@ -4856,7 +4861,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                               );
                               triggerToast('Laporan Analisis Butir Soal Excel berhasil diunduh!');
                             }}
-                            className="ml-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg flex items-center space-x-1 cursor-pointer transition-colors"
+                            className={`ml-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg flex items-center space-x-1 transition-colors ${
+                              questionAnalysisList.length === 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                            }`}
                           >
                             <Download className="w-3.5 h-3.5" />
                             <span>Unduh Excel</span>
@@ -4893,9 +4900,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       </div>
 
                       {/* Detailed Question Psychometrics Table */}
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-colors">
+                      <div className="overflow-auto max-h-[460px] sm:max-h-[540px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs scrollbar-thin transition-colors">
                         <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+                          <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold shadow-xs">
                             <tr>
                               <th className="py-2.5 px-3 w-12 text-center">No</th>
                               <th className="py-2.5 px-3 w-28">Kode Soal</th>
@@ -4910,8 +4917,22 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {questionAnalysisList.length === 0 ? (
                               <tr>
-                                <td colSpan={8} className="py-8 text-center text-slate-400 dark:text-slate-500 italic">
-                                  Tidak ada butir soal pada mata pelajaran yang dipilih.
+                                <td colSpan={8} className="py-12 px-4 text-center text-slate-500 dark:text-slate-400">
+                                  <div className="max-w-md mx-auto flex flex-col items-center justify-center space-y-2">
+                                    <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 flex items-center justify-center">
+                                      <Info className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                                    </div>
+                                    <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                                      {targetPsychometricsTryout?.isExternal
+                                        ? 'Paket Try Out Eksternal'
+                                        : 'Tidak Ada Butir Soal'}
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                      {targetPsychometricsTryout?.isExternal
+                                        ? 'Paket ini merupakan Try Out Eksternal (rekapitulasi nilai akhir dari vendor/Excel), sehingga tidak memuat lembar jawaban butir soal (A/B/C/D/E) untuk dianalisis.'
+                                        : 'Belum ada butir soal atau lembar jawaban siswa yang terhubung pada paket Try Out dan mata pelajaran ini.'}
+                                    </p>
+                                  </div>
                                 </td>
                               </tr>
                             ) : (
