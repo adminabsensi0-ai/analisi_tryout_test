@@ -110,6 +110,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [classFilter, setClassFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [bankTryoutFilter, setBankTryoutFilter] = useState<string>('ALL');
 
   // State untuk Modal Pemilihan Kolom (Column Selector)
   const [columnSelectorTryout, setColumnSelectorTryout] = useState<Tryout | null>(null);
@@ -1108,6 +1109,53 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     triggerToast(`Target KKM Mata Pelajaran '${activeSubjectObj.name}' berhasil diatur menjadi ${val.toFixed(1)} Poin! Seluruh grafik & indikator ketuntasan telah disesuaikan.`);
   };
 
+  // Tryouts terkait mapel yang dipilih di Bank Soal
+  const bankSubjectTryouts = useMemo(() => {
+    return tryouts.filter(t => t.subjectId === selectedSubjectId || (t.isExternal && t.externalSubjectIds?.includes(selectedSubjectId)));
+  }, [tryouts, selectedSubjectId]);
+
+  // Map Question ID ke daftar Tryout yang memuat soal tersebut
+  const questionTryoutMap = useMemo(() => {
+    const map = new Map<string, Tryout[]>();
+    const dbState = dbService.getState();
+    const allTryoutQuestions = dbState.tryoutQuestions || [];
+    const allAnswers = dbState.answers || [];
+
+    // 1. Dari tabel tryoutQuestions
+    allTryoutQuestions.forEach(tq => {
+      const to = tryouts.find(t => t.id === tq.tryoutId);
+      if (to) {
+        const list = map.get(tq.questionId) || [];
+        if (!list.some(existing => existing.id === to.id)) list.push(to);
+        map.set(tq.questionId, list);
+      }
+    });
+
+    // 2. Dari tabel answers
+    allAnswers.forEach(ans => {
+      const to = tryouts.find(t => t.id === ans.tryoutId);
+      if (to) {
+        const list = map.get(ans.questionId) || [];
+        if (!list.some(existing => existing.id === to.id)) list.push(to);
+        map.set(ans.questionId, list);
+      }
+    });
+
+    // 3. Dari kecocokan kode soal (uniqueCode) dengan kode tryout
+    questions.forEach(q => {
+      if (!map.has(q.id) || map.get(q.id)!.length === 0) {
+        const matched = tryouts.find(t => t.code && q.uniqueCode.toUpperCase().includes(t.code.toUpperCase()));
+        if (matched) {
+          const list = map.get(q.id) || [];
+          if (!list.some(existing => existing.id === matched.id)) list.push(matched);
+          map.set(q.id, list);
+        }
+      }
+    });
+
+    return map;
+  }, [tryouts, questions]);
+
   // Filtered Questions in Bank
   const filteredQuestions = questions.filter(q => {
     const matchSubject = q.subjectId === selectedSubjectId;
@@ -1115,7 +1163,14 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
     const matchSearch = !searchQuery.trim() ||
       q.uniqueCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
       q.questionText.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchSubject && matchStatus && matchSearch;
+
+    let matchTryout = true;
+    if (bankTryoutFilter !== 'ALL') {
+      const linked = questionTryoutMap.get(q.id) || [];
+      matchTryout = linked.some(t => t.id === bankTryoutFilter);
+    }
+
+    return matchSubject && matchStatus && matchSearch && matchTryout;
   });
 
   // Filtered Students in Classes
@@ -3016,6 +3071,23 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         </select>
                       </div>
 
+                      {/* Try Out Group / Package Selector */}
+                      <div className="flex items-center space-x-1.5">
+                        <span className="text-slate-500 dark:text-slate-400 font-medium">Paket TO:</span>
+                        <select
+                          value={bankTryoutFilter}
+                          onChange={e => setBankTryoutFilter(e.target.value)}
+                          className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1 text-slate-800 dark:text-slate-200 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[200px] truncate"
+                        >
+                          <option value="ALL">Semua Paket Try Out ({bankSubjectTryouts.length} TO)</option>
+                          {bankSubjectTryouts.map(t => (
+                            <option key={t.id} value={t.id}>
+                              {t.code} — {t.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       {/* Search Input */}
                       <div className="relative">
                         <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
@@ -3063,11 +3135,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     </div>
                   )}
 
-                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden transition-colors">
-                    {/* DESKTOP TABLE VIEW */}
-                    <div className="hidden md:block overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
+                    {/* DESKTOP TABLE VIEW — Scrollable Table with Sticky Header */}
+                    <div className="hidden md:block overflow-auto max-h-[460px] sm:max-h-[560px] scrollbar-thin">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold sticky top-0 z-20 shadow-xs">
                           <tr>
                             <th className="py-2.5 px-3 w-10 text-center">
                               <input
@@ -3129,7 +3201,25 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   </td>
                                   <td className="py-3 px-3">
                                     <div className="font-mono font-bold text-indigo-700 dark:text-indigo-400">{q.uniqueCode}</div>
-                                    <div className="text-[10px] text-slate-400 font-mono">{q.id}</div>
+                                    {(() => {
+                                      const linkedTos = questionTryoutMap.get(q.id) || [];
+                                      if (linkedTos.length > 0) {
+                                        return (
+                                          <div className="flex flex-wrap gap-1 mt-1">
+                                            {linkedTos.map(t => (
+                                              <span
+                                                key={t.id}
+                                                className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80"
+                                                title={t.title}
+                                              >
+                                                {t.code || t.title}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        );
+                                      }
+                                      return <div className="text-[10px] text-slate-400 font-mono">{q.id}</div>;
+                                    })()}
                                   </td>
                                   <td className="py-3 px-3">
                                     <div className="font-medium text-slate-900 dark:text-slate-100 leading-snug line-clamp-2">{q.questionText}</div>
@@ -3185,8 +3275,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       </table>
                     </div>
 
-                    {/* MOBILE ADAPTIVE CARD VIEW */}
-                    <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+                    {/* MOBILE ADAPTIVE CARD VIEW — Scrollable Container */}
+                    <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800 overflow-y-auto max-h-[480px] scrollbar-thin">
                       {filteredQuestions.length === 0 ? (
                         <div className="py-10 px-4 text-center text-slate-400 dark:text-slate-500 italic text-xs">
                           Belum ada butir soal pada kriteria filter ini.
@@ -3197,16 +3287,29 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           const isGFormQuestion = q.options?.every(opt => opt.text === `Pilihan ${opt.key}` || opt.text === '' || opt.text === '-');
                           const keyAns = q.correctAnswer || '';
                           const soalTipe = keyAns.includes(',') ? 'PG Kompleks' : ['BENAR','SALAH','TRUE','FALSE'].includes(keyAns.toUpperCase()) ? 'Benar/Salah' : 'Pilihan Ganda';
+                          const linkedTos = questionTryoutMap.get(q.id) || [];
                           return (
                             <div key={q.id} className="p-4 space-y-2.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
                               <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-700 dark:text-slate-300 font-mono">
                                     {q.questionNumber || idx + 1}
                                   </span>
                                   <span className="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400">
                                     {q.uniqueCode}
                                   </span>
+                                  {linkedTos.length > 0 && (
+                                    <div className="flex flex-wrap gap-1">
+                                      {linkedTos.map(t => (
+                                        <span
+                                          key={t.id}
+                                          className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80"
+                                        >
+                                          {t.code || t.title}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                   {keyAns ? (
@@ -5669,7 +5772,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         
                         {/* Grafik Batang Perbandingan Kelulusan KKM Kelas Terpilih per Masing-Masing TO */}
                         {classProg && classProg.points.length > 0 && (() => {
-                          const classStudents = students.filter(s => s.classId === selectedClassId);
+                          const classStudents = students.filter(s => s.classId === targetClassId);
                           const totalClassStudents = classStudents.length;
 
                           const classStageBars = classProg.points.map((pt, idx) => {
@@ -9338,17 +9441,16 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       {/* ADD TRYOUT PACKAGE MODAL */}
       {showTryoutModal && (
         <div
-          className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in"
+          className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-fade-in"
           onClick={() => setShowTryoutModal(false)}
         >
           <div
-            className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col"
-            style={{ maxHeight: 'calc(100vh - 2rem)' }}
+            className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[88vh] sm:max-h-[84vh] my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150"
             onClick={e => e.stopPropagation()}
           >
 
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4 shrink-0">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-3.5 shrink-0 bg-white dark:bg-slate-900 z-10">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-2xl bg-teal-600 text-white flex items-center justify-center shrink-0">
                   <Layers className="w-4.5 h-4.5" />
@@ -9783,8 +9885,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
               )}
             </div>
 
-            {/* Footer */}
-            <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0 bg-slate-50/50 dark:bg-slate-900/50 rounded-b-3xl">
+            {/* Sticky / Dedicated Footer */}
+            <div className="flex items-center justify-between gap-2 px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 shrink-0 bg-slate-50 dark:bg-slate-950/95 backdrop-blur-md rounded-b-3xl z-10">
               <p className="text-[11px] text-slate-400 hidden sm:block">Kolom bertanda <span className="text-rose-400 font-bold">*</span> wajib diisi</p>
               <div className="flex items-center gap-2 ml-auto">
                 <button
@@ -9798,7 +9900,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   type="button"
                   onClick={handleSaveTryoutPackage}
                   disabled={!newToTitle.trim()}
-                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer flex items-center gap-1.5 transition-colors"
+                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-md shadow-teal-600/20 cursor-pointer flex items-center gap-1.5 transition-all"
                 >
                   <Save className="w-4 h-4" />
                   <span>{editingTryoutId ? 'Simpan Perubahan' : 'Simpan Paket TryOut'}</span>

@@ -1172,9 +1172,9 @@ export const ItemAnalysisVisualizer: React.FC<ItemAnalysisVisualizerProps> = ({
         {/* ------------------------------------------------------------------ */}
         {viewMode === 'TABLE' && (
           <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+            <div className="overflow-auto max-h-[460px] sm:max-h-[560px] scrollbar-thin">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold sticky top-0 z-20 shadow-xs">
                   <tr>
                     <th className="py-2.5 px-3 w-12 text-center">No</th>
                     <th className="py-2.5 px-3 w-32">Kode Soal</th>
