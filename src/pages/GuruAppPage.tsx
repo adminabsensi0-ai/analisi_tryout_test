@@ -4282,62 +4282,72 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </div>
                         </div>
 
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold">
-                            <tr>
-                              <th className="py-2.5 px-3 w-12 text-center">Rank</th>
-                              <th className="py-2.5 px-3 w-28">NISN</th>
-                              <th className="py-2.5 px-3">Nama Siswa</th>
-                              <th className="py-2.5 px-3 w-24 text-center">Nilai Ujian</th>
-                              <th className="py-2.5 px-3 w-28 text-center">Status Kelulusan</th>
-                              <th className="py-2.5 px-3 w-28 text-center">Sinkronisasi</th>
-                              <th className="py-2.5 px-3 w-24 text-center">Aksi</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {classAnalyticsData.studentRankings.map(st => (
-                              <tr key={st.studentId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                <td className="py-2.5 px-3 text-center font-bold text-slate-600 dark:text-slate-400">{st.rank}</td>
-                                <td className="py-2.5 px-3 font-mono font-medium text-slate-800 dark:text-slate-200">{st.nisn}</td>
-                                <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-slate-100">{st.name}</td>
-                                <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700 dark:text-indigo-400">
-                                  {st.score}
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <span
-                                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                      st.score >= 75 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
-                                    }`}
-                                  >
-                                    {st.score >= 75 ? 'LULUS KKM' : 'REMEDIAL'}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <span
-                                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                      st.status === 'MATCH'
-                                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                        : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                    }`}
-                                  >
-                                    {st.status === 'MATCH' ? 'Sinkron 100%' : 'Selisih Skor'}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <button
-                                    onClick={() => {
-                                      setSelectedStudentForAnalytics(st.studentId);
-                                      setAnalyticsSubTab('STUDENT');
-                                    }}
-                                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-semibold cursor-pointer"
-                                  >
-                                    Lihat Rapor
-                                  </button>
-                                </td>
+                        <div className="overflow-auto max-h-[420px] sm:max-h-[480px] scrollbar-thin">
+                          <table className="w-full text-left text-xs">
+                            <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold shadow-xs">
+                              <tr>
+                                <th className="py-2.5 px-3 w-12 text-center">Rank</th>
+                                <th className="py-2.5 px-3 w-28">NISN</th>
+                                <th className="py-2.5 px-3">Nama Siswa</th>
+                                <th className="py-2.5 px-3 w-24 text-center">Nilai Ujian</th>
+                                <th className="py-2.5 px-3 w-28 text-center">Status Kelulusan</th>
+                                <th className="py-2.5 px-3 w-28 text-center">Sinkronisasi</th>
+                                <th className="py-2.5 px-3 w-24 text-center">Aksi</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {classAnalyticsData.studentRankings.length === 0 ? (
+                                <tr>
+                                  <td colSpan={7} className="py-8 text-center text-slate-400 dark:text-slate-500 italic">
+                                    Belum ada data nilai siswa untuk kelas dan Try Out ini.
+                                  </td>
+                                </tr>
+                              ) : (
+                                classAnalyticsData.studentRankings.map(st => (
+                                  <tr key={st.studentId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                    <td className="py-2.5 px-3 text-center font-bold text-slate-600 dark:text-slate-400">{st.rank}</td>
+                                    <td className="py-2.5 px-3 font-mono font-medium text-slate-800 dark:text-slate-200">{st.nisn}</td>
+                                    <td className="py-2.5 px-3 font-bold text-slate-900 dark:text-slate-100">{st.name}</td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700 dark:text-indigo-400">
+                                      {st.score}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center">
+                                      <span
+                                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                          st.score >= 75 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                                        }`}
+                                      >
+                                        {st.score >= 75 ? 'LULUS KKM' : 'REMEDIAL'}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center">
+                                      <span
+                                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                          st.status === 'MATCH'
+                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                            : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                        }`}
+                                      >
+                                        {st.status === 'MATCH' ? 'Sinkron 100%' : 'Selisih Skor'}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center">
+                                      <button
+                                        onClick={() => {
+                                          setSelectedStudentForAnalytics(st.studentId);
+                                          setAnalyticsSubTab('STUDENT');
+                                        }}
+                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-semibold cursor-pointer"
+                                      >
+                                        Lihat Rapor
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
 
                       {/* Analisis Butir Soal Kelas */}
@@ -4352,9 +4362,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </span>
                         </div>
 
-                        <div className="overflow-x-auto">
+                        <div className="overflow-auto max-h-[420px] sm:max-h-[480px] scrollbar-thin">
                           <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+                            <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold shadow-xs">
                               <tr>
                                 <th className="py-2.5 px-3 w-12 text-center">No</th>
                                 <th className="py-2.5 px-3 w-28">Kode Soal</th>
@@ -4370,8 +4380,20 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                               {(!classAnalyticsData.itemAnalysis || classAnalyticsData.itemAnalysis.length === 0) ? (
                                 <tr>
-                                  <td colSpan={9} className="py-6 text-center text-slate-400 italic">
-                                    Belum ada data butir soal untuk kelas ini.
+                                  <td colSpan={9} className="py-8 px-4 text-center text-slate-500 dark:text-slate-400">
+                                    <div className="max-w-md mx-auto flex flex-col items-center justify-center space-y-1.5">
+                                      <Info className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                                      <span className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
+                                        {activeTryout?.isExternal
+                                          ? 'Paket Try Out Eksternal Tidak Memuat Lembar Butir Soal'
+                                          : 'Belum ada data butir soal untuk kelas ini.'}
+                                      </span>
+                                      {activeTryout?.isExternal && (
+                                        <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                                          Nilai diimpor dari rekapitulasi skor akhir vendor/Excel tanpa rincian respons per butir soal.
+                                        </p>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
                               ) : (
