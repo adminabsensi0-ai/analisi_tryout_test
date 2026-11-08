@@ -1907,6 +1907,27 @@ class SupabaseDbService {
     }
   }
 
+  public async fetchSchoolProfile(): Promise<SchoolProfile | null> {
+    if (!this.isAvailable() || !supabase) return null;
+    try {
+      const { data, error } = await supabase
+        .from('school_profile')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        this.log('fetchSchoolProfile error: ' + error.message, 'warn');
+        return null;
+      }
+      return data ? fromSupabaseSchoolProfile(data as Record<string, unknown>) : null;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('fetchSchoolProfile exception: ' + msg, 'warn');
+      return null;
+    }
+  }
+
   public async syncSchoolProfile(sp: SchoolProfile): Promise<void> {
     if (!this.isAvailable() || !supabase) return;
     try {

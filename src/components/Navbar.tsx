@@ -116,7 +116,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                 : brandBgClass
             }`}>
               {schoolProfile.logoUrl ? (
-                <img src={schoolProfile.logoUrl} alt={schoolProfile.name} className="w-full h-full object-contain" />
+                <img
+                  src={schoolProfile.logoUrl}
+                  alt={schoolProfile.name}
+                  className="w-full h-full object-contain"
+                  loading="eager"
+                  decoding="sync"
+                />
               ) : isPageAdmin ? (
                 <ShieldCheck className="w-5 h-5" />
               ) : isPageWaliKelas ? (

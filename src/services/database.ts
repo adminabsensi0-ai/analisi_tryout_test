@@ -33,6 +33,7 @@ import { sdb } from './supabaseDb';
 import { generateUuid, isValidUuid } from '../utils/idUtils';
 
 const STORAGE_KEY = 'school_tryout_analytics_db_v1';
+const SCHOOL_PROFILE_CACHE_KEY = 'wikan_school_profile_cache_v1';
 const DELETED_TRYOUTS_KEY = 'school_tryout_deleted_ids_v1';
 const DELETED_SUBJECTS_KEY = 'school_tryout_deleted_subjects_v1';
 
@@ -298,6 +299,16 @@ export class DatabaseService {
     if (!sdb.isAvailable()) return;
 
     this.supabaseSyncEnabled = true;
+
+    // Prioritas #1: Tarik Profil Sekolah secepat kilat (~50-100ms) secara independen
+    // agar logo dan nama sekolah langsung terupdate tanpa perlu menunggu unduhan ribuan baris jawaban & skor.
+    sdb.fetchSchoolProfile().then(cloudProfile => {
+      if (cloudProfile) {
+        this.applySchoolProfile(cloudProfile);
+      }
+    }).catch(err => {
+      console.warn('[DB] Gagal sinkronisasi cepat profil sekolah:', err);
+    });
 
     try {
       console.info('[DB] Supabase aktif — memeriksa sinkronisasi cloud...');
@@ -1170,18 +1181,7 @@ export class DatabaseService {
 
     // Merge school profile
     if (cloud.schoolProfile) {
-      const current = this.state.schoolProfile || this.getSchoolProfile();
-      const hasDiff =
-        current.name !== cloud.schoolProfile.name ||
-        current.subHeader !== cloud.schoolProfile.subHeader ||
-        current.address !== cloud.schoolProfile.address ||
-        current.principalName !== cloud.schoolProfile.principalName ||
-        current.principalNip !== cloud.schoolProfile.principalNip ||
-        current.academicYear !== cloud.schoolProfile.academicYear ||
-        current.logoUrl !== cloud.schoolProfile.logoUrl;
-
-      if (hasDiff) {
-        this.state.schoolProfile = { ...current, ...cloud.schoolProfile };
+      if (this.applySchoolProfile(cloud.schoolProfile)) {
         changed = true;
       }
     }
@@ -1227,6 +1227,12 @@ export class DatabaseService {
   public async pullFromCloud(pushUnsynced = false): Promise<void> {
     if (!sdb.isAvailable() || this.isPullingCloud || this.isPushingCloud) return;
     this.isPullingCloud = true;
+
+    // Prioritas sinkronisasi cepat profil sekolah
+    sdb.fetchSchoolProfile().then(cp => {
+      if (cp) this.applySchoolProfile(cp);
+    }).catch(() => {});
+
     try {
       const cloudState = await sdb.fetchCoreState();
       if (!cloudState) return;
@@ -1384,12 +1390,68 @@ export class DatabaseService {
     });
   }
 
+  private loadCachedSchoolProfile(): SchoolProfile | undefined {
+    if (typeof window === 'undefined' || !window.localStorage) return undefined;
+    try {
+      const raw = localStorage.getItem(SCHOOL_PROFILE_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && parsed.name) {
+          return parsed as SchoolProfile;
+        }
+      }
+    } catch (e) {
+      console.warn('[DB] Failed to load cached school profile:', e);
+    }
+    return undefined;
+  }
+
+  private saveCachedSchoolProfile(profile: SchoolProfile): void {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      localStorage.setItem(SCHOOL_PROFILE_CACHE_KEY, JSON.stringify(profile));
+    } catch (e) {
+      console.warn('[DB] Failed to save school profile cache:', e);
+    }
+  }
+
+  public applySchoolProfile(cloudProfile: SchoolProfile): boolean {
+    const current = this.state?.schoolProfile || this.loadCachedSchoolProfile() || this.getSchoolProfile();
+    const hasDiff =
+      current.name !== cloudProfile.name ||
+      current.subHeader !== cloudProfile.subHeader ||
+      current.address !== cloudProfile.address ||
+      current.principalName !== cloudProfile.principalName ||
+      current.principalNip !== cloudProfile.principalNip ||
+      current.academicYear !== cloudProfile.academicYear ||
+      current.logoUrl !== cloudProfile.logoUrl;
+
+    if (hasDiff) {
+      const merged: SchoolProfile = { ...current, ...cloudProfile };
+      if (this.state) {
+        this.state.schoolProfile = merged;
+      }
+      this.saveCachedSchoolProfile(merged);
+      this.persistState();
+      this.notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
   private loadFromStorage(): DatabaseState {
+    const cachedProfile = this.loadCachedSchoolProfile();
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         this.isFreshDevice = false;
         const parsed = JSON.parse(saved);
+
+        if (cachedProfile) {
+          parsed.schoolProfile = { ...cachedProfile, ...(parsed.schoolProfile || {}) };
+        } else if (parsed.schoolProfile) {
+          this.saveCachedSchoolProfile(parsed.schoolProfile);
+        }
 
         // Ensure initial users/teachers exist without overwriting updated roles
         if (parsed.users && Array.isArray(parsed.users)) {
@@ -1514,12 +1576,16 @@ export class DatabaseService {
       explanations: [],
       reports: [],
       auditLogs: [],
+      schoolProfile: cachedProfile,
     };
     return defaultState;
   }
 
   private persistState() {
     this.rebuildIndexes();
+    if (this.state.schoolProfile) {
+      this.saveCachedSchoolProfile(this.state.schoolProfile);
+    }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
     } catch (err) {
@@ -1553,7 +1619,7 @@ export class DatabaseService {
   }
 
   public getSchoolProfile(): SchoolProfile {
-    return this.state.schoolProfile || {
+    return this.state.schoolProfile || this.loadCachedSchoolProfile() || {
       name: 'NAMA SEKOLAH ANDA',
       subHeader: 'SISTEM ASESMEN & ANALISIS TRY OUT TERPADU',
       address: 'Alamat Sekolah · Kota · Akreditasi · NPSN',
@@ -1573,6 +1639,7 @@ export class DatabaseService {
       ...profile,
     };
     this.state.schoolProfile = updated;
+    this.saveCachedSchoolProfile(updated);
     this.persistState();
     this.notifyListeners();
     if (this.supabaseSyncEnabled) sdb.syncSchoolProfile(updated).catch(() => {});
