@@ -443,5 +443,6 @@ export interface SchoolProfile {
   principalName: string;
   principalNip: string;
   academicYear: string;
+  logoUrl?: string;
 }
 

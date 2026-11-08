@@ -1177,7 +1177,8 @@ export class DatabaseService {
         current.address !== cloud.schoolProfile.address ||
         current.principalName !== cloud.schoolProfile.principalName ||
         current.principalNip !== cloud.schoolProfile.principalNip ||
-        current.academicYear !== cloud.schoolProfile.academicYear;
+        current.academicYear !== cloud.schoolProfile.academicYear ||
+        current.logoUrl !== cloud.schoolProfile.logoUrl;
 
       if (hasDiff) {
         this.state.schoolProfile = { ...current, ...cloud.schoolProfile };

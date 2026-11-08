@@ -128,6 +128,58 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
   const [schoolPrincipalName, setSchoolPrincipalName] = useState(initialSchoolProfile.principalName);
   const [schoolPrincipalNip, setSchoolPrincipalNip] = useState(initialSchoolProfile.principalNip);
   const [schoolAcademicYear, setSchoolAcademicYear] = useState(initialSchoolProfile.academicYear);
+  const [schoolLogoUrl, setSchoolLogoUrl] = useState(initialSchoolProfile.logoUrl || '');
+  const logoFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      triggerToast('Harap pilih file gambar (PNG, JPG, SVG, WebP).', 'error');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      triggerToast('Ukuran gambar terlalu besar. Maksimal 5 MB.', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = document.createElement('img');
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 320;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/png');
+          setSchoolLogoUrl(compressed);
+          triggerToast('Logo berhasil dipilih. Klik "Simpan Perubahan Informasi Sekolah" untuk menerapkan.');
+        }
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Cloud Sync State
   const [cloudSyncing, setCloudSyncing] = useState(false);
@@ -212,6 +264,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
     setSchoolPrincipalName(sp.principalName);
     setSchoolPrincipalNip(sp.principalNip);
     setSchoolAcademicYear(sp.academicYear);
+    setSchoolLogoUrl(sp.logoUrl || '');
   };
 
   useEffect(() => {
@@ -2040,6 +2093,72 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                     </p>
                   </div>
                 </div>
+                {/* Komponen Upload Logo Sekolah */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center gap-4">
+                  <div className="w-24 h-24 rounded-2xl bg-white dark:bg-slate-900 border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs group relative">
+                    {schoolLogoUrl ? (
+                      <img src={schoolLogoUrl} alt="Logo Sekolah" className="w-full h-full object-contain p-1.5" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-slate-400 p-2 text-center">
+                        <School className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+                        <span className="text-[9px] mt-1 font-medium">Belum Ada Logo</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center justify-center sm:justify-start gap-1.5">
+                        <span>Logo Resmi Sekolah / Lambang Lembaga</span>
+                        {schoolLogoUrl && (
+                          <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300 font-mono font-bold px-1.5 py-0.5 rounded">
+                            Aktif
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                        Logo ini otomatis ditampilkan pada <strong>Navbar Utama</strong>, <strong>Halaman Login Portal</strong>, <strong>Rapor Siswa</strong>, dan <strong>Kop Surat Dokumen PDF</strong> resmi.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                      <input
+                        ref={logoFileInputRef}
+                        type="file"
+                        accept="image/png, image/jpeg, image/jpg, image/svg+xml, image/webp"
+                        onChange={handleLogoFileChange}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => logoFileInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>{schoolLogoUrl ? 'Ganti Logo' : 'Unggah Logo'}</span>
+                      </button>
+
+                      {schoolLogoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSchoolLogoUrl('');
+                            triggerToast('Logo sekolah telah dihapus (kembali ke ikon default).');
+                          }}
+                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 dark:text-rose-300 font-bold text-xs rounded-xl border border-rose-200 dark:border-rose-900 flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus Logo</span>
+                        </button>
+                      )}
+
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Disarankan PNG transparan, rasio 1:1, maks 2 MB.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                   <div className="space-y-1.5 md:col-span-2">
@@ -2133,6 +2252,7 @@ export const AdminAppPage: React.FC<AdminAppPageProps> = ({ currentUser, onNavig
                           principalName: schoolPrincipalName,
                           principalNip: schoolPrincipalNip,
                           academicYear: schoolAcademicYear,
+                          logoUrl: schoolLogoUrl || undefined,
                         }, currentUser);
                         triggerToast('Profil sekolah & informasi header PDF berhasil disimpan.');
                       } catch (err: any) {

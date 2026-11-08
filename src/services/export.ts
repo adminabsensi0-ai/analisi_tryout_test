@@ -415,17 +415,32 @@ export class ExportService {
     doc.setFillColor(79, 70, 229); // Indigo Accent #4F46E5
     doc.rect(0, 28, pageWidth, 2, 'F');
 
+    // Gambar Logo Sekolah jika ada
+    const hasLogo = !!schoolInfo.logoUrl && schoolInfo.logoUrl.startsWith('data:image');
+    let textKopX = leftMargin;
+    if (hasLogo) {
+      try {
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(leftMargin, 4, 20, 20, 2.5, 2.5, 'F');
+        doc.addImage(schoolInfo.logoUrl!, 'PNG', leftMargin + 1, 5, 18, 18);
+        textKopX = leftMargin + 24;
+      } catch (err) {
+        // Fallback jika format image gagal dimuat
+        textKopX = leftMargin;
+      }
+    }
+
     // Header Text
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12.5);
-    doc.text(schoolInfo.name.toUpperCase(), leftMargin, 11);
+    doc.text(schoolInfo.name.toUpperCase(), textKopX, 11);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text(schoolInfo.subHeader.toUpperCase(), leftMargin, 17);
+    doc.text(schoolInfo.subHeader.toUpperCase(), textKopX, 17);
     doc.setFontSize(7);
-    doc.text(schoolInfo.address, leftMargin, 23);
+    doc.text(schoolInfo.address, textKopX, 23);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);

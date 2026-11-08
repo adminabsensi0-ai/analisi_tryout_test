@@ -23,6 +23,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   isStaffModalOpen: externalStaffModalOpen,
   setIsStaffModalOpen: externalSetIsStaffModalOpen,
 }) => {
+    const [schoolProfile, setSchoolProfile] = useState(() => dbService.getSchoolProfile());
+  useEffect(() => {
+    return dbService.subscribe(() => {
+      setSchoolProfile(dbService.getSchoolProfile());
+    });
+  }, []);
   const [internalStaffModalOpen, setInternalStaffModalOpen] = useState(!!returnTo);
 
   const isStaffModalOpen = externalStaffModalOpen !== undefined ? externalStaffModalOpen : internalStaffModalOpen;
@@ -99,9 +105,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         
         {/* Header Portal */}
         <div className="bg-slate-50 dark:bg-slate-950 p-6 text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-800 text-center transition-colors">
-          <div className="w-12 h-12 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-white mb-3 shadow-md shadow-indigo-600/20">
-            <GraduationCap className="w-7 h-7" />
-          </div>
+          {schoolProfile.logoUrl ? (
+            <div className="w-16 h-16 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl mx-auto flex items-center justify-center p-1.5 mb-3 shadow-md">
+              <img src={schoolProfile.logoUrl} alt={schoolProfile.name} className="w-full h-full object-contain" />
+            </div>
+          ) : (
+            <div className="w-12 h-12 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-white mb-3 shadow-md shadow-indigo-600/20">
+              <GraduationCap className="w-7 h-7" />
+            </div>
+          )}
           <h2 className="text-2xl font-black tracking-wider text-slate-900 dark:text-white">
             WIKAN
           </h2>

@@ -110,8 +110,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => onNavigate('/')}
             className="flex items-center gap-3 cursor-pointer group"
           >
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md transition-all ${brandBgClass}`}>
-              {isPageAdmin ? (
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md transition-all overflow-hidden shrink-0 ${
+              schoolProfile.logoUrl 
+                ? 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1' 
+                : brandBgClass
+            }`}>
+              {schoolProfile.logoUrl ? (
+                <img src={schoolProfile.logoUrl} alt={schoolProfile.name} className="w-full h-full object-contain" />
+              ) : isPageAdmin ? (
                 <ShieldCheck className="w-5 h-5" />
               ) : isPageWaliKelas ? (
                 <School className="w-5 h-5" />
