@@ -114,10 +114,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               <GraduationCap className="w-7 h-7" />
             </div>
           )}
-          <h2 className="text-2xl font-black tracking-wider text-slate-900 dark:text-white">
+          <span className="text-sm sm:text-base font-extrabold tracking-widest text-slate-500 dark:text-slate-400 uppercase block">
             WIKAN
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white mt-1 leading-snug">
+            {schoolProfile.name}
           </h2>
-          <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mt-1">
+          <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mt-2">
             Ubah Data Menjadi Tindakan Nyata
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -186,20 +189,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             </button>
           </form>
 
-          {/* Secondary Entry for Teachers & Admins */}
-          <div className="pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Bapak/Ibu Guru atau Administrator Sekolah?{' '}
-              <button
-                type="button"
-                onClick={() => setStaffModalOpen(true)}
-                className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer inline-flex items-center gap-1 ml-1"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>Masuk di sini</span>
-              </button>
-            </p>
-          </div>
+
         </div>
       </div>
 
