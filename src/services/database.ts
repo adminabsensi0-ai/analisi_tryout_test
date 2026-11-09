@@ -366,29 +366,36 @@ export class DatabaseService {
   }
 
   /**
-   * Helper tombstone: Mendapatkan daftar identifier (hanya UUID permanen) tryout yang sudah dihapus.
-   * Ini mencegah tryout dummy / seed yang telah dihapus oleh pengguna bangkit kembali saat merge dari cloud.
-   * PENTING: Jangan pernah memblokir format kode dinamis seperti 'TO-202...' agar kode tryout baru tidak terhalang lintas device.
+   * Helper tombstone: Mendapatkan daftar identifier dan kode tryout yang sudah dihapus.
+   * Ini mencegah tryout dummy / ghost / seed yang telah dihapus bangkit kembali saat merge dari cloud.
    */
   private getDeletedTryoutIdentifiers(): Set<string> {
+    const defaultDeleted = [
+      'to000000-0000-0000-0000-000000000001',
+      'f058de89-3c27-4df5-a66e-98c889629116', // TO-2026-02
+      '0a2c9242-59ad-4aac-9612-4d2ef09802e7', // TO-2026-04
+      '6ff3253b-7886-4ae8-9d01-bf464cb80288', // TO-2026-05
+      'to-2026-02',
+      'to-2026-04',
+      'to-2026-05'
+    ];
     try {
       const raw = typeof window !== 'undefined' ? localStorage.getItem(DELETED_TRYOUTS_KEY) : null;
       const parsed = raw ? JSON.parse(raw) : [];
       const set = new Set<string>();
       (Array.isArray(parsed) ? parsed : []).forEach((x: string) => {
         const val = String(x).toLowerCase().trim();
-        if (val && isValidUuid(val)) set.add(val);
+        if (val) set.add(val);
       });
-      set.add('to000000-0000-0000-0000-000000000001');
+      defaultDeleted.forEach(item => set.add(item));
       return set;
     } catch {
-      return new Set<string>(['to000000-0000-0000-0000-000000000001']);
+      return new Set<string>(defaultDeleted);
     }
   }
 
   /**
    * Helper tombstone: Mencatat tryout yang dihapus ke localStorage agar persisten lintas sesi & cloud sync.
-   * Hanya mencatat UUID yang valid, bukan kode dinamis.
    */
   private recordDeletedTryoutIdentifier(...idsOrCodes: (string | undefined)[]): void {
     try {
@@ -396,7 +403,7 @@ export class DatabaseService {
       idsOrCodes.forEach(item => {
         if (item && item.trim()) {
           const val = item.toLowerCase().trim();
-          if (isValidUuid(val)) set.add(val);
+          if (val) set.add(val);
         }
       });
       if (typeof window !== 'undefined') {
@@ -855,7 +862,8 @@ export class DatabaseService {
       const deletedTryouts = this.getDeletedTryoutIdentifiers();
       cloud.tryouts.forEach(cloudTo => {
         const toId = (cloudTo.id || '').toLowerCase().trim();
-        if (toId === 'to000000-0000-0000-0000-000000000001' && deletedTryouts.has(toId)) {
+        const toCode = (cloudTo.code || '').toLowerCase().trim();
+        if (deletedTryouts.has(toId) || (toCode && deletedTryouts.has(toCode))) {
           return;
         }
         const idx = this.state.tryouts.findIndex(
@@ -1194,6 +1202,13 @@ export class DatabaseService {
    * Called from Settings panel "Sinkronisasi ke Cloud" button.
    */
   public async exportToSupabase(): Promise<{ ok: boolean; message: string }> {
+    const deletedTryouts = this.getDeletedTryoutIdentifiers();
+    const cleanTryouts = (this.state.tryouts || []).filter(t => {
+      const idKey = (t.id || '').toLowerCase().trim();
+      const codeKey = (t.code || '').toLowerCase().trim();
+      return !deletedTryouts.has(idKey) && !deletedTryouts.has(codeKey);
+    });
+
     const result = await sdb.exportAllToSupabase({
       users: this.state.users,
       teachers: this.state.teachers,
@@ -1206,7 +1221,7 @@ export class DatabaseService {
       questions: this.state.questions,
       answers: this.state.answers,
       examPackages: this.state.examPackages,
-      tryouts: this.state.tryouts,
+      tryouts: cleanTryouts,
       responses: this.state.responses,
       scores: this.state.scores,
       schoolProfile: this.getSchoolProfile(),
@@ -1506,7 +1521,8 @@ export class DatabaseService {
           parsed.tryouts = parsed.tryouts.filter((t: any) => {
             if (legacyMockToIds.has(t.id)) return false;
             const toId = (t.id || '').toLowerCase().trim();
-            if (deletedTryouts.has(toId)) return false;
+            const toCode = (t.code || '').toLowerCase().trim();
+            if (deletedTryouts.has(toId) || (toCode && deletedTryouts.has(toCode))) return false;
             return true;
           });
         }
@@ -2770,7 +2786,7 @@ export class DatabaseService {
   public deleteTryout(id: string, currentUser: any) {
     this.assertAdminOrTeacher(currentUser, 'DELETE_TRYOUT');
     const to = this.state.tryouts.find(t => t.id === id);
-    this.recordDeletedTryoutIdentifier(id, to?.id);
+    this.recordDeletedTryoutIdentifier(id, to?.id, to?.code);
     if (to) {
       this.pendingTryoutIds.delete(to.id);
       this.pendingTryoutIds.delete((to.code || '').toLowerCase().trim());

@@ -1351,6 +1351,8 @@ class SupabaseDbService {
         await supabase.from('scores').delete().eq('tryout_id', targetId);
         await supabase.from('responses').delete().eq('tryout_id', targetId);
         await supabase.from('answers').delete().eq('tryout_id', targetId);
+        await supabase.from('tryout_questions').delete().eq('tryout_id', targetId);
+        await supabase.from('tryout_subjects').delete().eq('tryout_id', targetId);
         const { error } = await supabase.from('tryouts').delete().eq('id', targetId);
         if (error) this.log('removeTryout by id error: ' + error.message, 'warn');
       }

@@ -793,7 +793,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
       if (validationResult.summary.answerKeyDetected) {
         triggerToast(`Kunci Jawaban Resmi diperbarui dari respon "${validationResult.summary.answerKeyStudentName}" (${validationResult.summary.answerKeyExtractedCount} butir soal).`);
-        setTryouts(dbService.getTryouts());
+        setTryouts(dbService.getTryoutsForTeacher(currentUser));
         setQuestions(dbService.getQuestions());
       }
 
@@ -806,7 +806,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           ...prev,
           [tryout.id]: { lastSyncAt: new Date(), status: 'success', newCount: 0, errorMsg: '' },
         }));
-        setTryouts(dbService.getTryouts());
+        setTryouts(dbService.getTryoutsForTeacher(currentUser));
         if (validationResult.summary.answerKeyDetected) {
           triggerToast(`Kunci Jawaban resmi tersimpan (${validationResult.summary.answerKeyExtractedCount} soal). Menunggu respon siswa nyata untuk analisis.`);
         } else {
@@ -843,7 +843,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
       if (tryoutSubject) {
         setSelectedSubjectId(tryoutSubject.id);
       }
-      setTryouts(dbService.getTryouts());
+      setTryouts(dbService.getTryoutsForTeacher(currentUser));
       refreshData();
     } catch (err: any) {
       setSheetSyncStatus(prev => ({
@@ -2974,7 +2974,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     scoreSource: newSrc
                                   };
                                   dbService.updateTryoutScoringConfig(to.id, updatedConfig, currentUser);
-                                  setTryouts(dbService.getTryouts());
+                                  setTryouts(dbService.getTryoutsForTeacher(currentUser));
                                   triggerToast(`Mode Acuan Nilai Paket ${to.code} diubah ke: ${newSrc === 'CUSTOM_ENGINE' ? 'Aturan Penilaian Sekolah' : 'Nilai Langsung Google Form'}`);
                                 }}
                                 className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 cursor-pointer flex items-center space-x-1 border border-indigo-200 dark:border-indigo-800/80 px-2.5 py-1 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/40 hover:bg-indigo-100 transition-colors"
@@ -8329,7 +8329,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             scoreSource: newSrc
                           };
                           dbService.updateTryoutScoringConfig(activeTryout.id, updatedConfig, currentUser);
-                          setTryouts(dbService.getTryouts());
+                          setTryouts(dbService.getTryoutsForTeacher(currentUser));
                           triggerToast(`Mode Acuan Nilai untuk ${activeTryout.code} diubah ke: ${newSrc === 'CUSTOM_ENGINE' ? 'Aturan Penilaian Sekolah' : 'Nilai Langsung Google Form'}`);
                         }}
                         className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center space-x-2 ${
@@ -10082,7 +10082,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
           dbService={dbService}
           currentUser={currentUser}
           onSuccess={() => {
-            setTryouts(dbService.getTryouts());
+            setTryouts(dbService.getTryoutsForTeacher(currentUser));
             refreshData();
           }}
           onToast={(msg) => triggerToast(msg)}
