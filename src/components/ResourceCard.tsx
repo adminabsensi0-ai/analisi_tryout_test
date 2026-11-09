@@ -21,6 +21,7 @@ export interface ResourceCardProps {
   status?: 'PUBLISHED' | 'DRAFT' | 'ARCHIVED';
   description?: string;
   questionCode?: string;
+  questionNumbers?: number[];
   onPreview?: (url: string, title: string) => void;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -43,6 +44,7 @@ export const ResourceCard: React.FC<ResourceCardProps> = ({
   status = 'PUBLISHED',
   description,
   questionCode,
+  questionNumbers,
   onPreview,
   onEdit,
   onDelete,
@@ -132,6 +134,12 @@ export const ResourceCard: React.FC<ResourceCardProps> = ({
             {questionCode && (
               <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                 Soal: {questionCode}
+              </span>
+            )}
+
+            {questionNumbers && questionNumbers.length > 0 && (
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                Soal No: {questionNumbers.join(', ')}
               </span>
             )}
           </div>

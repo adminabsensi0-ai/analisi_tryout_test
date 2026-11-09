@@ -405,7 +405,21 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
             const qObj = questions.find(q => q.id === qp.questionId);
             const qNum = qp.questionNumber || (idx + 1);
             const isUnanswered = !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong';
-            const matchedExp = explanations.find(e => e.questionId === qp.questionId || (qObj && e.subjectId === qObj.subjectId));
+            
+            // Prioritaskan video/pembahasan yang secara spesifik mencakup nomor soal ini
+            const matchedExp = explanations.find(e => {
+              if (Array.isArray(e.questionNumbers) && e.questionNumbers.length > 0) {
+                return e.questionNumbers.includes(qNum);
+              }
+              if (Array.isArray(e.questionIds) && e.questionIds.length > 0) {
+                return e.questionIds.includes(qp.questionId);
+              }
+              if (e.questionId && e.questionId !== 'GENERAL') {
+                return e.questionId === qp.questionId;
+              }
+              return false;
+            }) || explanations.find(e => (!e.questionNumbers || e.questionNumbers.length === 0) && (!e.questionId || e.questionId === 'GENERAL') && (qObj && e.subjectId === qObj.subjectId));
+            
             const subjectObj = qObj ? subjects.find(s => s.id === qObj.subjectId) : null;
 
             return (

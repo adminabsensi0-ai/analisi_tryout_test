@@ -361,7 +361,11 @@ export interface Explanation {
   id: string;
   tryoutId: string;
   subjectId?: string;
-  questionId?: string; // Nullable: pembahasan umum atau spesifik soal
+  questionId?: string; // Nullable: pembahasan umum atau spesifik soal (legacy)
+  /** Daftar nomor butir soal yang dibahas dalam video/dokumen ini (contoh: [1, 2, 3, 4, 5]) */
+  questionNumbers?: number[];
+  /** Daftar ID butir soal yang dibahas jika terikat langsung ke UUID Question */
+  questionIds?: string[];
   title: string;
   contentText: string;
   pdfUrl?: string;

@@ -3556,8 +3556,8 @@ export class DatabaseService {
     return this.state.explanations.filter(e => !e.subjectId || allowedSubjects.has(e.subjectId));
   }
 
-  public getExplanationsForStudent(tryoutId: string, questionId?: string): Explanation[] {
-    return ExplanationService.filterExplanationsForStudent(this.state.explanations, tryoutId, questionId);
+  public getExplanationsForStudent(tryoutId: string, questionId?: string, questionNumber?: number): Explanation[] {
+    return ExplanationService.filterExplanationsForStudent(this.state.explanations, tryoutId, questionId, questionNumber);
   }
 
   public addExplanation(

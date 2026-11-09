@@ -113,12 +113,23 @@ export class ExplanationService {
   public static filterExplanationsForStudent(
     explanations: Explanation[],
     tryoutId: string,
-    questionId?: string
+    questionId?: string,
+    questionNumber?: number
   ): Explanation[] {
     return explanations.filter(e => {
       const matchTryout = e.tryoutId === tryoutId;
       const isPublished = e.status === 'PUBLISHED';
-      const matchQuestion = questionId ? e.questionId === questionId : true;
+      
+      let matchQuestion = true;
+      if (questionId) {
+        matchQuestion = e.questionId === questionId || (Array.isArray(e.questionIds) && e.questionIds.includes(questionId));
+      }
+      if (matchQuestion && questionNumber !== undefined) {
+        if (Array.isArray(e.questionNumbers) && e.questionNumbers.length > 0) {
+          matchQuestion = e.questionNumbers.includes(questionNumber);
+        }
+      }
+
       return matchTryout && isPublished && matchQuestion;
     });
   }

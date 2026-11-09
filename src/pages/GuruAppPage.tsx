@@ -8,7 +8,7 @@ import {
   ArrowRight, Lock, RefreshCw, Key, ExternalLink, Link, AlertCircle, Check,
   Calculator, Scale, Play, CheckCheck, Sliders, PieChart, TrendingUp,
   Gauge, Zap, Target, Cpu, Clock, ArrowUp, ArrowDown, Activity, Info,
-  Youtube, Copy, LayoutGrid, Cloud
+  Youtube, Copy, LayoutGrid, Cloud, CheckSquare
 } from 'lucide-react';
 import { dbService } from '../services/database';
 import { GoogleIntegrationService } from '../services/googleIntegration';
@@ -545,6 +545,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [expSubjectId, setExpSubjectId] = useState<string>('subj-mat');
   const [expTryoutId, setExpTryoutId] = useState<string>('');
   const [expQuestionId, setExpQuestionId] = useState<string>('GENERAL');
+  const [expScopeMode, setExpScopeMode] = useState<'ALL' | 'SPECIFIC'>('ALL');
+  const [expSelectedNumbers, setExpSelectedNumbers] = useState<number[]>([]);
+  const [rangeStart, setRangeStart] = useState<string>('');
+  const [rangeEnd, setRangeEnd] = useState<string>('');
   const [expContentText, setExpContentText] = useState('');
   const [expPdfUrl, setExpPdfUrl] = useState('');
   const [expPdfFileName, setExpPdfFileName] = useState('');
@@ -564,6 +568,16 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [quickExpStatus, setQuickExpStatus] = useState<'PUBLISHED' | 'DRAFT'>('PUBLISHED');
   const [activeVideoModalUrl, setActiveVideoModalUrl] = useState<string | null>(null);
   const [activeVideoModalTitle, setActiveVideoModalTitle] = useState<string>('');
+
+  const expAvailableNumbers = useMemo(() => {
+    if (!expTryoutId) return Array.from({ length: 25 }, (_, i) => i + 1);
+    const tryoutQs = dbService.getQuestionsForTryout(expTryoutId, expSubjectId);
+    if (tryoutQs && tryoutQs.length > 0) {
+      const nums = tryoutQs.map((q, idx) => q.questionNumber || (idx + 1));
+      return Array.from(new Set(nums)).sort((a, b) => a - b);
+    }
+    return Array.from({ length: 25 }, (_, i) => i + 1);
+  }, [expTryoutId, expSubjectId, tryouts, questions]);
 
   const getYouTubeEmbedUrl = (url: string | null | undefined): string | null => {
     if (!url) return null;
@@ -6733,6 +6747,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             setExpSubjectId(selectedSubjectId && selectedSubjectId !== 'ALL' && allowedSubjectIds.includes(selectedSubjectId) ? selectedSubjectId : (allowedSubjectIds[0] || subjects[0]?.id || ''));
                             setExpTryoutId(selectedTryoutId !== 'ALL' ? selectedTryoutId : tryouts[0]?.id || '');
                             setExpQuestionId('GENERAL');
+                            setExpScopeMode('ALL');
+                            setExpSelectedNumbers([]);
+                            setRangeStart('');
+                            setRangeEnd('');
                             setExpContentText('');
                             setExpPdfUrl('');
                             setExpPdfFileName('');
@@ -7036,6 +7054,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                       status={exp.status}
                                       description={exp.contentText}
                                       questionCode={targetQuestion?.uniqueCode}
+                                      questionNumbers={exp.questionNumbers}
                                       onPreview={(url, title) => {
                                         setActiveVideoModalUrl(url);
                                         setActiveVideoModalTitle(title);
@@ -7046,6 +7065,19 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                         setExpSubjectId(exp.subjectId || selectedSubjectId || allowedSubjectIds[0] || subjects[0]?.id || '');
                                         setExpTryoutId(exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '');
                                         setExpQuestionId(exp.questionId || 'GENERAL');
+                                        if (Array.isArray(exp.questionNumbers) && exp.questionNumbers.length > 0) {
+                                          setExpScopeMode('SPECIFIC');
+                                          setExpSelectedNumbers(exp.questionNumbers);
+                                        } else if (exp.questionId && exp.questionId !== 'GENERAL') {
+                                          const qObj = questions.find(q => q.id === exp.questionId);
+                                          setExpScopeMode('SPECIFIC');
+                                          setExpSelectedNumbers(qObj?.questionNumber ? [qObj.questionNumber] : []);
+                                        } else {
+                                          setExpScopeMode('ALL');
+                                          setExpSelectedNumbers([]);
+                                        }
+                                        setRangeStart('');
+                                        setRangeEnd('');
                                         setExpContentText(exp.contentText);
                                         setExpPdfUrl(exp.pdfUrl || '');
                                         setExpPdfFileName(exp.pdfFileName || '');
@@ -7106,7 +7138,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                           {expSubj ? `${expSubj.name} (${expSubj.code})` : 'Umum / Semua Mapel'}
                                         </span>
 
-                                        {exp.questionId ? (
+                                        {Array.isArray(exp.questionNumbers) && exp.questionNumbers.length > 0 ? (
+                                          <span className="bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-lg font-mono" title={`Nomor: ${exp.questionNumbers.join(', ')}`}>
+                                            Soal No: {exp.questionNumbers.join(', ')}
+                                          </span>
+                                        ) : exp.questionId && exp.questionId !== 'GENERAL' ? (
                                           <span className="bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-lg font-mono">
                                             Soal: {targetQuestion?.uniqueCode || exp.questionId}
                                           </span>
@@ -7155,6 +7191,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                           subjectCode={expSubj?.code}
                                           tryoutCode={exp.tryoutId}
                                           questionCode={targetQuestion?.uniqueCode}
+                                      questionNumbers={exp.questionNumbers}
                                           status={exp.status}
                                           onPreview={(url, title) => {
                                             setActiveVideoModalUrl(url);
@@ -7175,6 +7212,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                           subjectCode={expSubj?.code}
                                           tryoutCode={exp.tryoutId}
                                           questionCode={targetQuestion?.uniqueCode}
+                                      questionNumbers={exp.questionNumbers}
                                           status={exp.status}
                                           isTeacherView={false}
                                         />
@@ -7212,6 +7250,19 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                           setExpSubjectId(exp.subjectId || selectedSubjectId || allowedSubjectIds[0] || subjects[0]?.id || '');
                                           setExpTryoutId(exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '');
                                           setExpQuestionId(exp.questionId || 'GENERAL');
+                                          if (Array.isArray(exp.questionNumbers) && exp.questionNumbers.length > 0) {
+                                            setExpScopeMode('SPECIFIC');
+                                            setExpSelectedNumbers(exp.questionNumbers);
+                                          } else if (exp.questionId && exp.questionId !== 'GENERAL') {
+                                            const qObj = questions.find(q => q.id === exp.questionId);
+                                            setExpScopeMode('SPECIFIC');
+                                            setExpSelectedNumbers(qObj?.questionNumber ? [qObj.questionNumber] : []);
+                                          } else {
+                                            setExpScopeMode('ALL');
+                                            setExpSelectedNumbers([]);
+                                          }
+                                          setRangeStart('');
+                                          setRangeEnd('');
                                           setExpContentText(exp.contentText);
                                           setExpPdfUrl(exp.pdfUrl || '');
                                           setExpPdfFileName(exp.pdfFileName || '');
@@ -9257,7 +9308,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
               onSubmit={e => {
                 e.preventDefault();
                 try {
-                  const finalQuestionId = expQuestionId === 'GENERAL' ? undefined : expQuestionId;
+                  const finalNumbers = expScopeMode === 'SPECIFIC' ? [...expSelectedNumbers].sort((a, b) => a - b) : [];
+                  const finalQuestionIds = expScopeMode === 'SPECIFIC'
+                    ? questions.filter(q => q.questionNumber && finalNumbers.includes(q.questionNumber)).map(q => q.id)
+                    : [];
+                  const finalQuestionId = finalQuestionIds.length === 1 ? finalQuestionIds[0] : (expQuestionId === 'GENERAL' ? undefined : expQuestionId);
 
                   // Process PDF Storage Metadata (Metadata + Storage Path pattern, NO binary in DB)
                   let pdfStoragePath: string | undefined = undefined;
@@ -9278,6 +9333,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         subjectId: expSubjectId,
                         title: expTitle,
                         questionId: finalQuestionId,
+                        questionNumbers: finalNumbers,
+                        questionIds: finalQuestionIds,
                         contentText: expContentText || 'Modul Pembahasan Soal Resmi Guru.',
                         pdfUrl,
                         pdfStoragePath,
@@ -9296,6 +9353,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         subjectId: expSubjectId,
                         title: expTitle,
                         questionId: finalQuestionId,
+                        questionNumbers: finalNumbers,
+                        questionIds: finalQuestionIds,
                         contentText: expContentText || 'Modul Pembahasan Soal Resmi Guru.',
                         pdfUrl,
                         pdfStoragePath,
@@ -9359,38 +9418,173 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 />
               </div>
 
-              {/* Scope & Status */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Cakupan Pembahasan</label>
-                  <select
-                    value={expQuestionId}
-                    onChange={e => setExpQuestionId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 font-medium"
-                  >
-                    <option value="GENERAL">Paket Lengkap Mapel (Semua Nomor)</option>
-                    {questions
-                      .filter(q => q.subjectId === expSubjectId || expSubjectId === 'ALL')
-                      .map(q => (
-                        <option key={q.id} value={q.id}>
-                          Soal: {q.uniqueCode} ({q.questionText.slice(0, 25)}...)
-                        </option>
-                      ))}
-                  </select>
+              {/* Status Publikasi */}
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Status Publikasi</label>
+                <select
+                  value={expStatus}
+                  onChange={e => setExpStatus(e.target.value as any)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 font-semibold"
+                >
+                  <option value="PUBLISHED">PUBLISHED (Langsung Tampil di Portal Siswa)</option>
+                  <option value="DRAFT">DRAFT (Disimpan Rahasia — Hanya Guru &amp; Admin)</option>
+                  <option value="ARCHIVED">ARCHIVED (Disembunyikan / Dearsip)</option>
+                </select>
+              </div>
+
+              {/* Cakupan Nomor Soal Pembahasan (Multi-Select & Range) */}
+              <div className="space-y-2.5 pt-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold">
+                    Cakupan Nomor Soal yang Dibahas
+                  </label>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {expScopeMode === 'ALL'
+                      ? 'Membahas semua butir soal'
+                      : `${expSelectedNumbers.length} dari ${expAvailableNumbers.length} nomor dipilih`}
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Status Publikasi</label>
-                  <select
-                    value={expStatus}
-                    onChange={e => setExpStatus(e.target.value as any)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 font-semibold"
+                {/* Segmented Mode Switch */}
+                <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpScopeMode('ALL');
+                      setExpSelectedNumbers([]);
+                    }}
+                    className={`py-2 px-3 rounded-lg flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                      expScopeMode === 'ALL'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs font-bold'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                    }`}
                   >
-                    <option value="PUBLISHED">PUBLISHED (Tampil di Portal Siswa)</option>
-                    <option value="DRAFT">DRAFT (Hanya Guru &amp; Admin)</option>
-                    <option value="ARCHIVED">ARCHIVED (Disembunyikan / Dearsip)</option>
-                  </select>
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Paket Lengkap (Semua Nomor)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpScopeMode('SPECIFIC')}
+                    className={`py-2 px-3 rounded-lg flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                      expScopeMode === 'SPECIFIC'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs font-bold'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                    }`}
+                  >
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    <span>
+                      Pilih Nomor Tertentu {expSelectedNumbers.length > 0 && `(${expSelectedNumbers.length})`}
+                    </span>
+                  </button>
                 </div>
+
+                {/* Specific Number Selector Container */}
+                {expScopeMode === 'SPECIFIC' && (
+                  <div className="p-3.5 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/60 rounded-xl space-y-3 animate-fade-in">
+                    {/* Quick Range & Actions Toolbar */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-600 dark:text-slate-400 font-medium text-[11px]">Rentang:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={expAvailableNumbers[expAvailableNumbers.length - 1] || 100}
+                          value={rangeStart}
+                          onChange={e => setRangeStart(e.target.value)}
+                          placeholder="Dari"
+                          className="w-14 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-center font-mono text-xs"
+                        />
+                        <span className="text-slate-400">-</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={expAvailableNumbers[expAvailableNumbers.length - 1] || 100}
+                          value={rangeEnd}
+                          onChange={e => setRangeEnd(e.target.value)}
+                          placeholder="Sampai"
+                          className="w-14 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2 py-1 text-center font-mono text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const start = parseInt(rangeStart, 10);
+                            const end = parseInt(rangeEnd, 10);
+                            if (!isNaN(start) && !isNaN(end) && start <= end) {
+                              const validRange = expAvailableNumbers.filter(n => n >= start && n <= end);
+                              setExpSelectedNumbers(prev => Array.from(new Set([...prev, ...validRange])).sort((a, b) => a - b));
+                              setRangeStart('');
+                              setRangeEnd('');
+                            }
+                          }}
+                          disabled={!rangeStart || !rangeEnd}
+                          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] cursor-pointer transition-colors"
+                        >
+                          + Terapkan
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setExpSelectedNumbers([...expAvailableNumbers])}
+                          className="text-indigo-600 dark:text-indigo-400 hover:underline font-bold text-[11px] cursor-pointer"
+                        >
+                          Pilih Semua ({expAvailableNumbers.length})
+                        </button>
+                        <span className="text-slate-300 dark:text-slate-700">•</span>
+                        <button
+                          type="button"
+                          onClick={() => setExpSelectedNumbers([])}
+                          className="text-rose-600 dark:text-rose-400 hover:underline font-medium text-[11px] cursor-pointer"
+                        >
+                          Bersihkan
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Interactive Number Badges Grid */}
+                    <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 max-h-44 overflow-y-auto p-1.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 scrollbar-thin">
+                      {expAvailableNumbers.map(num => {
+                        const isSelected = expSelectedNumbers.includes(num);
+                        return (
+                          <button
+                            type="button"
+                            key={num}
+                            onClick={() => {
+                              setExpSelectedNumbers(prev =>
+                                prev.includes(num) ? prev.filter(n => n !== num) : [...prev, num].sort((a, b) => a - b)
+                              );
+                            }}
+                            className={`h-9 rounded-lg flex items-center justify-center font-mono text-xs font-bold transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-400/50 scale-95'
+                                : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700'
+                            }`}
+                            title={`Nomor Soal #${num}`}
+                          >
+                            {isSelected ? `✓ ${num}` : num}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Live Selected Summary */}
+                    <div className="text-[11px] text-slate-600 dark:text-slate-400 flex items-center justify-between">
+                      {expSelectedNumbers.length > 0 ? (
+                        <span>
+                          Nomor terpilih:{' '}
+                          <strong className="text-indigo-700 dark:text-indigo-400 font-mono">
+                            {expSelectedNumbers.map(n => `#${n}`).join(', ')}
+                          </strong>
+                        </span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400 italic font-medium">
+                          ⚠ Belum ada nomor yang dicentang. Silakan klik kotak nomor di atas.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* YouTube Link Section */}
