@@ -21,6 +21,7 @@ export interface QuestionAnalysisResult extends QuestionAnalysis {
   uniqueCode: string;
   questionText: string;
   correctAnswer: string;
+  options?: { key: string; text: string }[];
   subjectId: string;
   materialId: string;
   competencyId: string;
@@ -517,6 +518,7 @@ export class AnalyticsService {
         discriminationStatus,
         reviewRecommendation,
         reviewReasons,
+        options: q.options,
         pedagogicalNote: AnalyticsService.PEDAGOGICAL_DISCLAIMER,
       };
     });

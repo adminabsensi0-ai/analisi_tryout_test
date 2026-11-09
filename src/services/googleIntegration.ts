@@ -497,10 +497,8 @@ export class GoogleIntegrationService {
     const rawKeyCell = (answerKeyRow && header && answerKeyRow[header] !== undefined)
       ? String(answerKeyRow[header]).trim()
       : '';
-    if (rawKeyCell && !/^INVALID_/i.test(rawKeyCell)) {
-      rawValues.push(rawKeyCell);
-    }
 
+    // Kumpulkan seluruh variasi jawaban siswa dari baris data terlebih dahulu
     if (rows && rows.length > 0 && header) {
       rows.forEach(r => {
         const cell = r[header] !== undefined ? String(r[header]).trim() : '';
@@ -508,6 +506,11 @@ export class GoogleIntegrationService {
           rawValues.push(cell);
         }
       });
+    }
+
+    // Masukkan jawaban dari baris kunci jika ada dan belum terdaftar
+    if (rawKeyCell && !/^INVALID_/i.test(rawKeyCell)) {
+      rawValues.push(rawKeyCell);
     }
 
     // 1. Tangkap opsi yang memiliki prefix huruf eksplisit (misal "A. Fotosintesis")
@@ -550,7 +553,10 @@ export class GoogleIntegrationService {
       }
     });
 
-    // 2. Alokasikan teks jawaban Google Form tanpa prefix huruf ke slot A..E yang masih kosong/placeholder
+    // 2. Urutkan opsi tanpa prefix secara alami (numerik/alfabetis) agar opsi angka/satuan/pilihan terpetakan konsisten
+    unprefixedTexts.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    // Alokasikan teks jawaban Google Form tanpa prefix huruf ke slot A..E yang masih kosong/placeholder
     unprefixedTexts.forEach(txt => {
       const emptyKey = optionKeys.find(k => !keyToText.has(k));
       if (emptyKey) {
@@ -1152,12 +1158,102 @@ export class GoogleIntegrationService {
       dbService.updateTryout(tryout.id, { answerKey: answerKeyArr }, null);
     }
 
-    // Track duplicate NISNs in the current sheet batch among real students
-    const nisnOccurrences: Record<string, number> = {};
-    studentRows.forEach(row => {
+    // Group student rows by student to detect duplicates and keep the LAST submitted row
+    interface StudentSubmissionTracker {
+      nisn: string;
+      cleanNisn: string;
+      rawName: string;
+      rawClass?: string;
+      matchedStudent?: Student;
+      rowIndices: number[];
+    }
+
+    const studentTrackers = new Map<string, StudentSubmissionTracker>();
+
+    studentRows.forEach((row, index) => {
       const rawNisn = extractRowNisn(row);
-      if (rawNisn) {
-        nisnOccurrences[rawNisn] = (nisnOccurrences[rawNisn] || 0) + 1;
+      const rawName = extractRowName(row);
+      const rawClass = mappingConfig.classColumn && row[mappingConfig.classColumn]
+        ? String(row[mappingConfig.classColumn]).trim()
+        : undefined;
+      const cleanNisn = GoogleIntegrationService.normalizeNisn(rawNisn);
+
+      let matchedStudent: Student | undefined =
+        students.find(s => GoogleIntegrationService.isNisnMatching(rawNisn, s.nisn)) ||
+        allDbStudents.find(s => GoogleIntegrationService.isNisnMatching(rawNisn, s.nisn));
+
+      if (!matchedStudent && cleanNisn) {
+        matchedStudent =
+          students.find(s => GoogleIntegrationService.isNisnMatching(cleanNisn, s.nisn)) ||
+          allDbStudents.find(s => GoogleIntegrationService.isNisnMatching(cleanNisn, s.nisn));
+      }
+
+      if (!matchedStudent && rawNisn) {
+        matchedStudent =
+          students.find(s => s.nis && (s.nis.trim() === rawNisn || GoogleIntegrationService.isNisnMatching(rawNisn, s.nis))) ||
+          allDbStudents.find(s => s.nis && (s.nis.trim() === rawNisn || GoogleIntegrationService.isNisnMatching(rawNisn, s.nis)));
+      }
+
+      if (!matchedStudent && rawName && rawName.length >= 3) {
+        const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const nameMatches = allDbStudents.filter(s => {
+          const sn = s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return sn === normName || (sn.length > 5 && (sn.includes(normName) || normName.includes(sn)));
+        });
+        if (nameMatches.length === 1) {
+          matchedStudent = nameMatches[0];
+        }
+      }
+
+      const dedupKey = matchedStudent
+        ? `STUDENT_${matchedStudent.id}`
+        : (cleanNisn ? `NISN_${cleanNisn}` : (rawNisn ? `RAW_${rawNisn}` : `ROW_${index}`));
+
+      const existing = studentTrackers.get(dedupKey);
+      if (existing) {
+        existing.rowIndices.push(index);
+        if (rawName && !existing.rawName) existing.rawName = rawName;
+        if (rawClass && !existing.rawClass) existing.rawClass = rawClass;
+        if (matchedStudent && !existing.matchedStudent) existing.matchedStudent = matchedStudent;
+      } else {
+        studentTrackers.set(dedupKey, {
+          nisn: matchedStudent?.nisn || cleanNisn || rawNisn,
+          cleanNisn,
+          rawName,
+          rawClass,
+          matchedStudent,
+          rowIndices: [index],
+        });
+      }
+    });
+
+    const earlierDuplicateRowIndices = new Map<number, { lastRowNumber: number; nisn: string; name: string }>();
+    const duplicateSubmissions: DuplicateSubmissionInfo[] = [];
+
+    studentTrackers.forEach(tracker => {
+      if (tracker.rowIndices.length > 1) {
+        const lastIdx = tracker.rowIndices[tracker.rowIndices.length - 1];
+        const earlierIndices = tracker.rowIndices.slice(0, -1);
+        const lastRowNumber = lastIdx + 1;
+        const skippedRowNumbers = earlierIndices.map(i => i + 1);
+
+        const dupInfo: DuplicateSubmissionInfo = {
+          nisn: tracker.nisn || '-',
+          studentName: tracker.matchedStudent?.name || tracker.rawName || 'Siswa',
+          className: tracker.matchedStudent?.classId || tracker.rawClass || undefined,
+          submissionCount: tracker.rowIndices.length,
+          selectedRowNumber: lastRowNumber,
+          skippedRowNumbers,
+        };
+        duplicateSubmissions.push(dupInfo);
+
+        earlierIndices.forEach(idx => {
+          earlierDuplicateRowIndices.set(idx, {
+            lastRowNumber,
+            nisn: tracker.nisn,
+            name: dupInfo.studentName,
+          });
+        });
       }
     });
 
@@ -1173,6 +1269,10 @@ export class GoogleIntegrationService {
       const rawName = extractRowName(row);
       const cleanNisn = GoogleIntegrationService.normalizeNisn(rawNisn);
 
+      // Cek apakah baris ini merupakan submisi terdahulu yang digantikan oleh submisi terakhir siswa
+      const isEarlierDuplicateRow = earlierDuplicateRowIndices.has(index);
+      const earlierDupMeta = isEarlierDuplicateRow ? earlierDuplicateRowIndices.get(index) : undefined;
+
       // Extract raw GForm score with smart auto-normalization (supporting X/Y format, Indonesian comma decimal, etc.)
       let rawGFormScoreNum = 0;
       if (mappingConfig.scoreColumn && row[mappingConfig.scoreColumn]) {
@@ -1182,7 +1282,6 @@ export class GoogleIntegrationService {
           const num = parseFloat(parts[0].trim().replace(',', '.'));
           const denom = parseFloat(parts[1].trim().replace(',', '.'));
           if (!isNaN(num) && !isNaN(denom) && denom > 0) {
-            // Normalisasi otomatis pecahan Google Form (misal "35 / 40") ke skala maxScore (skala 100)
             const maxScore = tryout.scoringConfig?.maxScore || 100;
             rawGFormScoreNum = Math.round(((num / denom) * maxScore) * 100) / 100;
           } else {
@@ -1196,11 +1295,6 @@ export class GoogleIntegrationService {
       }
 
       // Multi-tier student lookup:
-      // 1. Exact NISN
-      // 2. Normalized 10-digit NISN (padded 0)
-      // 3. Zero-stripped NISN
-      // 4. Match by NIS (Nomor Induk Siswa)
-      // 5. Fallback match by Name if unambiguous
       let matchedStudent: Student | undefined =
         students.find(s => GoogleIntegrationService.isNisnMatching(rawNisn, s.nisn)) ||
         allDbStudents.find(s => GoogleIntegrationService.isNisnMatching(rawNisn, s.nisn));
@@ -1234,11 +1328,8 @@ export class GoogleIntegrationService {
       // Check NISN format (Indonesian standard: 10 digits numeric, tolerating 7-10 after normalization or if student is found)
       const isFormatValid = isValidStudent || /^\d{10}$/.test(rawNisn) || (cleanNisn.length >= 7 && cleanNisn.length <= 10);
 
-      // Duplicate in current sheet
-      const isDuplicateRowInSheet = Boolean(
-        (rawNisn && (nisnOccurrences[rawNisn] || 0) > 1) ||
-        (effectiveNisn && (nisnOccurrences[effectiveNisn] || 0) > 1)
-      );
+      // Baris ini dianggap duplikasi sheet hanya jika merupakan submisi terdahulu (bukan yang terakhir)
+      const isDuplicateRowInSheet = isEarlierDuplicateRow;
 
       // Duplicate submission in database
       const isExistingSubmissionInDb = isValidStudent
@@ -1284,7 +1375,13 @@ export class GoogleIntegrationService {
       let status: SheetImportPreviewItem['status'] = 'VALID';
       let validationError: string | undefined = undefined;
 
-      if (!rawNisn) {
+      if (isEarlierDuplicateRow && earlierDupMeta) {
+        status = 'ERROR_DUPLICATE_ROW';
+        validationError = `Submisi ganda: NISN '${earlierDupMeta.nisn}' (${earlierDupMeta.name}) digantikan oleh pengerjaan terakhir di baris ${earlierDupMeta.lastRowNumber}.`;
+        failedCount++;
+        duplicateCount++;
+        errorDetails.push(`Baris ${rowNumber}: Submisi ganda NISN '${earlierDupMeta.nisn}' digantikan oleh baris ${earlierDupMeta.lastRowNumber}`);
+      } else if (!rawNisn) {
         status = 'ERROR_MALFORMED_DATA';
         validationError = 'Baris data cacat: Kolom NISN kosong.';
         failedCount++;
@@ -1299,12 +1396,6 @@ export class GoogleIntegrationService {
         validationError = `Siswa dengan NISN '${rawNisn}' tidak terdaftar dalam database sekolah.`;
         failedCount++;
         errorDetails.push(`Baris ${rowNumber}: NISN '${rawNisn}' tidak ditemukan`);
-      } else if (isDuplicateRowInSheet) {
-        status = 'ERROR_DUPLICATE_ROW';
-        validationError = `Duplikasi baris: NISN '${rawNisn}' muncul berulang dalam lembar ini.`;
-        failedCount++;
-        duplicateCount++;
-        errorDetails.push(`Baris ${rowNumber}: Duplikasi NISN '${rawNisn}' dalam lembar`);
       } else if (hasMalformedAnswer) {
         status = 'ERROR_INVALID_ANSWER';
         const malformedKeys = Object.entries(malformedAnswers)
@@ -1314,7 +1405,7 @@ export class GoogleIntegrationService {
         failedCount++;
         errorDetails.push(`Baris ${rowNumber}: Jawaban cacat pada [${malformedKeys}]`);
       } else {
-        // Valid student & valid answers
+        // Valid student & valid answers (termasuk baris terakhir dari siswa yang submisi ganda)
         successCount++;
         if (isExistingSubmissionInDb) {
           duplicateCount++;
@@ -1363,6 +1454,7 @@ export class GoogleIntegrationService {
         answerKeyDetected: !!detectedKeyStudent,
         answerKeyStudentName: detectedKeyStudent?.name,
         answerKeyExtractedCount,
+        duplicateSubmissions,
       },
     };
   }

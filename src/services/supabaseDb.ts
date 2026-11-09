@@ -243,6 +243,7 @@ function toSupabaseTryoutCoreOnly(to: Tryout, supabaseAcademicYearId?: string): 
     answerKey: to.answerKey,
     subjectId: to.subjectId,
     tryoutGroup: to.tryoutGroup ?? existingMeta.tryoutGroup,
+    duplicateSubmissions: to.duplicateSubmissions ?? existingMeta.duplicateSubmissions,
     isExternal: isExt,
     source: isExt ? 'EXTERNAL' : 'INTERNAL',
     externalSubjects: to.externalSubjects,
@@ -287,6 +288,7 @@ function toSupabaseTryout(to: Tryout, supabaseAcademicYearId?: string): Record<s
     answerKey: to.answerKey,
     subjectId: to.subjectId,
     tryoutGroup: to.tryoutGroup ?? existingMeta.tryoutGroup,
+    duplicateSubmissions: to.duplicateSubmissions ?? existingMeta.duplicateSubmissions,
     isExternal: isExt,
     source: isExt ? 'EXTERNAL' : 'INTERNAL',
     externalSubjects: to.externalSubjects,
@@ -386,6 +388,7 @@ function fromSupabaseTryout(row: Record<string, unknown>): Tryout {
       ? (row.external_subject_ids as string[])
       : (Array.isArray(meta.externalSubjectIds) ? meta.externalSubjectIds : undefined),
     externalScoreScale: (row.external_score_scale as any) || meta.externalScoreScale || (isExternal ? 'SCALE_100' : undefined),
+    duplicateSubmissions: Array.isArray(meta.duplicateSubmissions) ? (meta.duplicateSubmissions as any) : undefined,
   };
 }
 

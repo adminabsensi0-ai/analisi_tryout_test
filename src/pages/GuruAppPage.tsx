@@ -791,6 +791,14 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
         mappingConfig
       );
 
+      // Simpan metadata duplikasi submisi ke tryout agar guru dapat memantau siswa pengumpul ganda
+      if (validationResult.summary.duplicateSubmissions !== undefined) {
+        dbService.updateTryout(tryout.id, {
+          selectedQuestionColumns: effectiveColumns,
+          duplicateSubmissions: validationResult.summary.duplicateSubmissions,
+        }, null);
+      }
+
       if (validationResult.summary.answerKeyDetected) {
         triggerToast(`Kunci Jawaban Resmi diperbarui dari respon "${validationResult.summary.answerKeyStudentName}" (${validationResult.summary.answerKeyExtractedCount} butir soal).`);
         setTryouts(dbService.getTryoutsForTeacher(currentUser));
@@ -4893,6 +4901,65 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         </div>
                       </div>
 
+                      {/* Duplicate Submissions Notice Banner */}
+                      {targetPsychometricsTryout?.duplicateSubmissions && targetPsychometricsTryout.duplicateSubmissions.length > 0 && (
+                        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 rounded-2xl p-4 shadow-sm transition-colors">
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5 border border-amber-200 dark:border-amber-800">
+                              <AlertTriangle className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h4 className="text-sm font-bold text-amber-950 dark:text-amber-200 flex items-center gap-2">
+                                  <span>Pemberitahuan: Terdeteksi {targetPsychometricsTryout.duplicateSubmissions.length} Siswa dengan Pengumpulan Ganda (Duplikasi NISN)</span>
+                                </h4>
+                                <span className="text-[11px] bg-amber-200/90 dark:bg-amber-900/90 text-amber-950 dark:text-amber-200 font-bold px-2.5 py-0.5 rounded-full border border-amber-300 dark:border-amber-700">
+                                  Otomatis Dihitung 1x (Pengerjaan Terakhir)
+                                </span>
+                              </div>
+                              <p className="text-xs text-amber-900/90 dark:text-amber-300/90 mt-1 leading-relaxed">
+                                Terdapat siswa yang mengumpulkan formulir Google Form lebih dari 1 kali. Sistem secara otomatis <strong>hanya menghitung 1 kali</strong> dengan menggunakan data pengerjaan <strong>terakhir</strong> yang terdata di spreadsheet, sehingga rekapitulasi nilai dan analisis butir soal tetap adil dan akurat.
+                              </p>
+
+                              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                {targetPsychometricsTryout.duplicateSubmissions.map((dup, dIdx) => {
+                                  const resolvedClass = classes.find(c => c.id === dup.className)?.name || dup.className;
+                                  return (
+                                    <div
+                                      key={dup.nisn || dIdx}
+                                      className="bg-white/90 dark:bg-slate-900/90 border border-amber-200 dark:border-amber-800/80 rounded-xl p-3 shadow-2xs hover:shadow-xs transition-shadow"
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate" title={dup.studentName}>
+                                          {dup.studentName}
+                                        </div>
+                                        {resolvedClass && (
+                                          <span className="text-[10px] bg-slate-100 dark:bg-slate-800 font-bold px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300 shrink-0">
+                                            {resolvedClass}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                                        <span className="text-slate-500 dark:text-slate-400">
+                                          NISN: <code className="font-mono font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1 py-0.5 rounded border border-amber-200 dark:border-amber-800">{dup.nisn}</code>
+                                        </span>
+                                        <span className="text-slate-600 dark:text-slate-400 text-[10px]">
+                                          Total: <strong className="text-amber-700 dark:text-amber-400">{dup.submissionCount}x kirim</strong>
+                                        </span>
+                                      </div>
+                                      <div className="mt-1 text-[10px] text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
+                                        <span>&bull; Dipakai: Baris #{dup.selectedRowNumber}</span>
+                                        <span className="text-slate-400 dark:text-slate-500">(Dilewati: #{dup.skippedRowNumbers.join(', #')})</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Psychometric Metric Cards */}
                       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm transition-colors">
@@ -4966,8 +5033,22 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                   </td>
                                   <td className="py-3 px-3">
                                     <div className="text-slate-900 dark:text-slate-100 font-medium line-clamp-1">{qa.questionText}</div>
-                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                      Kunci Jawaban Sah: <strong className="text-emerald-700 dark:text-emerald-400 font-mono font-bold">{qa.correctAnswer}</strong>
+                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                      <span>Kunci Jawaban Sah:</span>
+                                      <span className="text-emerald-700 dark:text-emerald-400 font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-200 dark:border-emerald-800">
+                                        {qa.correctAnswer}
+                                      </span>
+                                      {(() => {
+                                        const keyOptText = (qa as any).options?.find((o: any) => o.key === qa.correctAnswer.toUpperCase())?.text;
+                                        if (keyOptText && !keyOptText.toLowerCase().startsWith('pilihan')) {
+                                          return (
+                                            <span className="text-slate-600 dark:text-slate-400 truncate max-w-[220px]" title={keyOptText}>
+                                              ({keyOptText})
+                                            </span>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
                                     </div>
                                   </td>
                                   <td className="py-3 px-3 text-center">
@@ -5051,17 +5132,23 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                       {['A', 'B', 'C', 'D', 'E'].map(opt => {
                                         const stat = qa.distractorStats[opt];
                                         const isKey = opt === qa.correctAnswer.toUpperCase();
+                                        const optText = (qa as any).options?.find((o: any) => o.key === opt)?.text;
+                                        const hasText = optText && !optText.toLowerCase().startsWith('pilihan');
                                         return (
                                           <span
                                             key={opt}
-                                            className={`px-1 py-0.5 rounded ${
+                                            className={`px-1 py-0.5 rounded cursor-help transition-all ${
                                               isKey
-                                                ? 'bg-emerald-200 dark:bg-emerald-900/80 text-emerald-950 dark:text-emerald-100 font-bold'
+                                                ? 'bg-emerald-200 dark:bg-emerald-900/80 text-emerald-950 dark:text-emerald-100 font-bold border border-emerald-400 dark:border-emerald-700'
                                                 : stat?.isMisleading
                                                 ? 'bg-rose-200 dark:bg-rose-900/80 text-rose-950 dark:text-rose-100 font-bold border border-rose-400 dark:border-rose-700'
                                                 : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                                             }`}
-                                            title={stat?.isMisleading ? `Distraktor menyesatkan: dipilih ${stat.count} siswa (${stat.percentage}%)` : `${opt}: ${stat?.count || 0}`}
+                                            title={
+                                              hasText
+                                                ? `${opt} (${optText}): ${stat?.count || 0} pemilih (${stat?.percentage || 0}%)${isKey ? ' [KUNCI SAH]' : stat?.isMisleading ? ' [DISTRAKTOR MENYESATKAN]' : ''}`
+                                                : `${opt}: ${stat?.count || 0} pemilih (${stat?.percentage || 0}%)${isKey ? ' [KUNCI SAH]' : stat?.isMisleading ? ' [DISTRAKTOR MENYESATKAN]' : ''}`
+                                            }
                                           >
                                             {opt}:{stat?.count || 0}
                                           </span>

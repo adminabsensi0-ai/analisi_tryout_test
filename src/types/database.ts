@@ -200,6 +200,15 @@ export interface ExamPackage {
   updatedAt?: string;
 }
 
+export interface DuplicateSubmissionInfo {
+  nisn: string;
+  studentName: string;
+  className?: string;
+  submissionCount: number;
+  selectedRowNumber: number;
+  skippedRowNumbers: number[];
+}
+
 export interface Tryout {
   id: string;
   code: string; // e.g. "TO-2026-01"
@@ -232,6 +241,8 @@ export interface Tryout {
   externalSubjectIds?: string[];
   /** Skala penilaian: SCALE_100 (0-100) atau SCALE_UTBK (200-1000) */
   externalScoreScale?: 'SCALE_100' | 'SCALE_UTBK' | 'CUSTOM';
+  /** Informasi siswa dengan submisi ganda di sheet (otomatis diambil submisi terakhir) */
+  duplicateSubmissions?: DuplicateSubmissionInfo[];
 }
 
 export interface TryoutSubject {
@@ -434,6 +445,7 @@ export interface SheetImportSummary {
   answerKeyDetected?: boolean;
   answerKeyStudentName?: string;
   answerKeyExtractedCount?: number;
+  duplicateSubmissions?: DuplicateSubmissionInfo[];
 }
 
 export interface SchoolProfile {
