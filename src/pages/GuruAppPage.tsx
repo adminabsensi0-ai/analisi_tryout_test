@@ -6865,10 +6865,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <div className="flex items-center space-x-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1">
                           <span className="text-slate-500 dark:text-slate-400 font-medium">Try Out:</span>
                           <select
-                            value={selectedTryoutId}
+                            value={selectedTryoutId || 'ALL'}
                             onChange={e => setSelectedTryoutId(e.target.value)}
                             className="bg-transparent font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer"
                           >
+                            <option value="ALL" className="dark:bg-slate-800 dark:text-white">Semua Try Out</option>
                             {tryouts.map(t => (
                               <option key={t.id} value={t.id} className="dark:bg-slate-800 dark:text-white">[{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}</option>
                             ))}
@@ -6971,8 +6972,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       .filter(e => e.tryoutId === selectedTryoutId || selectedTryoutId === 'ALL')
                       .filter(e => expFilterStatus === 'ALL' || e.status === expFilterStatus)
                       .filter(e => {
-                        if (expFilterScope === 'GENERAL') return !e.questionId;
-                        if (expFilterScope === 'QUESTION') return !!e.questionId;
+                        const hasQuestionScope = Boolean(
+                          e.questionId || (Array.isArray(e.questionNumbers) && e.questionNumbers.length > 0)
+                        );
+                        if (expFilterScope === 'GENERAL') return !hasQuestionScope;
+                        if (expFilterScope === 'QUESTION') return hasQuestionScope;
                         return true;
                       });
 
@@ -7006,6 +7010,18 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           url: exp.pdfUrl,
                           fileName: exp.pdfFileName || 'Modul_Solusi_Resmi.pdf',
                           fileSize: exp.pdfFileSize,
+                        });
+                      }
+
+                      // Jika pembahasan teks murni (belum ada link video/pdf), sediakan kartu edukasi agar tetap tampil
+                      if (!exp.youtubeUrl && !exp.pdfUrl) {
+                        list.push({
+                          id: `${exp.id}-modul`,
+                          exp,
+                          type: 'PDF',
+                          title: exp.title,
+                          url: '#',
+                          fileName: 'Modul_Rangkuman_Materi.pdf',
                         });
                       }
 
@@ -9484,6 +9500,9 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   }
 
                   setShowExplanationModal(false);
+                  if (expTryoutId) {
+                    setSelectedTryoutId(expTryoutId);
+                  }
                   refreshData();
                 } catch (err: any) {
                   triggerError(err.message || 'Gagal menyimpan pembahasan.');

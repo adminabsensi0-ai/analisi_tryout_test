@@ -12,7 +12,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { isValidUuid, generateUuid } from '../utils/idUtils';
 import {
-  User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout, SchoolProfile, Response, Score, Material, Competency, Question, Answer
+  User, Teacher, Student, ClassRoom, AcademicYear, Subject, ExamPackage, ExamPackageSubject, Tryout, SchoolProfile, Response, Score, Material, Competency, Question, Answer, Explanation
 } from '../types/database';
 
 // ============================================================
@@ -615,6 +615,67 @@ function fromSupabaseAnswer(row: Record<string, unknown>): Answer {
   };
 }
 
+function toSupabaseExplanation(exp: Explanation): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    title: exp.title.trim(),
+    content_text: exp.contentText || '',
+    pdf_url: exp.pdfUrl || null,
+    pdf_storage_path: exp.pdfStoragePath || null,
+    pdf_file_name: exp.pdfFileName || null,
+    pdf_file_size: exp.pdfFileSize || null,
+    youtube_url: exp.youtubeUrl || null,
+    external_url: exp.externalUrl || null,
+    status: exp.status || 'DRAFT',
+    author_name: exp.authorName || null,
+    question_numbers: Array.isArray(exp.questionNumbers) ? exp.questionNumbers : [],
+    question_ids: Array.isArray(exp.questionIds) ? exp.questionIds : [],
+    created_at: exp.createdAt || new Date().toISOString(),
+    updated_at: exp.updatedAt || new Date().toISOString(),
+  };
+
+  if (isValidUuid(exp.id)) {
+    payload.id = exp.id;
+  }
+  if (isValidUuid(exp.tryoutId)) {
+    payload.tryout_id = exp.tryoutId;
+  }
+  if (exp.subjectId && isValidUuid(exp.subjectId)) {
+    payload.subject_id = exp.subjectId;
+  }
+  if (exp.questionId && isValidUuid(exp.questionId)) {
+    payload.question_id = exp.questionId;
+  }
+  if (exp.createdBy && isValidUuid(exp.createdBy)) {
+    payload.created_by = exp.createdBy;
+  }
+
+  return payload;
+}
+
+function fromSupabaseExplanation(row: Record<string, unknown>): Explanation {
+  return {
+    id: String(row.id),
+    tryoutId: String(row.tryout_id || ''),
+    subjectId: row.subject_id ? String(row.subject_id) : undefined,
+    questionId: row.question_id ? String(row.question_id) : undefined,
+    questionNumbers: Array.isArray(row.question_numbers) ? (row.question_numbers as number[]) : undefined,
+    questionIds: Array.isArray(row.question_ids) ? (row.question_ids as string[]) : undefined,
+    title: String(row.title || ''),
+    contentText: String(row.content_text || ''),
+    pdfUrl: row.pdf_url ? String(row.pdf_url) : undefined,
+    pdfStoragePath: row.pdf_storage_path ? String(row.pdf_storage_path) : undefined,
+    pdfFileName: row.pdf_file_name ? String(row.pdf_file_name) : undefined,
+    pdfFileSize: row.pdf_file_size ? Number(row.pdf_file_size) : undefined,
+    youtubeUrl: row.youtube_url ? String(row.youtube_url) : undefined,
+    externalUrl: row.external_url ? String(row.external_url) : undefined,
+    status: (row.status as any) || 'DRAFT',
+    createdBy: row.created_by ? String(row.created_by) : undefined,
+    authorName: row.author_name ? String(row.author_name) : undefined,
+    createdAt: String(row.created_at || new Date().toISOString()),
+    updatedAt: String(row.updated_at || new Date().toISOString()),
+  };
+}
+
 // ============================================================
 // CORE SYNC SERVICE
 // ============================================================
@@ -635,6 +696,7 @@ export interface SupabaseCoreState {
   schoolProfile?: SchoolProfile;
   responses?: Response[];
   scores?: Score[];
+  explanations?: Explanation[];
 }
 
 class SupabaseDbService {
@@ -836,7 +898,7 @@ class SupabaseDbService {
       const [
         ayRes, classRes, subjectRes, userRes, teacherRes, studentRes,
         pkgRes, pkgSubRes, toRes, spRes, respRes, scRes,
-        matRes, compRes, qRes, ansRes
+        matRes, compRes, qRes, ansRes, expRes
       ] = await Promise.all([
         supabase.from('academic_years').select('*'),
         supabase.from('classes').select('*'),
@@ -854,6 +916,7 @@ class SupabaseDbService {
         supabase.from('competencies').select('*'),
         this.fetchAllRows('questions'),
         this.fetchAllRows('answers'),
+        supabase.from('explanations').select('*'),
       ]);
 
       if (ayRes.error) throw new Error('academic_years: ' + ayRes.error.message);
@@ -977,17 +1040,18 @@ class SupabaseDbService {
       const competencies: Competency[] = (compRes?.data || []).map(fromSupabaseCompetency);
       const questions: Question[] = (qRes?.data || []).map(fromSupabaseQuestion);
       const answers: Answer[] = (ansRes?.data || []).map(fromSupabaseAnswer);
+      const explanations: Explanation[] = (expRes?.data || []).map((row: any) => fromSupabaseExplanation(row));
 
       const schoolProfile: SchoolProfile | undefined = spRes?.data
         ? fromSupabaseSchoolProfile(spRes.data as Record<string, unknown>)
         : undefined;
 
-      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes, ${examPackages.length} packages, ${tryouts.length} tryouts, ${questions.length} questions, ${answers.length} answers, ${responses.length} responses, ${scores.length} scores${schoolProfile ? ', school profile' : ''}`);
+      this.log(`Loaded from Supabase: ${users.length} users, ${teachers.length} teachers, ${students.length} students, ${classes.length} classes, ${examPackages.length} packages, ${tryouts.length} tryouts, ${questions.length} questions, ${answers.length} answers, ${explanations.length} explanations, ${responses.length} responses, ${scores.length} scores${schoolProfile ? ', school profile' : ''}`);
 
       return {
         users, teachers, students, classes, academicYears, subjects,
         materials, competencies, questions, answers,
-        examPackages, tryouts, schoolProfile, responses, scores
+        examPackages, tryouts, schoolProfile, responses, scores, explanations
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1963,6 +2027,102 @@ class SupabaseDbService {
     }
   }
 
+  public async fetchExplanations(): Promise<Explanation[]> {
+    if (!this.isAvailable() || !supabase) return [];
+    try {
+      const { data, error } = await supabase.from('explanations').select('*');
+      if (error) {
+        this.log('fetchExplanations error: ' + error.message, 'warn');
+        return [];
+      }
+      return (data || []).map((row: any) => fromSupabaseExplanation(row));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('fetchExplanations exception: ' + msg, 'warn');
+      return [];
+    }
+  }
+
+  public async syncExplanation(exp: Explanation): Promise<void> {
+    if (!this.isAvailable() || !supabase) return;
+    try {
+      // 1. Resolve tryout_id to valid UUID if needed
+      let resolvedTryoutId = exp.tryoutId;
+      if (!isValidUuid(resolvedTryoutId)) {
+        const { data: toData } = await supabase
+          .from('tryouts')
+          .select('id')
+          .or(`id.eq.${exp.tryoutId},code.eq.${exp.tryoutId.trim()}`)
+          .maybeSingle();
+        if (toData?.id) {
+          resolvedTryoutId = toData.id;
+        }
+      }
+
+      if (!isValidUuid(resolvedTryoutId)) {
+        this.log(`syncExplanation: Tryout ID '${exp.tryoutId}' tidak valid untuk cloud UUID, lewati sync Supabase`, 'warn');
+        return;
+      }
+
+      // 2. Ensure id is valid UUID
+      let targetId = isValidUuid(exp.id) ? exp.id : null;
+      if (!targetId) {
+        const { data: existingExp } = await supabase
+          .from('explanations')
+          .select('id')
+          .eq('tryout_id', resolvedTryoutId)
+          .eq('title', exp.title.trim())
+          .maybeSingle();
+        if (existingExp?.id) {
+          targetId = existingExp.id;
+        } else {
+          targetId = generateUuid();
+        }
+        exp.id = targetId;
+      }
+
+      const payload = toSupabaseExplanation({
+        ...exp,
+        id: targetId,
+        tryoutId: resolvedTryoutId,
+      });
+
+      const { error } = await supabase
+        .from('explanations')
+        .upsert(payload, { onConflict: 'id' });
+
+      if (error) {
+        this.log('syncExplanation upsert error: ' + error.message, 'warn');
+        // Fallback jika kolom question_numbers belum ada di SQL Supabase
+        if (error.message && (error.message.includes('question_numbers') || error.message.includes('question_ids'))) {
+          const fallbackPayload = { ...payload };
+          delete fallbackPayload.question_numbers;
+          delete fallbackPayload.question_ids;
+          const { error: fbErr } = await supabase.from('explanations').upsert(fallbackPayload, { onConflict: 'id' });
+          if (fbErr) this.log('syncExplanation fallback error: ' + fbErr.message, 'warn');
+        }
+      } else {
+        this.log(`Pembahasan '${exp.title}' berhasil disinkronkan ke Supabase Cloud`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('syncExplanation exception: ' + msg, 'warn');
+    }
+  }
+
+  public async removeExplanation(id: string): Promise<void> {
+    if (!this.isAvailable() || !supabase || !id) return;
+    try {
+      if (isValidUuid(id)) {
+        const { error } = await supabase.from('explanations').delete().eq('id', id);
+        if (error) this.log('removeExplanation error: ' + error.message, 'warn');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log('removeExplanation exception: ' + msg, 'warn');
+    }
+  }
+
   // ----------------------------------------------------------
   // REALTIME: Subscribe to changes from other devices
   // ----------------------------------------------------------
@@ -1978,7 +2138,7 @@ class SupabaseDbService {
     const TABLES = [
       'teachers', 'students', 'classes', 'subjects', 'academic_years', 'users',
       'exam_packages', 'exam_package_subjects', 'tryouts', 'responses', 'scores', 'school_profile',
-      'questions', 'answers', 'materials', 'competencies'
+      'questions', 'answers', 'materials', 'competencies', 'explanations'
     ];
     const channel = (supabase as any).channel('db-realtime-sync');
 
@@ -2030,6 +2190,7 @@ class SupabaseDbService {
     schoolProfile?: SchoolProfile;
     responses?: Response[];
     scores?: Score[];
+    explanations?: Explanation[];
   }): Promise<{ success: number; failed: number; errors: string[] }> {
     if (!this.isAvailable() || !supabase) {
       return { success: 0, failed: 0, errors: ['Supabase tidak terkonfigurasi.'] };
@@ -2169,6 +2330,13 @@ class SupabaseDbService {
     }
     if (state.answers && state.answers.length > 0) {
       await attempt('Answers (' + state.answers.length + ')', () => this.syncAnswersBatch(state.answers!));
+    }
+
+    // 7e. Explanations (Pembahasan Soal)
+    if (state.explanations && state.explanations.length > 0) {
+      for (const exp of state.explanations) {
+        await attempt(`Explanation '${exp.title}'`, () => this.syncExplanation(exp));
+      }
     }
 
     // 8. School Profile (jika ada)

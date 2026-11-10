@@ -555,6 +555,7 @@ export class DatabaseService {
     schoolProfile?: SchoolProfile;
     responses?: Response[];
     scores?: Score[];
+    explanations?: Explanation[];
   }): boolean {
     let changed = false;
 
@@ -941,6 +942,9 @@ export class DatabaseService {
               (this.state.responses || []).forEach(r => {
                 if (r.tryoutId === oldToId) r.tryoutId = authoritativeId;
               });
+              (this.state.explanations || []).forEach(e => {
+                if (e.tryoutId === oldToId) e.tryoutId = authoritativeId;
+              });
             }
 
             changed = true;
@@ -1187,6 +1191,33 @@ export class DatabaseService {
       });
     }
 
+    // Merge explanations (Pembahasan Soal)
+    if (cloud.explanations && Array.isArray(cloud.explanations)) {
+      if (!this.state.explanations) this.state.explanations = [];
+      cloud.explanations.forEach(ce => {
+        const idx = this.state.explanations.findIndex(
+          e => e.id === ce.id || (e.tryoutId === ce.tryoutId && e.title.trim().toLowerCase() === ce.title.trim().toLowerCase())
+        );
+        if (idx === -1) {
+          this.state.explanations.push(ce);
+          changed = true;
+        } else {
+          const local = this.state.explanations[idx];
+          if (
+            local.updatedAt !== ce.updatedAt ||
+            local.status !== ce.status ||
+            local.youtubeUrl !== ce.youtubeUrl ||
+            local.pdfUrl !== ce.pdfUrl ||
+            local.title !== ce.title ||
+            JSON.stringify(local.questionNumbers || []) !== JSON.stringify(ce.questionNumbers || [])
+          ) {
+            this.state.explanations[idx] = { ...local, ...ce };
+            changed = true;
+          }
+        }
+      });
+    }
+
     // Merge school profile
     if (cloud.schoolProfile) {
       if (this.applySchoolProfile(cloud.schoolProfile)) {
@@ -1224,6 +1255,7 @@ export class DatabaseService {
       tryouts: cleanTryouts,
       responses: this.state.responses,
       scores: this.state.scores,
+      explanations: this.state.explanations,
       schoolProfile: this.getSchoolProfile(),
     });
     const ok = result.failed === 0;
@@ -3584,7 +3616,7 @@ export class DatabaseService {
     const now = new Date().toISOString();
     const newExp: Explanation = {
       ...exp,
-      id: `exp-${Date.now()}`,
+      id: generateUuid(),
       status: exp.status || 'DRAFT',
       createdBy: currentUser.id,
       authorName: currentUser.name,
@@ -3595,6 +3627,7 @@ export class DatabaseService {
     this.state.explanations.push(newExp);
     this.logAudit(currentUser, 'CREATE_EXPLANATION', 'EXPLANATION', `Membuat pembahasan (${newExp.status}): ${newExp.title}`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.syncExplanation(newExp).catch(() => {});
     return newExp;
   }
 
@@ -3624,6 +3657,8 @@ export class DatabaseService {
 
     this.logAudit(currentUser, 'UPDATE_EXPLANATION', 'EXPLANATION', `Memperbarui pembahasan: ${existing.title}`);
     this.persistState();
+    const updated = this.state.explanations.find(e => e.id === id);
+    if (this.supabaseSyncEnabled && updated) sdb.syncExplanation(updated).catch(() => {});
   }
 
   public publishExplanation(id: string, currentUser: any) {
@@ -3646,6 +3681,8 @@ export class DatabaseService {
       `Mempublikasikan pembahasan ke siswa: ${existing.title} (Tryout: ${existing.tryoutId})`
     );
     this.persistState();
+    const updated = this.state.explanations.find(e => e.id === id);
+    if (this.supabaseSyncEnabled && updated) sdb.syncExplanation(updated).catch(() => {});
   }
 
   public archiveExplanation(id: string, currentUser: any) {
@@ -3668,6 +3705,8 @@ export class DatabaseService {
       `Mengarsipkan pembahasan (menyembunyikan dari siswa): ${existing.title}`
     );
     this.persistState();
+    const updated = this.state.explanations.find(e => e.id === id);
+    if (this.supabaseSyncEnabled && updated) sdb.syncExplanation(updated).catch(() => {});
   }
 
   public deleteExplanation(id: string, currentUser: any) {
@@ -3681,6 +3720,7 @@ export class DatabaseService {
     this.state.explanations = this.state.explanations.filter(e => e.id !== id);
     this.logAudit(currentUser, 'DELETE_EXPLANATION', 'EXPLANATION', `Menghapus pembahasan: ${existing.title}`);
     this.persistState();
+    if (this.supabaseSyncEnabled) sdb.removeExplanation(id).catch(() => {});
   }
 
   /**
