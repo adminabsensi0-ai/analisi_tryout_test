@@ -110,32 +110,64 @@ export class ExportService {
   public static resolveWaliKelas(
     classObj?: ClassRoom,
     providedName?: string,
-    providedNip?: string
+    providedNip?: string,
+    providedTeachers?: Teacher[],
+    providedClasses?: ClassRoom[]
   ): { name: string; nip: string } {
     if (providedName && providedName.trim()) {
       return { name: providedName.trim(), nip: providedNip?.trim() || '-' };
     }
     const dbState = this.getStoredDbState();
-    const teachers = dbState.teachers || [];
-    const classes = dbState.classes || [];
+    const teachers = (providedTeachers && providedTeachers.length > 0) ? providedTeachers : (dbState.teachers || []);
+    const classes = (providedClasses && providedClasses.length > 0) ? providedClasses : (dbState.classes || []);
 
     const targetClass =
       (classObj && classes.find(c => c.id === classObj.id || c.name.toLowerCase() === classObj.name.toLowerCase())) ||
       classObj;
 
     if (targetClass) {
-      const matchedTeacher = teachers.find(
+      const cleanName = (targetClass.name || '').trim().toLowerCase();
+
+      // 1. Cari via targetClass.homeRoomTeacherId (cocok UUID atau NIP)
+      if (targetClass.homeRoomTeacherId) {
+        const byIdOrNip = teachers.find(
+          t => t.id === targetClass.homeRoomTeacherId || t.nip === targetClass.homeRoomTeacherId
+        );
+        if (byIdOrNip) {
+          return {
+            name: byIdOrNip.name || 'Wali Kelas',
+            nip: byIdOrNip.nip || '-',
+          };
+        }
+      }
+
+      // 2. Cari via teacher.homeRoomClassId (cocok targetClass.id atau targetClass.name)
+      const byClassId = teachers.find(
         t =>
-          (targetClass.homeRoomTeacherId && (t.id === targetClass.homeRoomTeacherId || t.nip === targetClass.homeRoomTeacherId)) ||
-          (t.isWaliKelas &&
-            t.homeRoomClassId &&
-            (t.homeRoomClassId === targetClass.id ||
-              t.homeRoomClassId.toLowerCase() === targetClass.name.toLowerCase()))
+          t.isWaliKelas &&
+          t.homeRoomClassId &&
+          (t.homeRoomClassId === targetClass.id ||
+           (cleanName && t.homeRoomClassId.toLowerCase() === cleanName))
       );
-      if (matchedTeacher) {
+      if (byClassId) {
         return {
-          name: matchedTeacher.name || 'Wali Kelas',
-          nip: matchedTeacher.nip || '-',
+          name: byClassId.name || 'Wali Kelas',
+          nip: byClassId.nip || '-',
+        };
+      }
+
+      // 3. Fallback: cari guru yang nama kelasnya tercermin di izin / kelas guru
+      const byPerm = teachers.find(
+        t =>
+          t.isWaliKelas &&
+          Array.isArray(t.classPermissions) &&
+          (t.classPermissions.includes(targetClass.id) ||
+           (cleanName && t.classPermissions.some(cp => cp.toLowerCase() === cleanName)))
+      );
+      if (byPerm) {
+        return {
+          name: byPerm.name || 'Wali Kelas',
+          nip: byPerm.nip || '-',
         };
       }
     }
@@ -189,6 +221,8 @@ export class ExportService {
       schoolProfile?: SchoolProfile;
       waliKelasName?: string;
       waliKelasNip?: string;
+      teachers?: Teacher[];
+      classes?: ClassRoom[];
     }
   ) {
     const doc = new jsPDF();
@@ -200,11 +234,13 @@ export class ExportService {
     const dbState = this.getStoredDbState();
     const schoolInfo: SchoolProfile = this.resolveSchoolProfile(extraMetrics?.schoolProfile);
     const resolvedClassObj =
-      classObj || dbState.classes.find(c => c.id === student.classId);
+      classObj || (extraMetrics?.classes || dbState.classes).find(c => c.id === student.classId || c.name.toLowerCase() === student.classId?.toLowerCase());
     const waliInfo = this.resolveWaliKelas(
       resolvedClassObj,
       extraMetrics?.waliKelasName,
-      extraMetrics?.waliKelasNip
+      extraMetrics?.waliKelasNip,
+      extraMetrics?.teachers,
+      extraMetrics?.classes
     );
     const friendlyStageLabel = getFriendlyTryoutStageLabel(tryout, dbState.tryouts, dbState.examPackages);
 

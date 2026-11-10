@@ -4651,13 +4651,21 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     totalUnanswered: studentAnalyticsData.unansweredCount,
                                     createdAt: new Date().toISOString()
                                   };
+                                  const targetWalas = studentCls ? dbService.getHomeroomTeacherForClass(studentCls.id) : null;
                                   const fileName = ExportService.exportStudentPDF(
                                     targetStudent as any,
                                     studentScoreObj,
                                     targetTo,
                                     studentCls,
                                     studentAnalyticsData,
-                                    explanations
+                                    explanations,
+                                    undefined,
+                                    {
+                                      waliKelasName: targetWalas?.name,
+                                      waliKelasNip: targetWalas?.nip,
+                                      teachers: dbService.getTeachers(),
+                                      classes: dbService.getClasses(),
+                                    }
                                   );
                                   triggerToast(`Rapor PDF Siswa ${targetStudent.name} ('${fileName}') berhasil diunduh!`);
                                 }
@@ -7831,13 +7839,21 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           const studentClass = classes.find(c => c.id === targetStudent.classId);
                           const studentAnalytics = dbService.getStudentAnalytics(targetStudent.id, activeTo.id);
 
+                          const targetWalas = studentClass ? dbService.getHomeroomTeacherForClass(studentClass.id) : null;
                           const fileName = ExportService.exportStudentPDF(
                             targetStudent as any,
                             studentScore,
                             activeTo,
                             studentClass,
                             studentAnalytics,
-                            explanations
+                            explanations,
+                            undefined,
+                            {
+                              waliKelasName: targetWalas?.name,
+                              waliKelasNip: targetWalas?.nip,
+                              teachers: dbService.getTeachers(),
+                              classes: dbService.getClasses(),
+                            }
                           );
                           triggerToast(`Rapor PDF Siswa ${targetStudent.name} ('${fileName}') berhasil diunduh.`);
                         }}

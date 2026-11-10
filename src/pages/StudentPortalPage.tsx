@@ -694,7 +694,8 @@ export const StudentPortalPage: React.FC = () => {
   // PDF Export
   const handleDownloadPDF = () => {
     if (!verifiedStudent || !activeScore || !activeTryout) return;
-    const studentClass = allClasses.find(c => c.id === verifiedStudent.classId);
+    const studentClass = allClasses.find(c => c.id === verifiedStudent.classId) || allClasses.find(c => c.name.toLowerCase() === verifiedStudent.classId?.toLowerCase());
+    const walas = studentClass ? dbService.getHomeroomTeacherForClass(studentClass.id) : dbService.getHomeroomTeacherForClass(verifiedStudent.classId);
     ExportService.exportStudentPDF(
       verifiedStudent,
       activeScore,
@@ -714,6 +715,10 @@ export const StudentPortalPage: React.FC = () => {
         activeSubjectCards: activeTryoutSubjectCards,
         progressHistory,
         schoolProfile: dbService.getSchoolProfile(),
+        waliKelasName: walas?.name,
+        waliKelasNip: walas?.nip,
+        teachers: dbService.getTeachers(),
+        classes: dbService.getClasses(),
       }
     );
   };

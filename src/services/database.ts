@@ -801,7 +801,7 @@ export class DatabaseService {
           this.state.teachers[idx] = {
             ...local,
             ...cloudTeacher,
-            id: local.id,
+            id: (cloudTeacher.id && isValidUuid(cloudTeacher.id)) ? cloudTeacher.id : local.id,
             userId: local.userId,
             isWaliKelas: cloudTeacher.isWaliKelas !== undefined ? cloudTeacher.isWaliKelas : local.isWaliKelas,
             homeRoomClassId: cloudTeacher.homeRoomClassId || local.homeRoomClassId,
@@ -2235,6 +2235,34 @@ export class DatabaseService {
 
   // TEACHERS CRUD
   public getTeachers(): Teacher[] { return this.state.teachers; }
+
+  public getHomeroomTeacherForClass(classIdOrName: string): Teacher | null {
+    if (!classIdOrName) return null;
+    const clean = classIdOrName.trim().toLowerCase();
+    const targetClass = (this.state.classes || []).find(
+      c => c.id === classIdOrName || c.name.toLowerCase() === clean
+    );
+    if (!targetClass) return null;
+
+    // 1. Cari via targetClass.homeRoomTeacherId (cocok UUID atau NIP)
+    if (targetClass.homeRoomTeacherId) {
+      const match = (this.state.teachers || []).find(
+        t => t.id === targetClass.homeRoomTeacherId || t.nip === targetClass.homeRoomTeacherId
+      );
+      if (match) return match;
+    }
+
+    // 2. Cari via teacher.homeRoomClassId (cocok class ID atau nama kelas)
+    const matchByClass = (this.state.teachers || []).find(
+      t =>
+        t.isWaliKelas &&
+        t.homeRoomClassId &&
+        (t.homeRoomClassId === targetClass.id || t.homeRoomClassId.toLowerCase() === clean)
+    );
+    if (matchByClass) return matchByClass;
+
+    return null;
+  }
   public addTeacher(teacher: Omit<Teacher, 'id'>, currentUser: any, roleToSave?: Role, passwordToSave?: string): Teacher {
     this.assertAdmin(currentUser, 'CREATE_TEACHER');
 
