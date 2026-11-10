@@ -8,7 +8,7 @@ import {
   ArrowRight, Lock, RefreshCw, Key, ExternalLink, Link, AlertCircle, Check,
   Calculator, Scale, Play, CheckCheck, Sliders, PieChart, TrendingUp,
   Gauge, Zap, Target, Cpu, Clock, ArrowUp, ArrowDown, Activity, Info,
-  Youtube, Copy, LayoutGrid, Cloud, CheckSquare
+  Youtube, Copy, LayoutGrid, Cloud, CheckSquare, Minus, RotateCcw
 } from 'lucide-react';
 import { dbService } from '../services/database';
 import { GoogleIntegrationService } from '../services/googleIntegration';
@@ -569,15 +569,100 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const [activeVideoModalUrl, setActiveVideoModalUrl] = useState<string | null>(null);
   const [activeVideoModalTitle, setActiveVideoModalTitle] = useState<string>('');
 
+  // Dynamic question count & custom number management for explanation modal
+  const [expCustomNumbers, setExpCustomNumbers] = useState<number[]>([]);
+  const [isQuestionDeleteMode, setIsQuestionDeleteMode] = useState<boolean>(false);
+  const [syncQuestionCountToTryout, setSyncQuestionCountToTryout] = useState<boolean>(true);
+  const [customQuestionInput, setCustomQuestionInput] = useState<string>('');
+
+  const getInitialQuestionNumbers = (tId?: string, sId?: string, existing?: number[]): number[] => {
+    const numsSet = new Set<number>();
+    if (existing && existing.length > 0) {
+      existing.forEach(n => numsSet.add(n));
+    }
+    if (tId) {
+      const tryoutQs = dbService.getQuestionsForTryout(tId, sId);
+      if (tryoutQs && tryoutQs.length > 0) {
+        tryoutQs.forEach((q, idx) => numsSet.add(q.questionNumber || (idx + 1)));
+      } else {
+        const targetTo = tryouts.find(t => t.id === tId);
+        if (targetTo?.selectedQuestionColumns && targetTo.selectedQuestionColumns.length > 0) {
+          targetTo.selectedQuestionColumns.forEach((_, idx) => numsSet.add(idx + 1));
+        }
+      }
+    }
+    if (numsSet.size === 0) {
+      for (let i = 1; i <= 25; i++) numsSet.add(i);
+    }
+    return Array.from(numsSet).sort((a, b) => a - b);
+  };
+
   const expAvailableNumbers = useMemo(() => {
+    if (expCustomNumbers && expCustomNumbers.length > 0) {
+      return expCustomNumbers;
+    }
     if (!expTryoutId) return Array.from({ length: 25 }, (_, i) => i + 1);
     const tryoutQs = dbService.getQuestionsForTryout(expTryoutId, expSubjectId);
     if (tryoutQs && tryoutQs.length > 0) {
       const nums = tryoutQs.map((q, idx) => q.questionNumber || (idx + 1));
       return Array.from(new Set(nums)).sort((a, b) => a - b);
     }
+    const targetTo = tryouts.find(t => t.id === expTryoutId);
+    if (targetTo?.selectedQuestionColumns && targetTo.selectedQuestionColumns.length > 0) {
+      return Array.from({ length: targetTo.selectedQuestionColumns.length }, (_, i) => i + 1);
+    }
     return Array.from({ length: 25 }, (_, i) => i + 1);
-  }, [expTryoutId, expSubjectId, tryouts, questions]);
+  }, [expCustomNumbers, expTryoutId, expSubjectId, tryouts, questions]);
+
+  const handleSetTotalQuestions = (count: number) => {
+    if (isNaN(count) || count < 1) return;
+    const clamped = Math.min(Math.max(count, 1), 200);
+    const newNums = Array.from({ length: clamped }, (_, i) => i + 1);
+    setExpCustomNumbers(newNums);
+    setExpSelectedNumbers(prev => prev.filter(n => newNums.includes(n)));
+  };
+
+  const handleAddQuestion = () => {
+    const currentList = expCustomNumbers.length > 0 ? expCustomNumbers : expAvailableNumbers;
+    const nextNum = currentList.length > 0 ? Math.max(...currentList) + 1 : 1;
+    const updated = [...currentList, nextNum].sort((a, b) => a - b);
+    setExpCustomNumbers(updated);
+  };
+
+  const handleRemoveLastQuestion = () => {
+    const currentList = expCustomNumbers.length > 0 ? expCustomNumbers : expAvailableNumbers;
+    if (currentList.length <= 1) {
+      triggerToast('Minimal harus ada 1 butir soal dalam try out.');
+      return;
+    }
+    const maxNum = Math.max(...currentList);
+    const updated = currentList.filter(n => n !== maxNum);
+    setExpCustomNumbers(updated);
+    setExpSelectedNumbers(prev => prev.filter(n => n !== maxNum));
+  };
+
+  const handleRemoveSpecificQuestion = (numToRemove: number) => {
+    const currentList = expCustomNumbers.length > 0 ? expCustomNumbers : expAvailableNumbers;
+    if (currentList.length <= 1) {
+      triggerToast('Minimal harus ada 1 butir soal dalam try out.');
+      return;
+    }
+    const updated = currentList.filter(n => n !== numToRemove);
+    setExpCustomNumbers(updated);
+    setExpSelectedNumbers(prev => prev.filter(n => n !== numToRemove));
+  };
+
+  const handleAddSpecificQuestion = (numToAdd: number) => {
+    if (isNaN(numToAdd) || numToAdd < 1 || numToAdd > 200) return;
+    const currentList = expCustomNumbers.length > 0 ? expCustomNumbers : expAvailableNumbers;
+    if (currentList.includes(numToAdd)) {
+      triggerToast(`Soal nomor #${numToAdd} sudah ada dalam daftar.`);
+      return;
+    }
+    const updated = [...currentList, numToAdd].sort((a, b) => a - b);
+    setExpCustomNumbers(updated);
+    setCustomQuestionInput('');
+  };
 
   const getYouTubeEmbedUrl = (url: string | null | undefined): string | null => {
     if (!url) return null;
@@ -4891,7 +4976,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             disabled={questionAnalysisList.length === 0}
                             onClick={() => {
                               if (questionAnalysisList.length === 0) {
-                                triggerToast('Tidak ada data butir soal untuk diunduh.', 'error');
+                                triggerToast('Tidak ada data butir soal untuk diunduh.');
                                 return;
                               }
                               const activeTo = tryouts.find(t => t.id === activePsychometricsTryoutId) || tryouts[0];
@@ -6742,13 +6827,20 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                         <button
                           onClick={() => {
+                            const initialTryoutId = selectedTryoutId !== 'ALL' ? selectedTryoutId : tryouts[0]?.id || '';
+                            const initialSubjectId = selectedSubjectId && selectedSubjectId !== 'ALL' && allowedSubjectIds.includes(selectedSubjectId)
+                              ? selectedSubjectId
+                              : (allowedSubjectIds[0] || subjects[0]?.id || '');
                             setEditingExplanationId(null);
                             setExpTitle(`Pembahasan ${activeSubject?.name || 'Mata Pelajaran'} — Solusi Mandiri`);
-                            setExpSubjectId(selectedSubjectId && selectedSubjectId !== 'ALL' && allowedSubjectIds.includes(selectedSubjectId) ? selectedSubjectId : (allowedSubjectIds[0] || subjects[0]?.id || ''));
-                            setExpTryoutId(selectedTryoutId !== 'ALL' ? selectedTryoutId : tryouts[0]?.id || '');
+                            setExpSubjectId(initialSubjectId);
+                            setExpTryoutId(initialTryoutId);
                             setExpQuestionId('GENERAL');
                             setExpScopeMode('ALL');
                             setExpSelectedNumbers([]);
+                            setExpCustomNumbers(getInitialQuestionNumbers(initialTryoutId, initialSubjectId));
+                            setIsQuestionDeleteMode(false);
+                            setSyncQuestionCountToTryout(true);
                             setRangeStart('');
                             setRangeEnd('');
                             setExpContentText('');
@@ -7060,18 +7152,22 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                         setActiveVideoModalTitle(title);
                                       }}
                                       onEdit={() => {
+                                        const editTryoutId = exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '';
+                                        const editSubjectId = exp.subjectId || selectedSubjectId || allowedSubjectIds[0] || subjects[0]?.id || '';
                                         setEditingExplanationId(exp.id);
                                         setExpTitle(exp.title);
-                                        setExpSubjectId(exp.subjectId || selectedSubjectId || allowedSubjectIds[0] || subjects[0]?.id || '');
-                                        setExpTryoutId(exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '');
+                                        setExpSubjectId(editSubjectId);
+                                        setExpTryoutId(editTryoutId);
                                         setExpQuestionId(exp.questionId || 'GENERAL');
-                                        if (Array.isArray(exp.questionNumbers) && exp.questionNumbers.length > 0) {
+                                        const existingNumbers = Array.isArray(exp.questionNumbers) && exp.questionNumbers.length > 0
+                                          ? exp.questionNumbers
+                                          : (exp.questionId && exp.questionId !== 'GENERAL' ? [questions.find(q => q.id === exp.questionId)?.questionNumber].filter((n): n is number => typeof n === 'number') : []);
+                                        setExpCustomNumbers(getInitialQuestionNumbers(editTryoutId, editSubjectId, existingNumbers));
+                                        setIsQuestionDeleteMode(false);
+                                        setSyncQuestionCountToTryout(true);
+                                        if (existingNumbers.length > 0) {
                                           setExpScopeMode('SPECIFIC');
-                                          setExpSelectedNumbers(exp.questionNumbers);
-                                        } else if (exp.questionId && exp.questionId !== 'GENERAL') {
-                                          const qObj = questions.find(q => q.id === exp.questionId);
-                                          setExpScopeMode('SPECIFIC');
-                                          setExpSelectedNumbers(qObj?.questionNumber ? [qObj.questionNumber] : []);
+                                          setExpSelectedNumbers(existingNumbers);
                                         } else {
                                           setExpScopeMode('ALL');
                                           setExpSelectedNumbers([]);
@@ -7245,18 +7341,22 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                                     <div className="flex items-center space-x-1.5">
                                       <button
                                         onClick={() => {
+                                          const editTryoutId = exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '';
+                                          const editSubjectId = exp.subjectId || selectedSubjectId || allowedSubjectIds[0] || subjects[0]?.id || '';
                                           setEditingExplanationId(exp.id);
                                           setExpTitle(exp.title);
-                                          setExpSubjectId(exp.subjectId || selectedSubjectId || allowedSubjectIds[0] || subjects[0]?.id || '');
-                                          setExpTryoutId(exp.tryoutId || selectedTryoutId || tryouts[0]?.id || '');
+                                          setExpSubjectId(editSubjectId);
+                                          setExpTryoutId(editTryoutId);
                                           setExpQuestionId(exp.questionId || 'GENERAL');
-                                          if (Array.isArray(exp.questionNumbers) && exp.questionNumbers.length > 0) {
+                                          const existingNumbers = Array.isArray(exp.questionNumbers) && exp.questionNumbers.length > 0
+                                            ? exp.questionNumbers
+                                            : (exp.questionId && exp.questionId !== 'GENERAL' ? [questions.find(q => q.id === exp.questionId)?.questionNumber].filter((n): n is number => typeof n === 'number') : []);
+                                          setExpCustomNumbers(getInitialQuestionNumbers(editTryoutId, editSubjectId, existingNumbers));
+                                          setIsQuestionDeleteMode(false);
+                                          setSyncQuestionCountToTryout(true);
+                                          if (existingNumbers.length > 0) {
                                             setExpScopeMode('SPECIFIC');
-                                            setExpSelectedNumbers(exp.questionNumbers);
-                                          } else if (exp.questionId && exp.questionId !== 'GENERAL') {
-                                            const qObj = questions.find(q => q.id === exp.questionId);
-                                            setExpScopeMode('SPECIFIC');
-                                            setExpSelectedNumbers(qObj?.questionNumber ? [qObj.questionNumber] : []);
+                                            setExpSelectedNumbers(existingNumbers);
                                           } else {
                                             setExpScopeMode('ALL');
                                             setExpSelectedNumbers([]);
@@ -9325,6 +9425,21 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     pdfUrl = meta.pdfUrl;
                   }
 
+                  // Sinkronisasi jumlah butir soal ke paket Try Out jika diaktifkan
+                  if (syncQuestionCountToTryout && expTryoutId && expAvailableNumbers.length > 0) {
+                    const targetTo = tryouts.find(t => t.id === expTryoutId);
+                    if (targetTo) {
+                      const newColumns = expAvailableNumbers.map(n => `Soal ${n}`);
+                      if (!targetTo.selectedQuestionColumns || targetTo.selectedQuestionColumns.length !== expAvailableNumbers.length) {
+                        dbService.updateTryout(
+                          expTryoutId,
+                          { selectedQuestionColumns: newColumns },
+                          currentUser
+                        );
+                      }
+                    }
+                  }
+
                   if (editingExplanationId) {
                     dbService.updateExplanation(
                       editingExplanationId,
@@ -9383,7 +9498,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Paket Try Out</label>
                   <select
                     value={expTryoutId}
-                    onChange={e => setExpTryoutId(e.target.value)}
+                    onChange={e => {
+                      const newId = e.target.value;
+                      setExpTryoutId(newId);
+                      setExpCustomNumbers(getInitialQuestionNumbers(newId, expSubjectId));
+                      setIsQuestionDeleteMode(false);
+                    }}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 font-medium"
                   >
                     {tryouts.map(t => (
@@ -9395,7 +9515,12 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Mata Pelajaran</label>
                   <select
                     value={expSubjectId}
-                    onChange={e => setExpSubjectId(e.target.value)}
+                    onChange={e => {
+                      const newId = e.target.value;
+                      setExpSubjectId(newId);
+                      setExpCustomNumbers(getInitialQuestionNumbers(expTryoutId, newId));
+                      setIsQuestionDeleteMode(false);
+                    }}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg p-2 font-medium"
                   >
                     {(permittedSubjects.length > 0 ? permittedSubjects : subjects).map(s => (
@@ -9433,14 +9558,14 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
               </div>
 
               {/* Cakupan Nomor Soal Pembahasan (Multi-Select & Range) */}
-              <div className="space-y-2.5 pt-1">
+              <div className="space-y-3 pt-1">
                 <div className="flex items-center justify-between">
                   <label className="block text-slate-700 dark:text-slate-300 font-semibold">
                     Cakupan Nomor Soal yang Dibahas
                   </label>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                     {expScopeMode === 'ALL'
-                      ? 'Membahas semua butir soal'
+                      ? `Membahas seluruh ${expAvailableNumbers.length} butir soal`
                       : `${expSelectedNumbers.length} dari ${expAvailableNumbers.length} nomor dipilih`}
                   </span>
                 </div>
@@ -9460,7 +9585,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                     }`}
                   >
                     <Layers className="w-3.5 h-3.5" />
-                    <span>Paket Lengkap (Semua Nomor)</span>
+                    <span>Paket Lengkap ({expAvailableNumbers.length} Nomor)</span>
                   </button>
                   <button
                     type="button"
@@ -9476,6 +9601,157 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       Pilih Nomor Tertentu {expSelectedNumbers.length > 0 && `(${expSelectedNumbers.length})`}
                     </span>
                   </button>
+                </div>
+
+                {/* Panel Pengatur Jumlah Soal (Tambah / Hapus / Presets Cepat) */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Sliders className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        Jumlah Soal Try Out:
+                      </span>
+                      {/* Stepper & Input */}
+                      <div className="flex items-center border border-slate-300 dark:border-slate-600 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={handleRemoveLastQuestion}
+                          disabled={expAvailableNumbers.length <= 1}
+                          className="px-2 py-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer font-bold transition-colors"
+                          title="Kurangi 1 soal / Hapus nomor terakhir"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={200}
+                          value={expAvailableNumbers.length}
+                          onChange={e => handleSetTotalQuestions(parseInt(e.target.value, 10))}
+                          className="w-12 text-center font-mono font-bold text-xs bg-transparent text-slate-900 dark:text-slate-100 py-1 focus:outline-none"
+                          title="Ketik jumlah total butir soal"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddQuestion}
+                          className="px-2 py-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer font-bold transition-colors"
+                          title="Tambah 1 butir soal baru"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Soal</span>
+                    </div>
+
+                    {/* Action Buttons: Tambah / Hapus / Mode Hapus */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleAddQuestion}
+                        className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] rounded-lg border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                        title="Tambah 1 butir soal baru ke daftar"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Tambah Soal</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveLastQuestion}
+                        disabled={expAvailableNumbers.length <= 1}
+                        className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/70 hover:bg-rose-100 dark:hover:bg-rose-900 text-rose-700 dark:text-rose-300 font-bold text-[11px] rounded-lg border border-rose-200 dark:border-rose-800 flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-40 shadow-2xs"
+                        title="Hapus nomor soal paling akhir"
+                      >
+                        <Minus className="w-3 h-3" />
+                        <span>Hapus Terakhir</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsQuestionDeleteMode(prev => !prev)}
+                        className={`px-2.5 py-1 font-bold text-[11px] rounded-lg border flex items-center gap-1 cursor-pointer transition-colors shadow-2xs ${
+                          isQuestionDeleteMode
+                            ? 'bg-rose-600 text-white border-rose-600 animate-pulse'
+                            : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600'
+                        }`}
+                        title={isQuestionDeleteMode ? 'Nonaktifkan Mode Hapus' : 'Aktifkan Mode Hapus Nomor Tertentu'}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>{isQuestionDeleteMode ? 'Selesai Hapus' : 'Mode Hapus Nomor'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Preset Cepat Chips & Input Tambah Nomor Tertentu */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-[11px]">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-slate-500 dark:text-slate-400 font-medium">Preset Cepat:</span>
+                      {[10, 15, 20, 25, 30, 35, 40, 45, 50].map(cnt => (
+                        <button
+                          key={cnt}
+                          type="button"
+                          onClick={() => handleSetTotalQuestions(cnt)}
+                          className={`px-2 py-0.5 rounded-md font-mono font-bold cursor-pointer transition-colors ${
+                            expAvailableNumbers.length === cnt
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          {cnt}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={customQuestionInput}
+                        onChange={e => setCustomQuestionInput(e.target.value)}
+                        placeholder="No..."
+                        className="w-12 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md px-1.5 py-0.5 text-center font-mono text-[11px]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const n = parseInt(customQuestionInput, 10);
+                          if (!isNaN(n)) handleAddSpecificQuestion(n);
+                        }}
+                        disabled={!customQuestionInput}
+                        className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 disabled:opacity-40 font-bold rounded-md text-[10px] border border-indigo-200 dark:border-indigo-800 cursor-pointer"
+                        title="Tambah nomor butir soal khusus"
+                      >
+                        + Tambah No
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Mode Hapus Aktif Banner */}
+                  {isQuestionDeleteMode && (
+                    <div className="p-2 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 rounded-lg text-rose-800 dark:text-rose-200 text-[11px] flex items-center justify-between animate-fade-in">
+                      <div className="flex items-center gap-1.5">
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
+                        <span><strong>Mode Hapus Aktif:</strong> Klik nomor soal pada daftar di bawah untuk menghapusnya dari paket ini.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsQuestionDeleteMode(false)}
+                        className="text-xs font-bold text-rose-700 dark:text-rose-400 hover:underline cursor-pointer ml-2"
+                      >
+                        Selesai
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Checkbox Sinkronkan ke Try Out */}
+                  <label className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-400 cursor-pointer pt-0.5">
+                    <input
+                      type="checkbox"
+                      checked={syncQuestionCountToTryout}
+                      onChange={e => setSyncQuestionCountToTryout(e.target.checked)}
+                      className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <span>Sinkronkan jumlah ({expAvailableNumbers.length} butir soal) ke paket Try Out agar seragam di seluruh aplikasi</span>
+                  </label>
                 </div>
 
                 {/* Specific Number Selector Container */}
@@ -9547,23 +9823,54 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       {expAvailableNumbers.map(num => {
                         const isSelected = expSelectedNumbers.includes(num);
                         return (
-                          <button
-                            type="button"
-                            key={num}
-                            onClick={() => {
-                              setExpSelectedNumbers(prev =>
-                                prev.includes(num) ? prev.filter(n => n !== num) : [...prev, num].sort((a, b) => a - b)
-                              );
-                            }}
-                            className={`h-9 rounded-lg flex items-center justify-center font-mono text-xs font-bold transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-400/50 scale-95'
-                                : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700'
-                            }`}
-                            title={`Nomor Soal #${num}`}
-                          >
-                            {isSelected ? `✓ ${num}` : num}
-                          </button>
+                          <div key={num} className="relative group">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isQuestionDeleteMode) {
+                                  handleRemoveSpecificQuestion(num);
+                                } else {
+                                  setExpSelectedNumbers(prev =>
+                                    prev.includes(num) ? prev.filter(n => n !== num) : [...prev, num].sort((a, b) => a - b)
+                                  );
+                                }
+                              }}
+                              className={`w-full h-9 rounded-lg flex items-center justify-center font-mono text-xs font-bold transition-all cursor-pointer ${
+                                isQuestionDeleteMode
+                                  ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 hover:bg-rose-600 hover:text-white'
+                                  : isSelected
+                                    ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-400/50 scale-95'
+                                    : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700'
+                              }`}
+                              title={isQuestionDeleteMode ? `Klik untuk menghapus Soal #${num}` : `Nomor Soal #${num}`}
+                            >
+                              {isQuestionDeleteMode ? (
+                                <span className="flex items-center gap-0.5 text-rose-600 dark:text-rose-400 group-hover:text-white">
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>{num}</span>
+                                </span>
+                              ) : isSelected ? (
+                                `✓ ${num}`
+                              ) : (
+                                num
+                              )}
+                            </button>
+
+                            {/* Quick hover delete button if not in bulk delete mode */}
+                            {!isQuestionDeleteMode && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveSpecificQuestion(num);
+                                }}
+                                className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 hover:bg-rose-600 text-white rounded-full text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-xs cursor-pointer z-10"
+                                title={`Hapus nomor soal #${num}`}
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
