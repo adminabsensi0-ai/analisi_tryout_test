@@ -9436,7 +9436,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                 try {
                   const finalNumbers = expScopeMode === 'SPECIFIC' ? [...expSelectedNumbers].sort((a, b) => a - b) : [];
                   const finalQuestionIds = expScopeMode === 'SPECIFIC'
-                    ? questions.filter(q => q.questionNumber && finalNumbers.includes(q.questionNumber)).map(q => q.id)
+                    ? questions.filter(q => (!expSubjectId || q.subjectId === expSubjectId) && q.questionNumber && finalNumbers.includes(q.questionNumber)).map(q => q.id)
                     : [];
                   const finalQuestionId = finalQuestionIds.length === 1 ? finalQuestionIds[0] : (expQuestionId === 'GENERAL' ? undefined : expQuestionId);
 

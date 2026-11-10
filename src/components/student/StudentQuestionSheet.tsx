@@ -406,8 +406,11 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
             const qNum = qp.questionNumber || (idx + 1);
             const isUnanswered = !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong';
             
-            // Prioritaskan video/pembahasan yang secara spesifik mencakup nomor soal ini
+            // Prioritaskan video/pembahasan yang secara spesifik mencakup nomor soal ini dan mata pelajaran yang cocok
             const matchedExp = explanations.find(e => {
+              const matchSubject = !e.subjectId || !qObj?.subjectId || e.subjectId === qObj.subjectId;
+              if (!matchSubject) return false;
+
               if (Array.isArray(e.questionNumbers) && e.questionNumbers.length > 0) {
                 return e.questionNumbers.includes(qNum);
               }
