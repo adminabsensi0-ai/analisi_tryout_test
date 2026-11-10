@@ -19,6 +19,8 @@ import {
   getStudentStageSubjectScore,
   TryoutStageGroup,
   getFriendlyTryoutStageLabel,
+  resolveTryoutGroup,
+  TRYOUT_GROUP_NONE,
 } from '../utils/tryoutGroupUtils';
 
 export const StudentPortalPage: React.FC = () => {
@@ -63,6 +65,11 @@ export const StudentPortalPage: React.FC = () => {
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [lockoutTimer, setLockoutTimer] = useState(0);
+
+  // Auto pull data dari cloud saat pertama kali halaman siswa dibuka
+  useEffect(() => {
+    dbService.pullFromCloud().catch(() => {});
+  }, []);
 
   // Realtime Database Subscription & Auto Sync with Cloud / Admin / Guru / Walas
   useEffect(() => {
@@ -162,12 +169,17 @@ export const StudentPortalPage: React.FC = () => {
     });
   }, [allTryouts, verifiedStudent, allClasses, allScores]);
 
-  // Ensure selectedTryoutId is valid within filtered tryouts
+  // Ensure selectedTryoutId is valid within filtered tryouts, prioritizing tryouts with scores/explanations
   useEffect(() => {
-    if (tryouts.length > 0 && !tryouts.some(t => t.id === selectedTryoutId)) {
-      setSelectedTryoutId(tryouts[0].id);
+    if (tryouts.length > 0) {
+      const isCurrentValid = tryouts.some(t => t.id === selectedTryoutId);
+      if (!isCurrentValid) {
+        const toWithScore = tryouts.find(t => allScores.some(s => s.studentId === verifiedStudent?.id && s.tryoutId === t.id));
+        const toWithExp = tryouts.find(t => allExplanations.some(e => e.status === 'PUBLISHED' && (e.tryoutId === t.id || e.tryoutId === t.code)));
+        setSelectedTryoutId(toWithScore?.id || toWithExp?.id || tryouts[0].id);
+      }
     }
-  }, [tryouts, selectedTryoutId]);
+  }, [tryouts, selectedTryoutId, allScores, verifiedStudent?.id, allExplanations]);
 
   const activeTryout = useMemo(() => {
     return tryouts.find(t => t.id === selectedTryoutId) || tryouts[0];
@@ -334,15 +346,39 @@ export const StudentPortalPage: React.FC = () => {
     return dbService.getStudentAnalytics(verifiedStudent.id, selectedTryoutId);
   }, [verifiedStudent, selectedTryoutId, dbVersion]);
 
-  // Published Explanations for selected Tryout
+  // Kumpulkan semua ID tryout yang berada dalam satu stage/siklus yang sama (misal semua tryout "TO 2")
+  const stageSiblingTryoutIds = useMemo(() => {
+    if (!selectedTryoutId) return new Set<string>();
+    const currentTo = tryouts.find(t => t.id === selectedTryoutId || t.code === selectedTryoutId) || allTryouts.find(t => t.id === selectedTryoutId || t.code === selectedTryoutId);
+    if (!currentTo) return new Set<string>([selectedTryoutId]);
+
+    const examPkgs = dbService.getExamPackages();
+    const groupKey = resolveTryoutGroup(currentTo, allTryouts, examPkgs);
+    const ids = new Set<string>([currentTo.id]);
+    if (currentTo.code) ids.add(currentTo.code);
+
+    if (groupKey && groupKey !== TRYOUT_GROUP_NONE) {
+      allTryouts.forEach(t => {
+        if (resolveTryoutGroup(t, allTryouts, examPkgs) === groupKey) {
+          ids.add(t.id);
+          if (t.code) ids.add(t.code);
+        }
+      });
+    }
+
+    return ids;
+  }, [selectedTryoutId, tryouts, allTryouts]);
+
+  // Published Explanations for selected Tryout stage / group
   const publishedExplanations = useMemo(() => {
     return allExplanations.filter(e => {
       if (e.status !== 'PUBLISHED') return false;
+      if (stageSiblingTryoutIds.has(e.tryoutId)) return true;
       if (e.tryoutId === selectedTryoutId) return true;
-      const targetTo = tryouts.find(t => t.id === selectedTryoutId);
+      const targetTo = allTryouts.find(t => t.id === selectedTryoutId);
       return Boolean(targetTo && (e.tryoutId === targetTo.code || e.tryoutId === targetTo.id));
     });
-  }, [allExplanations, selectedTryoutId, tryouts]);
+  }, [allExplanations, selectedTryoutId, stageSiblingTryoutIds, allTryouts]);
 
   // Ranking & Tie-Breaker Calculation (Multi-tier: Total Score -> Total Correct -> Math Correct)
   const mathSubject = allSubjects.find(s => s.code === 'MAT' || s.name.toLowerCase().includes('matematika')) || allSubjects[0];
@@ -1489,10 +1525,24 @@ export const StudentPortalPage: React.FC = () => {
 
             {/* TAB 4: PUSAT MEDIA PEMBAHASAN RESMI (PDF & VIDEO YOUTUBE) */}
             {portalTab === 'EXPLANATIONS' && (() => {
+              const isMatchExpSub = (expSubId?: string, targetSubId?: string) => {
+                if (!expSubId || !targetSubId) return false;
+                if (expSubId === targetSubId) return true;
+                const sTarget = allSubjects.find(s => s.id === targetSubId || s.code === targetSubId);
+                const sExp = allSubjects.find(s => s.id === expSubId || s.code === expSubId);
+                if (sTarget && sExp) {
+                  return sTarget.id === sExp.id || sTarget.code.toLowerCase() === sExp.code.toLowerCase();
+                }
+                if (sTarget) {
+                  return expSubId.toLowerCase() === sTarget.code?.toLowerCase();
+                }
+                return false;
+              };
+
               const availableQuestionNumbers: number[] = Array.from(
                 new Set(
                   publishedExplanations
-                    .filter(e => explanationSubjectFilter === 'ALL' || e.subjectId === explanationSubjectFilter)
+                    .filter(e => explanationSubjectFilter === 'ALL' || isMatchExpSub(e.subjectId, explanationSubjectFilter))
                     .flatMap(e => {
                       if (e.questionNumbers && e.questionNumbers.length > 0) return e.questionNumbers;
                       if (e.questionId) {
@@ -1507,7 +1557,7 @@ export const StudentPortalPage: React.FC = () => {
                 .sort((a, b) => a - b);
 
               const filteredExplanations = publishedExplanations.filter(e => {
-                if (explanationSubjectFilter !== 'ALL' && e.subjectId !== explanationSubjectFilter) {
+                if (explanationSubjectFilter !== 'ALL' && !isMatchExpSub(e.subjectId, explanationSubjectFilter)) {
                   return false;
                 }
                 if (explanationQuestionNumberFilter !== 'ALL') {
@@ -1656,7 +1706,7 @@ export const StudentPortalPage: React.FC = () => {
                         </button>
 
                         {allSubjects.map(s => {
-                          const count = publishedExplanations.filter(e => e.subjectId === s.id).length;
+                          const count = publishedExplanations.filter(e => isMatchExpSub(e.subjectId, s.id)).length;
                           const isSel = explanationSubjectFilter === s.id;
                           return (
                             <button
@@ -1781,7 +1831,7 @@ export const StudentPortalPage: React.FC = () => {
                           {studentResourceCardsList.map(item => {
                             const exp = item.exp;
                             const targetQuestion = allQuestions.find(q => q.id === exp.questionId);
-                            const expSubj = allSubjects.find(s => s.id === exp.subjectId);
+                            const expSubj = allSubjects.find(s => isMatchExpSub(exp.subjectId, s.id));
 
                             return (
                               <ResourceCard
@@ -1830,7 +1880,7 @@ export const StudentPortalPage: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {filteredExplanations.map(exp => {
                             const question = allQuestions.find(q => q.id === exp.questionId);
-                            const expSubj = allSubjects.find(s => s.id === exp.subjectId);
+                            const expSubj = allSubjects.find(s => isMatchExpSub(exp.subjectId, s.id));
 
                             return (
                               <div

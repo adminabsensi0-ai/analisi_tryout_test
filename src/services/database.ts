@@ -3719,8 +3719,19 @@ export class DatabaseService {
   public getExplanationsForTeacher(currentUser: any): Explanation[] {
     if (!currentUser) return [];
     if (currentUser.role === 'ADMIN') return this.state.explanations;
-    const allowedSubjects = new Set(this.getTeacherAllowedSubjectIds(currentUser));
-    return this.state.explanations.filter(e => !e.subjectId || allowedSubjects.has(e.subjectId));
+    const allowedIds = this.getTeacherAllowedSubjectIds(currentUser);
+    const allowedSet = new Set(allowedIds);
+    const allowedCodes = new Set(
+      (this.state.subjects || [])
+        .filter(s => s && allowedSet.has(s.id) && s.code)
+        .map(s => s.code.toLowerCase())
+    );
+    return this.state.explanations.filter(e => {
+      if (!e.subjectId) return false;
+      if (allowedSet.has(e.subjectId)) return true;
+      if (allowedCodes.has(e.subjectId.toLowerCase())) return true;
+      return false;
+    });
   }
 
   public getExplanationsForStudent(tryoutId: string, questionId?: string, questionNumber?: number): Explanation[] {

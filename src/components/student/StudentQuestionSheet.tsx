@@ -406,9 +406,18 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
             const qNum = qp.questionNumber || (idx + 1);
             const isUnanswered = !qp.studentAnswer || qp.studentAnswer === 'KOSONG' || qp.studentAnswer === 'Kosong';
             
+            const isMatchSub = (id1?: string, id2?: string) => {
+              if (!id1 || !id2) return true;
+              if (id1 === id2) return true;
+              const s1 = subjects.find(s => s.id === id1 || s.code === id1);
+              const s2 = subjects.find(s => s.id === id2 || s.code === id2);
+              if (s1 && s2) return s1.id === s2.id || s1.code.toLowerCase() === s2.code.toLowerCase();
+              return false;
+            };
+
             // Prioritaskan video/pembahasan yang secara spesifik mencakup nomor soal ini dan mata pelajaran yang cocok
             const matchedExp = explanations.find(e => {
-              const matchSubject = !e.subjectId || !qObj?.subjectId || e.subjectId === qObj.subjectId;
+              const matchSubject = isMatchSub(e.subjectId, qObj?.subjectId);
               if (!matchSubject) return false;
 
               if (Array.isArray(e.questionNumbers) && e.questionNumbers.length > 0) {
@@ -421,7 +430,7 @@ export const StudentQuestionSheet: React.FC<StudentQuestionSheetProps> = ({
                 return e.questionId === qp.questionId;
               }
               return false;
-            }) || explanations.find(e => (!e.questionNumbers || e.questionNumbers.length === 0) && (!e.questionId || e.questionId === 'GENERAL') && (qObj && e.subjectId === qObj.subjectId));
+            }) || explanations.find(e => (!e.questionNumbers || e.questionNumbers.length === 0) && (!e.questionId || e.questionId === 'GENERAL') && isMatchSub(e.subjectId, qObj?.subjectId));
             
             const subjectObj = qObj ? subjects.find(s => s.id === qObj.subjectId) : null;
 
