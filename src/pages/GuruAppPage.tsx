@@ -710,6 +710,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   };
 
   // Explanation Filters & Test Suite State
+  const [expFilterTryoutId, setExpFilterTryoutId] = useState<string>('ALL');
   const [expFilterStatus, setExpFilterStatus] = useState<string>('ALL');
   const [expFilterScope, setExpFilterScope] = useState<string>('ALL');
   const [expViewMode, setExpViewMode] = useState<'RESOURCE_CARDS' | 'MODULES'>('RESOURCE_CARDS');
@@ -6827,7 +6828,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                         <button
                           onClick={() => {
-                            const initialTryoutId = selectedTryoutId !== 'ALL' ? selectedTryoutId : tryouts[0]?.id || '';
+                            const initialTryoutId = expFilterTryoutId !== 'ALL' ? expFilterTryoutId : (selectedTryoutId !== 'ALL' ? selectedTryoutId : tryouts[0]?.id || '');
                             const initialSubjectId = selectedSubjectId && selectedSubjectId !== 'ALL' && allowedSubjectIds.includes(selectedSubjectId)
                               ? selectedSubjectId
                               : (allowedSubjectIds[0] || subjects[0]?.id || '');
@@ -6865,14 +6866,19 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                         <div className="flex items-center space-x-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1">
                           <span className="text-slate-500 dark:text-slate-400 font-medium">Try Out:</span>
                           <select
-                            value={selectedTryoutId || 'ALL'}
-                            onChange={e => setSelectedTryoutId(e.target.value)}
+                            value={expFilterTryoutId}
+                            onChange={e => setExpFilterTryoutId(e.target.value)}
                             className="bg-transparent font-bold text-slate-900 dark:text-white focus:outline-none cursor-pointer"
                           >
-                            <option value="ALL" className="dark:bg-slate-800 dark:text-white">Semua Try Out</option>
-                            {tryouts.map(t => (
-                              <option key={t.id} value={t.id} className="dark:bg-slate-800 dark:text-white">[{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title}</option>
-                            ))}
+                            <option value="ALL" className="dark:bg-slate-800 dark:text-white">Semua Try Out ({explanations.length})</option>
+                            {tryouts.map(t => {
+                              const count = explanations.filter(e => e.tryoutId === t.id || e.tryoutId === t.code).length;
+                              return (
+                                <option key={t.id} value={t.id} className="dark:bg-slate-800 dark:text-white">
+                                  [{getFriendlyTryoutStageLabel(t, tryouts)}] {t.title} ({count})
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
 
@@ -6969,7 +6975,11 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   {(() => {
                     // Extract educational resource items from filtered explanations
                     const filteredExplanations = explanations
-                      .filter(e => e.tryoutId === selectedTryoutId || selectedTryoutId === 'ALL')
+                      .filter(e => {
+                        if (expFilterTryoutId === 'ALL') return true;
+                        const targetTo = tryouts.find(t => t.id === expFilterTryoutId);
+                        return e.tryoutId === expFilterTryoutId || (targetTo && (e.tryoutId === targetTo.code || e.tryoutId === targetTo.id));
+                      })
                       .filter(e => expFilterStatus === 'ALL' || e.status === expFilterStatus)
                       .filter(e => {
                         const hasQuestionScope = Boolean(
@@ -9501,7 +9511,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
                   setShowExplanationModal(false);
                   if (expTryoutId) {
-                    setSelectedTryoutId(expTryoutId);
+                    setExpFilterTryoutId(expTryoutId);
                   }
                   refreshData();
                 } catch (err: any) {
@@ -9807,6 +9817,10 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                             if (!isNaN(start) && !isNaN(end) && start <= end) {
                               const validRange = expAvailableNumbers.filter(n => n >= start && n <= end);
                               setExpSelectedNumbers(prev => Array.from(new Set([...prev, ...validRange])).sort((a, b) => a - b));
+                              const subjName = subjects.find(s => s.id === expSubjectId)?.name || 'Mata Pelajaran';
+                              if (!expTitle || (expTitle.startsWith('Pembahasan ') && (expTitle.includes('— Solusi Mandiri') || expTitle.includes('— No ')))) {
+                                setExpTitle(`Pembahasan ${subjName} — No ${start} - ${end}`);
+                              }
                               setRangeStart('');
                               setRangeEnd('');
                             }

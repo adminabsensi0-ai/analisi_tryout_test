@@ -336,8 +336,13 @@ export const StudentPortalPage: React.FC = () => {
 
   // Published Explanations for selected Tryout
   const publishedExplanations = useMemo(() => {
-    return allExplanations.filter(e => e.tryoutId === selectedTryoutId && e.status === 'PUBLISHED');
-  }, [allExplanations, selectedTryoutId]);
+    return allExplanations.filter(e => {
+      if (e.status !== 'PUBLISHED') return false;
+      if (e.tryoutId === selectedTryoutId) return true;
+      const targetTo = tryouts.find(t => t.id === selectedTryoutId);
+      return Boolean(targetTo && (e.tryoutId === targetTo.code || e.tryoutId === targetTo.id));
+    });
+  }, [allExplanations, selectedTryoutId, tryouts]);
 
   // Ranking & Tie-Breaker Calculation (Multi-tier: Total Score -> Total Correct -> Math Correct)
   const mathSubject = allSubjects.find(s => s.code === 'MAT' || s.name.toLowerCase().includes('matematika')) || allSubjects[0];
@@ -1484,7 +1489,7 @@ export const StudentPortalPage: React.FC = () => {
 
             {/* TAB 4: PUSAT MEDIA PEMBAHASAN RESMI (PDF & VIDEO YOUTUBE) */}
             {portalTab === 'EXPLANATIONS' && (() => {
-              const availableQuestionNumbers = Array.from(
+              const availableQuestionNumbers: number[] = Array.from(
                 new Set(
                   publishedExplanations
                     .filter(e => explanationSubjectFilter === 'ALL' || e.subjectId === explanationSubjectFilter)
@@ -1492,12 +1497,14 @@ export const StudentPortalPage: React.FC = () => {
                       if (e.questionNumbers && e.questionNumbers.length > 0) return e.questionNumbers;
                       if (e.questionId) {
                         const q = allQuestions.find(item => item.id === e.questionId);
-                        return q ? [q.questionNumber] : [];
+                        return q && typeof q.questionNumber === 'number' ? [q.questionNumber] : [];
                       }
                       return [];
                     })
                 )
-              ).sort((a, b) => a - b);
+              )
+                .filter((num): num is number => typeof num === 'number')
+                .sort((a, b) => a - b);
 
               const filteredExplanations = publishedExplanations.filter(e => {
                 if (explanationSubjectFilter !== 'ALL' && e.subjectId !== explanationSubjectFilter) {

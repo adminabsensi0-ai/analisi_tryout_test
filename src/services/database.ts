@@ -36,6 +36,7 @@ const STORAGE_KEY = 'school_tryout_analytics_db_v1';
 const SCHOOL_PROFILE_CACHE_KEY = 'wikan_school_profile_cache_v1';
 const DELETED_TRYOUTS_KEY = 'school_tryout_deleted_ids_v1';
 const DELETED_SUBJECTS_KEY = 'school_tryout_deleted_subjects_v1';
+const DELETED_EXPLANATIONS_KEY = 'school_tryout_deleted_explanations_v1';
 
 export interface DatabaseState {
   users: User[];
@@ -80,6 +81,7 @@ export class DatabaseService {
   private realtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingTryoutIds = new Set<string>();
   private pendingPackageIds = new Set<string>();
+  private pendingExplanationIds = new Set<string>();
   private focusSyncHandler: (() => void) | null = null;
   private visibilitySyncHandler: (() => void) | null = null;
 
@@ -351,6 +353,21 @@ export class DatabaseService {
             this.isPushingCloud = false;
           }
         }
+
+        // 3. Dorong pembahasan (explanations) lokal yang belum masuk ke Supabase
+        const cloudExpKeys = new Set(
+          (cloudState.explanations || []).map(ce => ce.id)
+        );
+        const deletedExps = this.getDeletedExplanationIdentifiers();
+        const unsyncedExplanations = (this.state.explanations || []).filter(
+          e => !cloudExpKeys.has(e.id) && !deletedExps.has((e.id || '').toLowerCase().trim())
+        );
+        if (unsyncedExplanations.length > 0) {
+          console.info(`[DB] Menyinkronkan delta ${unsyncedExplanations.length} pembahasan lokal ke Supabase...`);
+          for (const exp of unsyncedExplanations) {
+            await sdb.syncExplanation(exp);
+          }
+        }
       } else {
         // Jika cloud masih kosong, otomatis unggah data awal ke cloud di latar belakang!
         console.info('[DB] Cloud masih kosong — otomatis menyinkronkan data awal ke cloud di latar belakang...');
@@ -481,6 +498,58 @@ export class DatabaseService {
       }
     } catch (e) {
       console.warn('[DB] Gagal membersihkan tombstone mata pelajaran:', e);
+    }
+  }
+
+  /**
+   * Helper tombstone untuk modul/link pembahasan (explanations) yang telah dihapus guru.
+   * Mencegah item yang telah dihapus muncul kembali saat sinkronisasi cloud realtime.
+   */
+  public getDeletedExplanationIdentifiers(): Set<string> {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(DELETED_EXPLANATIONS_KEY) : null;
+      const parsed = raw ? JSON.parse(raw) : [];
+      const set = new Set<string>();
+      (Array.isArray(parsed) ? parsed : []).forEach((x: string) => {
+        const val = String(x).toLowerCase().trim();
+        if (val) set.add(val);
+      });
+      return set;
+    } catch {
+      return new Set<string>();
+    }
+  }
+
+  private addDeletedExplanationIdentifier(...ids: (string | undefined)[]): void {
+    try {
+      const set = this.getDeletedExplanationIdentifiers();
+      ids.forEach(item => {
+        if (item && item.trim()) {
+          const val = item.toLowerCase().trim();
+          if (val) set.add(val);
+        }
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(DELETED_EXPLANATIONS_KEY, JSON.stringify(Array.from(set)));
+      }
+    } catch (e) {
+      console.warn('[DB] Gagal menyimpan tombstone pembahasan yang dihapus:', e);
+    }
+  }
+
+  private removeDeletedExplanationIdentifier(...ids: (string | undefined)[]): void {
+    try {
+      const set = this.getDeletedExplanationIdentifiers();
+      ids.forEach(item => {
+        if (item && item.trim()) {
+          set.delete(item.toLowerCase().trim());
+        }
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(DELETED_EXPLANATIONS_KEY, JSON.stringify(Array.from(set)));
+      }
+    } catch (e) {
+      console.warn('[DB] Gagal membersihkan tombstone pembahasan:', e);
     }
   }
 
@@ -1194,28 +1263,71 @@ export class DatabaseService {
     // Merge explanations (Pembahasan Soal)
     if (cloud.explanations && Array.isArray(cloud.explanations)) {
       if (!this.state.explanations) this.state.explanations = [];
+      const deletedExplanations = this.getDeletedExplanationIdentifiers();
+
       cloud.explanations.forEach(ce => {
+        if (!ce || !ce.id) return;
+        const ceId = ce.id.toLowerCase().trim();
+        if (deletedExplanations.has(ceId)) return;
+
+        // Pencocokan HANYA berdasarkan ID kanonik unik UUID — TIDAK BOLEH mencocokkan judul/title!
+        // Karena guru dapat menerbitkan banyak pembahasan untuk butir soal berbeda dengan judul seragam.
         const idx = this.state.explanations.findIndex(
-          e => e.id === ce.id || (e.tryoutId === ce.tryoutId && e.title.trim().toLowerCase() === ce.title.trim().toLowerCase())
+          e => Boolean(e.id && e.id.toLowerCase().trim() === ceId)
         );
         if (idx === -1) {
           this.state.explanations.push(ce);
           changed = true;
         } else {
           const local = this.state.explanations[idx];
-          if (
+          const hasDifferentData =
             local.updatedAt !== ce.updatedAt ||
             local.status !== ce.status ||
             local.youtubeUrl !== ce.youtubeUrl ||
             local.pdfUrl !== ce.pdfUrl ||
             local.title !== ce.title ||
-            JSON.stringify(local.questionNumbers || []) !== JSON.stringify(ce.questionNumbers || [])
-          ) {
-            this.state.explanations[idx] = { ...local, ...ce };
+            local.tryoutId !== ce.tryoutId ||
+            local.subjectId !== ce.subjectId ||
+            JSON.stringify(local.questionNumbers || []) !== JSON.stringify(ce.questionNumbers || []) ||
+            JSON.stringify(local.questionIds || []) !== JSON.stringify(ce.questionIds || []);
+
+          if (hasDifferentData) {
+            this.state.explanations[idx] = {
+              ...local,
+              ...ce,
+              youtubeUrl: ce.youtubeUrl !== undefined ? ce.youtubeUrl : local.youtubeUrl,
+              pdfUrl: ce.pdfUrl !== undefined ? ce.pdfUrl : local.pdfUrl,
+              pdfStoragePath: ce.pdfStoragePath !== undefined ? ce.pdfStoragePath : local.pdfStoragePath,
+              pdfFileName: ce.pdfFileName !== undefined ? ce.pdfFileName : local.pdfFileName,
+              pdfFileSize: ce.pdfFileSize !== undefined ? ce.pdfFileSize : local.pdfFileSize,
+              externalUrl: ce.externalUrl !== undefined ? ce.externalUrl : local.externalUrl,
+              subjectId: ce.subjectId || local.subjectId,
+              questionId: ce.questionId || local.questionId,
+              questionNumbers: (ce.questionNumbers && ce.questionNumbers.length > 0) ? ce.questionNumbers : (local.questionNumbers || []),
+              questionIds: (ce.questionIds && ce.questionIds.length > 0) ? ce.questionIds : (local.questionIds || []),
+            };
             changed = true;
           }
         }
       });
+
+      // Rekonsiliasi pembahasan yang telah dihapus di Cloud dari perangkat lain
+      if (this.supabaseInitDone || cloud.explanations.length > 0) {
+        const cloudExpIds = new Set(cloud.explanations.map(ce => (ce.id || '').toLowerCase().trim()));
+        const beforeExpCount = this.state.explanations.length;
+        this.state.explanations = this.state.explanations.filter(e => {
+          const idKey = (e.id || '').toLowerCase().trim();
+          if (deletedExplanations.has(idKey)) return false;
+          if (cloudExpIds.has(idKey)) return true;
+          // Pertahankan jika item lokal baru saja dibuat/diedit dan sedang dalam antrean sinkronisasi
+          if (this.pendingExplanationIds.has(e.id) || this.pendingExplanationIds.has(idKey)) return true;
+          // Item sudah dihapus di Supabase Cloud
+          return false;
+        });
+        if (this.state.explanations.length !== beforeExpCount) {
+          changed = true;
+        }
+      }
     }
 
     // Merge school profile
@@ -1310,6 +1422,17 @@ export class DatabaseService {
               r => r.tryoutId === toId && unsyncedStudentIds.has(r.studentId)
             );
             await sdb.syncResponsesAndScores(toId, toUnsyncedResponses, toUnsyncedScores);
+          }
+        }
+
+        const cloudExpKeys = new Set((cloudState.explanations || []).map(ce => ce.id));
+        const deletedExps = this.getDeletedExplanationIdentifiers();
+        const unsyncedExplanations = (this.state.explanations || []).filter(
+          e => !cloudExpKeys.has(e.id) && !deletedExps.has((e.id || '').toLowerCase().trim())
+        );
+        if (unsyncedExplanations.length > 0) {
+          for (const exp of unsyncedExplanations) {
+            await sdb.syncExplanation(exp);
           }
         }
       }
@@ -1591,6 +1714,18 @@ export class DatabaseService {
           parsed.examPackages = parsed.examPackages.filter((p: any) => p.id !== 'pkt-arsip-awal');
         } else {
           parsed.examPackages = [];
+        }
+
+        const deletedExplanations = this.getDeletedExplanationIdentifiers();
+        if (parsed.explanations && Array.isArray(parsed.explanations)) {
+          parsed.explanations = parsed.explanations.filter((e: any) => {
+            if (!e || legacyMockToIds.has(e.tryoutId)) return false;
+            const toId = (e.tryoutId || '').toLowerCase().trim();
+            if (deletedTryouts.has(toId)) return false;
+            const expId = (e.id || '').toLowerCase().trim();
+            if (deletedExplanations.has(expId)) return false;
+            return true;
+          });
         }
 
         return parsed;
@@ -3624,10 +3759,22 @@ export class DatabaseService {
       updatedAt: now,
     };
 
+    this.removeDeletedExplanationIdentifier(newExp.id);
+    this.pendingExplanationIds.add(newExp.id);
     this.state.explanations.push(newExp);
     this.logAudit(currentUser, 'CREATE_EXPLANATION', 'EXPLANATION', `Membuat pembahasan (${newExp.status}): ${newExp.title}`);
     this.persistState();
-    if (this.supabaseSyncEnabled) sdb.syncExplanation(newExp).catch(() => {});
+
+    if (this.supabaseSyncEnabled || sdb.isAvailable()) {
+      sdb.syncExplanation(newExp)
+        .then(() => {
+          this.pendingExplanationIds.delete(newExp.id);
+          this.persistState();
+        })
+        .catch(err => {
+          console.warn('[DB] syncExplanation error:', err);
+        });
+    }
     return newExp;
   }
 
@@ -3650,6 +3797,9 @@ export class DatabaseService {
       updates.youtubeUrl = ytCheck.sanitizedYoutubeEmbedUrl || updates.youtubeUrl;
     }
 
+    this.removeDeletedExplanationIdentifier(id);
+    this.pendingExplanationIds.add(id);
+
     const now = new Date().toISOString();
     this.state.explanations = this.state.explanations.map(e =>
       e.id === id ? { ...e, ...updates, updatedAt: now } : e
@@ -3657,8 +3807,18 @@ export class DatabaseService {
 
     this.logAudit(currentUser, 'UPDATE_EXPLANATION', 'EXPLANATION', `Memperbarui pembahasan: ${existing.title}`);
     this.persistState();
+
     const updated = this.state.explanations.find(e => e.id === id);
-    if (this.supabaseSyncEnabled && updated) sdb.syncExplanation(updated).catch(() => {});
+    if ((this.supabaseSyncEnabled || sdb.isAvailable()) && updated) {
+      sdb.syncExplanation(updated)
+        .then(() => {
+          this.pendingExplanationIds.delete(id);
+          this.persistState();
+        })
+        .catch(err => {
+          console.warn('[DB] syncExplanation update error:', err);
+        });
+    }
   }
 
   public publishExplanation(id: string, currentUser: any) {
@@ -3668,6 +3828,9 @@ export class DatabaseService {
     if (existing.subjectId && currentUser.role === 'GURU') {
       this.assertTeacherSubject(currentUser, existing.subjectId, 'PUBLISH_EXPLANATION');
     }
+
+    this.removeDeletedExplanationIdentifier(id);
+    this.pendingExplanationIds.add(id);
 
     const now = new Date().toISOString();
     this.state.explanations = this.state.explanations.map(e =>
@@ -3681,8 +3844,18 @@ export class DatabaseService {
       `Mempublikasikan pembahasan ke siswa: ${existing.title} (Tryout: ${existing.tryoutId})`
     );
     this.persistState();
+
     const updated = this.state.explanations.find(e => e.id === id);
-    if (this.supabaseSyncEnabled && updated) sdb.syncExplanation(updated).catch(() => {});
+    if ((this.supabaseSyncEnabled || sdb.isAvailable()) && updated) {
+      sdb.syncExplanation(updated)
+        .then(() => {
+          this.pendingExplanationIds.delete(id);
+          this.persistState();
+        })
+        .catch(err => {
+          console.warn('[DB] syncExplanation publish error:', err);
+        });
+    }
   }
 
   public archiveExplanation(id: string, currentUser: any) {
@@ -3692,6 +3865,9 @@ export class DatabaseService {
     if (existing.subjectId && currentUser.role === 'GURU') {
       this.assertTeacherSubject(currentUser, existing.subjectId, 'ARCHIVE_EXPLANATION');
     }
+
+    this.removeDeletedExplanationIdentifier(id);
+    this.pendingExplanationIds.add(id);
 
     const now = new Date().toISOString();
     this.state.explanations = this.state.explanations.map(e =>
@@ -3705,8 +3881,18 @@ export class DatabaseService {
       `Mengarsipkan pembahasan (menyembunyikan dari siswa): ${existing.title}`
     );
     this.persistState();
+
     const updated = this.state.explanations.find(e => e.id === id);
-    if (this.supabaseSyncEnabled && updated) sdb.syncExplanation(updated).catch(() => {});
+    if ((this.supabaseSyncEnabled || sdb.isAvailable()) && updated) {
+      sdb.syncExplanation(updated)
+        .then(() => {
+          this.pendingExplanationIds.delete(id);
+          this.persistState();
+        })
+        .catch(err => {
+          console.warn('[DB] syncExplanation archive error:', err);
+        });
+    }
   }
 
   public deleteExplanation(id: string, currentUser: any) {
@@ -3717,10 +3903,18 @@ export class DatabaseService {
       this.assertTeacherSubject(currentUser, existing.subjectId, 'DELETE_EXPLANATION');
     }
 
+    this.addDeletedExplanationIdentifier(id);
+    this.pendingExplanationIds.delete(id);
+
     this.state.explanations = this.state.explanations.filter(e => e.id !== id);
     this.logAudit(currentUser, 'DELETE_EXPLANATION', 'EXPLANATION', `Menghapus pembahasan: ${existing.title}`);
     this.persistState();
-    if (this.supabaseSyncEnabled) sdb.removeExplanation(id).catch(() => {});
+
+    if (this.supabaseSyncEnabled || sdb.isAvailable()) {
+      sdb.removeExplanation(id).catch(err => {
+        console.warn('[DB] removeExplanation error:', err);
+      });
+    }
   }
 
   /**

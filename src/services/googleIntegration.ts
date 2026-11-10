@@ -1,6 +1,6 @@
 import {
   Student, Question, Tryout, Subject, SheetImportPreviewItem,
-  ColumnMappingConfig, SheetImportSummary, Response, Answer, Score, User
+  ColumnMappingConfig, SheetImportSummary, Response, Answer, Score, User, DuplicateSubmissionInfo
 } from '../types/database';
 import { ScoringService } from './scoring';
 import { dbService } from './database';

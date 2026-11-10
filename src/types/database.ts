@@ -406,6 +406,7 @@ export interface AuditLog {
 export interface ColumnMappingConfig {
   nisnColumn: string;
   nameColumn?: string;
+  classColumn?: string;
   scoreColumn?: string;
   timestampColumn?: string;
   questionMappings: Record<string, string>; // questionUniqueCode -> sheetColumnHeader

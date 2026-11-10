@@ -796,7 +796,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
 
                         return {
                           toId: to.id,
-                          label: stage?.stageLabel || to.code || to.title,
+                          label: stage?.title || stage?.groupKey || to.code || to.title,
                           evaluatedCount,
                           passCount,
                           failCount,

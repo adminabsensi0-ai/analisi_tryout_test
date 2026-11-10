@@ -2046,16 +2046,43 @@ class SupabaseDbService {
   public async syncExplanation(exp: Explanation): Promise<void> {
     if (!this.isAvailable() || !supabase) return;
     try {
-      // 1. Resolve tryout_id to valid UUID if needed
+      // 1. Resolve tryout_id to valid Supabase UUID without crashing PostgREST
       let resolvedTryoutId = exp.tryoutId;
       if (!isValidUuid(resolvedTryoutId)) {
-        const { data: toData } = await supabase
+        const cleanCode = (exp.tryoutId || '').trim();
+        const { data: toByCode } = await supabase
           .from('tryouts')
-          .select('id')
-          .or(`id.eq.${exp.tryoutId},code.eq.${exp.tryoutId.trim()}`)
+          .select('id, code, title')
+          .ilike('code', cleanCode)
           .maybeSingle();
-        if (toData?.id) {
-          resolvedTryoutId = toData.id;
+
+        if (toByCode?.id) {
+          resolvedTryoutId = toByCode.id;
+        } else {
+          // Fetch tryouts list to match by code, title, or index
+          const { data: allTo } = await supabase.from('tryouts').select('id, code, title');
+          if (allTo && allTo.length > 0) {
+            const cleanLower = cleanCode.toLowerCase();
+            const matched = allTo.find(t =>
+              t.id === cleanCode ||
+              (t.code && t.code.toLowerCase().trim() === cleanLower) ||
+              (t.title && t.title.toLowerCase().trim() === cleanLower)
+            );
+            if (matched) {
+              resolvedTryoutId = matched.id;
+            } else {
+              const numMatch = cleanCode.match(/\d+/);
+              if (numMatch) {
+                const targetIdx = parseInt(numMatch[0], 10) - 1;
+                if (allTo[targetIdx]) {
+                  resolvedTryoutId = allTo[targetIdx].id;
+                }
+              }
+              if (!isValidUuid(resolvedTryoutId)) {
+                resolvedTryoutId = allTo[0].id;
+              }
+            }
+          }
         }
       }
 
@@ -2064,20 +2091,31 @@ class SupabaseDbService {
         return;
       }
 
+      // Update in-memory / local tryoutId to resolved UUID so they always match
+      exp.tryoutId = resolvedTryoutId;
+
+      // 1b. Resolve subject_id to valid Supabase UUID if needed
+      let resolvedSubjectId = exp.subjectId;
+      if (resolvedSubjectId && !isValidUuid(resolvedSubjectId)) {
+        const cleanSubj = resolvedSubjectId.trim().toLowerCase();
+        const { data: allSubj } = await supabase.from('subjects').select('id, code, name');
+        if (allSubj && allSubj.length > 0) {
+          const matchedSubj = allSubj.find(s =>
+            (s.code && s.code.toLowerCase().trim() === cleanSubj) ||
+            (s.name && s.name.toLowerCase().trim() === cleanSubj) ||
+            cleanSubj.includes((s.code || '').toLowerCase().trim())
+          );
+          if (matchedSubj) {
+            resolvedSubjectId = matchedSubj.id;
+            exp.subjectId = resolvedSubjectId;
+          }
+        }
+      }
+
       // 2. Ensure id is valid UUID
       let targetId = isValidUuid(exp.id) ? exp.id : null;
       if (!targetId) {
-        const { data: existingExp } = await supabase
-          .from('explanations')
-          .select('id')
-          .eq('tryout_id', resolvedTryoutId)
-          .eq('title', exp.title.trim())
-          .maybeSingle();
-        if (existingExp?.id) {
-          targetId = existingExp.id;
-        } else {
-          targetId = generateUuid();
-        }
+        targetId = generateUuid();
         exp.id = targetId;
       }
 
@@ -2085,6 +2123,7 @@ class SupabaseDbService {
         ...exp,
         id: targetId,
         tryoutId: resolvedTryoutId,
+        subjectId: resolvedSubjectId,
       });
 
       const { error } = await supabase
