@@ -2670,11 +2670,15 @@ export class DatabaseService {
   // EXAM PACKAGES (PAKET UJIAN / WADAH) CRUD & ACCESS MANAGEMENT
   // ============================================================
   public getExamPackages(): ExamPackage[] {
-    return this.state.examPackages || [];
+    return (this.state.examPackages || []).map(p => ({
+      ...p,
+      assessmentType: p.assessmentType || 'TRYOUT',
+    }));
   }
 
   public getExamPackageById(id: string): ExamPackage | undefined {
-    return (this.state.examPackages || []).find(p => p.id === id);
+    const pkg = (this.state.examPackages || []).find(p => p.id === id);
+    return pkg ? { ...pkg, assessmentType: pkg.assessmentType || 'TRYOUT' } : undefined;
   }
 
   public saveExamPackage(pkg: ExamPackage, currentUser?: any): ExamPackage {
@@ -2688,6 +2692,7 @@ export class DatabaseService {
     const now = new Date().toISOString();
     const toSave: ExamPackage = {
       ...pkg,
+      assessmentType: pkg.assessmentType || 'TRYOUT',
       updatedAt: now,
       createdAt: existingIdx >= 0 ? this.state.examPackages[existingIdx].createdAt || now : now,
     };

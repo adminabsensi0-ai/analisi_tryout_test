@@ -391,8 +391,14 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200/50 dark:border-indigo-900/50 mr-2">
                       {pkg.code}
                     </span>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                      {pkg.assessmentType}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                      pkg.assessmentType === 'SAS'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-900/50'
+                        : pkg.assessmentType === 'SAT'
+                        ? 'bg-purple-50 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 border border-purple-200/50 dark:border-purple-900/50'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}>
+                      {pkg.assessmentType === 'SAS' ? 'SAS (Semester)' : pkg.assessmentType === 'SAT' ? 'SAT (Akhir Tahun)' : 'Try Out'}
                     </span>
                   </div>
 
@@ -832,9 +838,8 @@ export const ExamPackagesSection: React.FC<ExamPackagesSectionProps> = ({
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl"
                   >
                     <option value="TRYOUT">Try Out (TO)</option>
-                    <option value="PAS">Penilaian Akhir Semester (PAS / UAS)</option>
-                    <option value="PTS">Penilaian Tengah Semester (PTS / UTS)</option>
-                    <option value="UH">Ulangan Harian (UH)</option>
+                    <option value="SAS">Sumatif Akhir Semester (SAS)</option>
+                    <option value="SAT">Sumatif Akhir Tahun (SAT)</option>
                   </select>
                 </div>
 

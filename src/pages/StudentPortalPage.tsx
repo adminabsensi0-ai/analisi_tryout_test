@@ -13,6 +13,8 @@ import { Score, Student, Tryout, Explanation, Question, Subject, ClassRoom } fro
 import { StudentVerificationGate } from '../components/student/StudentVerificationGate';
 import { StudentQuestionSheet } from '../components/student/StudentQuestionSheet';
 import { SubjectRecapSection, SubjectRecapRow } from '../components/student/SubjectRecapSection';
+import { StudentSumatifView } from '../components/student/StudentSumatifView';
+import { SumatifAnalyticsService } from '../services/sumatifAnalytics';
 import {
   buildTryoutStageGroups,
   getStudentStageCompositeScore,
@@ -442,6 +444,27 @@ export const StudentPortalPage: React.FC = () => {
   // Student class metadata
   const studentClassObj = verifiedStudent ? allClasses.find(c => c.id === verifiedStudent.classId) : null;
   const studentClassName = studentClassObj?.name || 'Kelas Siswa';
+
+  // Deteksi Mode Wadah: Try Out vs SAS vs SAT (Container-Driven Modality)
+  const activePackage = useMemo(() => {
+    if (activeTryout?.packageId) {
+      return dbService.getExamPackageById(activeTryout.packageId);
+    }
+    return undefined;
+  }, [activeTryout]);
+
+  const isSumatifPackage = activePackage?.assessmentType === 'SAS' || activePackage?.assessmentType === 'SAT';
+
+  const sumatifProfile = useMemo(() => {
+    if (!verifiedStudent || !activePackage || !isSumatifPackage) return null;
+    return SumatifAnalyticsService.calculateStudentProfile(
+      verifiedStudent,
+      studentClassObj || undefined,
+      activePackage,
+      allScores,
+      allSubjects
+    );
+  }, [verifiedStudent, studentClassObj, activePackage, isSumatifPackage, allScores, allSubjects]);
 
   // Helper untuk mengekstrak skor mapel dari Score object dengan matching multi-key (id, nama, kode)
   const resolveSubjectScoreFromScoreObj = (
@@ -876,7 +899,7 @@ export const StudentPortalPage: React.FC = () => {
                 }`}
               >
                 <Award className="w-4 h-4" />
-                <span>Rapor &amp; Skor TO</span>
+                <span>{isSumatifPackage ? (activePackage?.assessmentType === 'SAT' ? 'Rapor Nilai SAT' : 'Rapor Nilai SAS') : 'Rapor & Skor TO'}</span>
               </button>
 
               <button
@@ -889,7 +912,7 @@ export const StudentPortalPage: React.FC = () => {
                 }`}
               >
                 <TrendingUp className="w-4 h-4" />
-                <span>Grafik &amp; Rekap Mapel</span>
+                <span>{isSumatifPackage ? 'Profil Radar & KKTP' : 'Grafik & Rekap Mapel'}</span>
               </button>
 
               <button
@@ -1278,8 +1301,11 @@ export const StudentPortalPage: React.FC = () => {
               </div>
             )}
 
-            {/* TAB 2: GRAFIK PROGRES LINTAS TO & REKAP SELURUH MAPEL */}
+            {/* TAB 2: GRAFIK PROGRES LINTAS TO & REKAP SELURUH MAPEL (TRY OUT) / PROFIL RADAR & KKTP (SAS / SAT) */}
             {portalTab === 'TREND_RECAP' && (
+              isSumatifPackage && sumatifProfile ? (
+                <StudentSumatifView profile={sumatifProfile} />
+              ) : (
               <div className="space-y-6 sm:space-y-8 animate-fade-in">
                 {/* 1. Overall Progress across TO1 -> TO4 SVG Chart */}
                 <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4 sm:space-y-6 transition-colors">
@@ -1483,6 +1509,7 @@ export const StudentPortalPage: React.FC = () => {
                   }}
                 />
               </div>
+              )
             )}
 
             {/* TAB 3: REKAP BUTIR SOAL YANG DIKERJAKAN */}

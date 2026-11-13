@@ -30,6 +30,8 @@ import {
 import { generateUuid } from '../utils/idUtils';
 import { ResourceCard } from '../components/ResourceCard';
 import { ItemAnalysisVisualizer } from '../components/ItemAnalysisVisualizer';
+import { GuruSumatifView } from '../components/guru/GuruSumatifView';
+import { SumatifAnalyticsService } from '../services/sumatifAnalytics';
 import { ExternalTryoutService } from '../services/externalTryout';
 import { ExternalTryoutUploadModal } from '../components/guru/ExternalTryoutUploadModal';
 import {
@@ -761,7 +763,8 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
 
   // Phase 9: Analytics Engine UI States
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [analyticsSubTab, setAnalyticsSubTab] = useState<'OVERALL' | 'CLASS' | 'STUDENT' | 'PSYCHOMETRICS'>('OVERALL');
+  const [analyticsSubTab, setAnalyticsSubTab] = useState<'OVERALL' | 'CLASS' | 'STUDENT' | 'PSYCHOMETRICS' | 'SUMATIF_EVALUATION'>('OVERALL');
+  const [selectedSumatifPackageId, setSelectedSumatifPackageId] = useState<string>('');
   const [analyticsYearFilter, setAnalyticsYearFilter] = useState('ALL');
   const [analyticsGradeFilter, setAnalyticsGradeFilter] = useState('ALL');
   const [analyticsClassFilter, setAnalyticsClassFilter] = useState('ALL');
@@ -1194,6 +1197,32 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
   const permittedSubjects = subjects.filter(s => allowedSubjectIds.includes(s.id));
   const activeSubjectObj = permittedSubjects[0] || subjects[0];
   const currentSubjectKKM = activeSubjectObj?.passingGrade ?? 75.0;
+
+  // Wadah Sumatif (SAS & SAT) untuk Guru
+  const teacherSumatifPackages = useMemo(() => {
+    return dbService.getExamPackages().filter(p => p.assessmentType === 'SAS' || p.assessmentType === 'SAT');
+  }, [tryouts]);
+
+  const activeSumatifPackage = useMemo(() => {
+    if (selectedSumatifPackageId) {
+      return teacherSumatifPackages.find(p => p.id === selectedSumatifPackageId) || teacherSumatifPackages[0];
+    }
+    return teacherSumatifPackages[0];
+  }, [teacherSumatifPackages, selectedSumatifPackageId]);
+
+  const teacherSumatifData = useMemo(() => {
+    if (!activeSumatifPackage || !activeSubjectObj) return null;
+    return SumatifAnalyticsService.calculateTeacherAnalytics(
+      activeSubjectObj.id,
+      activeSumatifPackage,
+      scores,
+      students,
+      classes,
+      questions,
+      dbService.getAnswers(),
+      subjects
+    );
+  }, [activeSumatifPackage, activeSubjectObj, scores, students, classes, questions, subjects]);
 
   // Auto-init selectedTryoutId jika kosong atau tidak valid
   useEffect(() => {
@@ -3670,6 +3699,22 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                       >
                         Analisis Butir Soal
                       </button>
+                      {teacherSumatifPackages.length > 0 && (
+                        <button
+                          onClick={() => setAnalyticsSubTab('SUMATIF_EVALUATION')}
+                          className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                            analyticsSubTab === 'SUMATIF_EVALUATION'
+                              ? 'bg-emerald-600 text-white shadow-sm font-bold'
+                              : 'text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'
+                          }`}
+                        >
+                          <Award className="w-3.5 h-3.5" />
+                          <span>Audit SAS / SAT</span>
+                          <span className="text-[10px] font-mono px-1 rounded-sm bg-emerald-800 text-emerald-100 font-bold">
+                            {teacherSumatifPackages.length}
+                          </span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -5301,6 +5346,51 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                           </tbody>
                         </table>
                       </div>
+                    </div>
+                  )}
+
+                  {/* SUB-TAB 5: SUMATIF SAS / SAT EVALUATION */}
+                  {analyticsSubTab === 'SUMATIF_EVALUATION' && (
+                    <div className="space-y-4">
+                      {/* Selector Wadah SAS/SAT */}
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                              {activeSumatifPackage?.assessmentType === 'SAT' ? 'Sumatif Akhir Tahun' : 'Sumatif Akhir Semester'}
+                            </span>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                              {activeSumatifPackage?.title || 'Wadah SAS / SAT'}
+                            </h3>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Audit psikometri butir soal semesteran dan distribusi nilai ketuntasan KKTP untuk Mapel {activeSubjectObj?.name}.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-semibold text-slate-500">Pilih Wadah:</label>
+                          <select
+                            value={activeSumatifPackage?.id || ''}
+                            onChange={e => setSelectedSumatifPackageId(e.target.value)}
+                            className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer"
+                          >
+                            {teacherSumatifPackages.map(pkg => (
+                              <option key={pkg.id} value={pkg.id}>
+                                [{pkg.assessmentType}] {pkg.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {teacherSumatifData ? (
+                        <GuruSumatifView analytics={teacherSumatifData} />
+                      ) : (
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 text-center text-slate-400 text-xs">
+                          Belum ada data nilai atau soal untuk mata pelajaran ini di wadah yang dipilih.
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -10380,6 +10470,7 @@ export const GuruAppPage: React.FC<GuruAppPageProps> = ({ currentUser: initialUs
                   <option value="">-- Tidak Dimasukkan ke Wadah --</option>
                   {dbService.getExamPackages().map(pkg => (
                     <option key={pkg.id} value={pkg.id}>
+                      {pkg.assessmentType === 'SAS' ? '[SAS] ' : pkg.assessmentType === 'SAT' ? '[SAT] ' : '[TO] '}
                       {pkg.code} — {pkg.title}
                     </option>
                   ))}

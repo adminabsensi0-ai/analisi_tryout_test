@@ -1,0 +1,239 @@
+import React from 'react';
+import {
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell
+} from 'recharts';
+import { Award, AlertTriangle, CheckCircle2, XCircle, TrendingUp, BookOpen, ShieldAlert } from 'lucide-react';
+import { StudentSumatifProfile } from '../../services/sumatifAnalytics';
+
+interface StudentSumatifViewProps {
+  profile: StudentSumatifProfile;
+}
+
+export const StudentSumatifView: React.FC<StudentSumatifViewProps> = ({ profile }) => {
+  const isSAT = profile.packageType === 'SAT';
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      {/* ── BANNER PERINGATAN EVALUASI KENAIKAN KELAS JIKA AT-RISK PADA SAT ── */}
+      {profile.isAtRisk && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 flex items-start gap-3">
+          <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">
+              Perhatian: Terdapat {profile.remedialCount} Mata Pelajaran di Bawah KKTP
+            </h4>
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+              {isSAT
+                ? 'Pada evaluasi Sumatif Akhir Tahun (SAT), siswa dengan 3 atau lebih mata pelajaran belum tuntas memerlukan pertimbangan khusus dalam rapat pleno kenaikan kelas. Segera hubungi guru mata pelajaran terkait untuk mengikuti program remedial.'
+                : 'Segera lakukan konsultasi dan ikuti program remedial bersama guru mata pelajaran sebelum pencetakan rapor akhir semester.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── STATS SUMMARY CARDS ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+            Rata-rata Semester
+          </span>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+              {profile.averageScore}
+            </span>
+            <span className="text-xs text-slate-400">/ 100</span>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+            Mapel Tuntas (≥ KKTP)
+          </span>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+              {profile.passedCount}
+            </span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+            Perlu Remedial (&lt; KKTP)
+          </span>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`text-2xl font-black ${profile.remedialCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>
+              {profile.remedialCount}
+            </span>
+            {profile.remedialCount > 0 && <AlertTriangle className="w-4 h-4 text-rose-500" />}
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+            Nilai Tertinggi
+          </span>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className="text-2xl font-black text-teal-600 dark:text-teal-400">
+              {profile.highestScore}
+            </span>
+            <Award className="w-4 h-4 text-teal-500" />
+          </div>
+        </div>
+      </div>
+
+      {/* ── GRAFIK: RADAR CHART & BAR KKTP THRESHOLD ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Visual 1: Radar Chart Jaring Laba-laba */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
+          <div className="mb-4">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              Profil Keseimbangan Kompetensi Siswa
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Peta penguasaan lintas mata pelajaran pada {isSAT ? 'Sumatif Akhir Tahun (SAT)' : 'Sumatif Akhir Semester (SAS)'}.
+            </p>
+          </div>
+
+          <div className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={profile.radarData} outerRadius="75%">
+                <PolarGrid stroke="#e2e8f0" strokeDasharray="3 3" />
+                <PolarAngleAxis
+                  dataKey="subject"
+                  tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }}
+                />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
+                <Radar
+                  name="Nilai Siswa"
+                  dataKey="score"
+                  stroke="#4f46e5"
+                  fill="#6366f1"
+                  fillOpacity={0.45}
+                />
+                <Tooltip
+                  formatter={(value: any, name: any, props: any) => [
+                    `${value} (KKTP: ${props.payload.kktp})`,
+                    props.payload.subjectName
+                  ]}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Visual 2: Bar Chart dengan Garis KKTP */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
+          <div className="mb-4">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              Capaian Nilai vs. Batas KKTP
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Garis merah putus-putus menunjukkan ambang batas kelulusan KKTP (75).
+            </p>
+          </div>
+
+          <div className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={profile.subjectScores} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
+                <XAxis
+                  dataKey="subjectCode"
+                  tick={{ fontSize: 11, fontWeight: 600 }}
+                  interval={0}
+                  angle={-25}
+                  textAnchor="end"
+                />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                <Tooltip
+                  formatter={(value: any, _name: any, props: any) => [
+                    `${value} (${props.payload.status})`,
+                    props.payload.subjectName
+                  ]}
+                />
+                <ReferenceLine
+                  y={75}
+                  stroke="#ef4444"
+                  strokeDasharray="4 4"
+                  label={{ value: 'KKTP 75', position: 'top', fill: '#ef4444', fontSize: 10, fontWeight: 700 }}
+                />
+                <Bar dataKey="score" radius={[6, 6, 0, 0]}>
+                  {profile.subjectScores.map((entry, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={entry.isPassed ? '#10b981' : '#f43f5e'}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* ── TABEL RINCIAN NILAI TIAP MAPEL ── */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
+        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-3">
+          Rincian Nilai Mata Pelajaran ({profile.packageTitle})
+        </h3>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[10px]">
+                <th className="py-2.5 px-3">Kode</th>
+                <th className="py-2.5 px-3">Mata Pelajaran</th>
+                <th className="py-2.5 px-3 text-center">Batas KKTP</th>
+                <th className="py-2.5 px-3 text-center">Nilai Ujian</th>
+                <th className="py-2.5 px-3 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {profile.subjectScores.map(sub => (
+                <tr key={sub.subjectId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <td className="py-2.5 px-3 font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                    {sub.subjectCode}
+                  </td>
+                  <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                    {sub.subjectName}
+                  </td>
+                  <td className="py-2.5 px-3 text-center text-slate-500 font-mono">
+                    {sub.passingGrade}
+                  </td>
+                  <td className="py-2.5 px-3 text-center font-mono font-bold text-sm">
+                    <span className={sub.isPassed ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      {sub.score}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-center">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        sub.isPassed
+                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                      }`}
+                    >
+                      {sub.isPassed ? (
+                        <>
+                          <CheckCircle2 className="w-3 h-3" />
+                          Tuntas
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-3 h-3" />
+                          Remedial
+                        </>
+                      )}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};

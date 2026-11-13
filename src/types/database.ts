@@ -152,7 +152,7 @@ export interface Competency {
   gradeLevel: string; // Fleksibel: '1'-'6' (SD), '7'-'9' (SMP), '10'/'X' - '12'/'XII' (SMA)
 }
 
-export type AssessmentType = 'TRYOUT' | 'UH' | 'PTS' | 'PAS';
+export type AssessmentType = 'TRYOUT' | 'SAS' | 'SAT';
 
 export interface ScoringConfig {
   scoreSource?: 'GOOGLE_FORM' | 'CUSTOM_ENGINE';

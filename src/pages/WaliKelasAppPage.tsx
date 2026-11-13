@@ -7,7 +7,9 @@ import {
 } from 'lucide-react';
 import { dbService } from '../services/database';
 import { ExportService } from '../services/export';
-import { User, Student, ClassRoom, Subject, Score, Tryout } from '../types/database';
+import { User, Student, ClassRoom, Subject, Score, Tryout, ExamPackage } from '../types/database';
+import { WaliKelasLegerSection } from '../components/walikelas/WaliKelasLegerSection';
+import { SumatifAnalyticsService } from '../services/sumatifAnalytics';
 import {
   buildTryoutStageGroups,
   getStudentStageSubjectScore,
@@ -51,6 +53,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
   // Wali Kelas Notes State per student ID
   const [waliNotes, setWaliNotes] = useState<Record<string, string>>({});
   const [selectedTryoutId, setSelectedTryoutId] = useState<string>('');
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('ALL');
 
   // Local Reactive Database States
   const [teachers, setTeachers] = useState(dbService.getTeachers());
@@ -141,6 +144,32 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
       })
       .filter(stage => stage.tryouts.length > 0);
   }, [rawTryouts, classScopedTryouts]);
+
+  // Wadah Ujian terdaftar untuk rombel binaan ini (SAS / SAT / TO)
+  const packagesForWalas = useMemo(() => {
+    return dbService.getExamPackagesForWaliKelas(assignedClassId);
+  }, [assignedClassId, rawTryouts]);
+
+  const activePackage = useMemo(() => {
+    if (selectedPackageId && selectedPackageId !== 'ALL') {
+      return packagesForWalas.find(p => p.id === selectedPackageId);
+    }
+    return undefined;
+  }, [packagesForWalas, selectedPackageId]);
+
+  const isSumatifActive = activePackage?.assessmentType === 'SAS' || activePackage?.assessmentType === 'SAT';
+
+  const sumatifLeger = useMemo(() => {
+    if (!activePackage || !isSumatifActive) return null;
+    return SumatifAnalyticsService.calculateWaliKelasLeger(
+      assignedClassId,
+      activePackage,
+      allStudents,
+      classes,
+      allScores,
+      allSubjects
+    );
+  }, [activePackage, isSumatifActive, assignedClassId, allStudents, classes, allScores, allSubjects]);
 
   const stageGroupMap = useMemo(() => {
     const map: Record<string, TryoutStageGroup> = {};
@@ -1608,8 +1637,62 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
           </div>
         )}
 
-        {/* TAB 3: LEGER NILAI MULTIMAPEL & CATATAN RAPOR */}
+        {/* TAB 3: LEGER NILAI MULTIMAPEL & CATATAN RAPOR (TRY OUT / SAS / SAT) */}
         {activeTab === 'LEGER_RAPOR' && (
+          isSumatifActive && sumatifLeger ? (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                      Wadah: {activePackage?.assessmentType}
+                    </span>
+                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                      {activePackage?.title}
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Buku Leger Nilai Sumatif Kelas {assignedClass.name} untuk pengisian nilai e-Rapor dan evaluasi ketuntasan.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-slate-500">Pilih Wadah:</label>
+                  <select
+                    value={selectedPackageId}
+                    onChange={e => setSelectedPackageId(e.target.value)}
+                    className="px-3 py-2 bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold text-indigo-700 dark:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="ALL">📋 Mode Try Out (Standar)</option>
+                    {packagesForWalas.map(pkg => (
+                      <option key={pkg.id} value={pkg.id}>
+                        📦 {pkg.assessmentType === 'SAS' ? '[SAS] ' : pkg.assessmentType === 'SAT' ? '[SAT] ' : '[TO] '}
+                        {pkg.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <WaliKelasLegerSection
+                leger={sumatifLeger}
+                onExportExcel={() => {
+                  ExportService.exportWaliKelasLegerExcel({
+                    className: assignedClass.name,
+                    waliKelasName: currentUser.name,
+                    kkm: 75,
+                    subjects: sumatifLeger.subjects.map(s => ({ id: s.id, name: s.name })),
+                    students: allStudents.filter(s => s.classId === assignedClassId && !s.isAnswerKeyAccount),
+                    getStudentScore: (sId, subId) => {
+                      const row = sumatifLeger.rows.find(r => r.studentId === sId);
+                      return row?.scoresBySubjectId[subId] ?? null;
+                    },
+                    schoolProfile: dbService.getSchoolProfile(),
+                  });
+                }}
+              />
+            </div>
+          ) : (
           <div className="space-y-6">
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs p-6 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -1623,7 +1706,23 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {packagesForWalas.length > 0 && (
+                    <select
+                      value={selectedPackageId}
+                      onChange={e => setSelectedPackageId(e.target.value)}
+                      className="px-3 py-2 bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold text-indigo-700 dark:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="ALL">📋 Mode Try Out (Standar)</option>
+                      {packagesForWalas.map(pkg => (
+                        <option key={pkg.id} value={pkg.id}>
+                          📦 {pkg.assessmentType === 'SAS' ? '[SAS] ' : pkg.assessmentType === 'SAT' ? '[SAT] ' : '[TO] '}
+                          {pkg.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
                   {allTryouts.length > 0 && (
                     <select
                       value={selectedTryoutId || (allTryouts[0]?.id ?? '')}
@@ -1728,6 +1827,7 @@ export const WaliKelasAppPage: React.FC<WaliKelasAppPageProps> = ({
               </div>
             </div>
           </div>
+          )
         )}
 
         {/* TAB 4: DIREKTORI SISWA */}
